@@ -1,6 +1,5 @@
 name: Release
 
-# 只有当我们推送以 v 开头的标签（如 v1.0.0）时，才触发这个流程
 on:
   push:
     tags:
@@ -12,15 +11,17 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        # 同时开启三个系统的虚拟机
         include:
           - os: ubuntu-latest
-            artifact_name: tui-game-linux
+            # Rust 在 Linux 默认生成的文件名（与 Cargo.toml 里的 name 一致）
+            artifact_name: tui-game
             asset_name: tui-game-linux.tar.gz
           - os: windows-latest
+            # Windows 会自带 .exe 后缀
             artifact_name: tui-game.exe
             asset_name: tui-game-windows.zip
           - os: macos-latest
+            # MacOS 默认也没有后缀
             artifact_name: tui-game
             asset_name: tui-game-macos.zip
 
@@ -34,14 +35,25 @@ jobs:
       - name: Build release
         run: cargo build --release
 
-      - name: Package assets
+      - name: Package assets and scripts
         shell: bash
         run: |
-          cd target/release
+          # 1. 创建打包临时目录
+          mkdir -p dist
+          
+          # 2. 拷贝二进制文件。注意路径在 target/release/ 下
+          cp target/release/${{ matrix.artifact_name }} dist/
+          
+          # 3. 拷贝资源和脚本目录 (如果存在)
+          if [ -d "assets" ]; then cp -r assets dist/; fi
+          if [ -d "scripts" ]; then cp -r scripts dist/; fi
+          
+          # 4. 压缩
+          cd dist
           if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            7z a ../../${{ matrix.asset_name }} ${{ matrix.artifact_name }}
+            7z a ../${{ matrix.asset_name }} *
           else
-            tar -czf ../../${{ matrix.asset_name }} ${{ matrix.artifact_name }}
+            tar -czf ../${{ matrix.asset_name }} *
           fi
 
       - name: Upload to Release
