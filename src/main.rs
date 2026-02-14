@@ -29,7 +29,7 @@ use crate::lua_bridge::api::{
 use crate::lua_bridge::script_loader::{GameMeta, scan_scripts};
 use crate::terminal::size_watcher;
 use crate::updater::github::{
-    UpdateNotification, Updater, UpdaterEvent, run_external_update_script,
+    CURRENT_VERSION_TAG, UpdateNotification, Updater, UpdaterEvent, run_external_update_script,
 };
 
 pub enum AppState {
@@ -90,7 +90,7 @@ fn run() -> Result<()> {
     i18n::init("us-en")?;
 
     let mut session = TerminalSession::new()?;
-    let updater = Updater::spawn(env!("CARGO_PKG_VERSION"));
+    let updater = Updater::spawn(CURRENT_VERSION_TAG);
 
     let mut update_notification: Option<UpdateNotification> = None;
     let mut state = AppState::MainMenu { menu: Menu::new() };
@@ -140,7 +140,7 @@ fn run() -> Result<()> {
                     let version_hint = update_notification
                         .as_ref()
                         .map(|update| update.latest_version.as_str());
-                    app::menu::render_main_menu(frame, menu, env!("CARGO_PKG_VERSION"), version_hint);
+                    app::menu::render_main_menu(frame, menu, CURRENT_VERSION_TAG, version_hint);
                 }
                 AppState::GameSelection { ui } => {
                     if let Some(pending) = pending_new_game_start.as_ref() {
@@ -156,14 +156,14 @@ fn run() -> Result<()> {
                     placeholder_pages::render_placeholder(
                         frame,
                         PlaceholderPage::About,
-                        env!("CARGO_PKG_VERSION"),
+                        CURRENT_VERSION_TAG,
                     );
                 }
                 AppState::Continue => {
                     placeholder_pages::render_placeholder(
                         frame,
                         PlaceholderPage::Continue,
-                        env!("CARGO_PKG_VERSION"),
+                        CURRENT_VERSION_TAG,
                     );
                 }
                 AppState::Exiting => {}

@@ -1,21 +1,21 @@
 use std::fs;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::mpsc::{self, Receiver};
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use anyhow::Result;
 use reqwest::blocking::Client;
 use reqwest::header::{ACCEPT, AUTHORIZATION, USER_AGENT};
-use semver::Version;
 use serde::Deserialize;
 
 use crate::utils::path_utils;
 
-const GITHUB_API_LATEST: &str = "https://api.github.com/repos/your-username/tui-game/releases/latest";
-const FALLBACK_RELEASE_URL: &str = "https://github.com/your-username/tui-game/releases/latest";
-const CHECK_COOLDOWN_SECONDS: u64 = 24 * 60 * 60;
+const GITHUB_API_LATEST: &str = "https://api.github.com/repos/MXBraisedFish/TUI-GAME/releases/latest";
+const FALLBACK_RELEASE_URL: &str = "https://github.com/MXBraisedFish/TUI-GAME/releases/latest";
 pub const GITHUB_TOKEN: &str = "";
+pub const CURRENT_VERSION_TAG: &str = "v0.1.4";
 
 #[derive(Clone, Debug)]
 pub struct UpdateNotification {
@@ -40,18 +40,11 @@ struct ReleaseResponse {
     html_url: Option<String>,
 }
 
-#[derive(Clone, Debug)]
-struct CacheState {
-    last_check_unix: u64,
-    latest_version: Option<String>,
-    release_url: Option<String>,
-}
-
 impl Updater {
     /// Starts a background updater check thread.
     pub fn spawn(current_version: &str) -> Self {
         let (tx, rx) = mpsc::channel();
-        let current = current_version.to_string();
+        let current = normalize_tag(current_version);
 
         thread::spawn(move || {
             if let Ok(result) = check_for_update(&current) {
@@ -76,24 +69,7 @@ impl Updater {
 }
 
 fn check_for_update(current_version: &str) -> Result<Option<UpdateNotification>> {
-    let current = parse_version(current_version)?;
-    if let Some(cache) = load_cache()? {
-        let now = now_unix();
-        if now.saturating_sub(cache.last_check_unix) < CHECK_COOLDOWN_SECONDS {
-            if let Some(version) = cache.latest_version {
-                let latest = parse_version(&version)?;
-                if latest > current {
-                    return Ok(Some(UpdateNotification {
-                        latest_version: format!("v{}", latest),
-                        release_url: cache
-                            .release_url
-                            .unwrap_or_else(|| FALLBACK_RELEASE_URL.to_string()),
-                    }));
-                }
-            }
-            return Ok(None);
-        }
-    }
+    ensure_cache_initialized()?;
 
     let client = Client::builder().timeout(Duration::from_secs(8)).build()?;
     let mut req = client
@@ -119,21 +95,14 @@ fn check_for_update(current_version: &str) -> Result<Option<UpdateNotification>>
         Err(_) => return Ok(None),
     };
 
-    let latest = parse_version(&payload.tag_name)?;
+    let latest_tag = normalize_tag(&payload.tag_name);
     let release_url = payload
         .html_url
         .unwrap_or_else(|| FALLBACK_RELEASE_URL.to_string());
 
-    let cache = CacheState {
-        last_check_unix: now_unix(),
-        latest_version: Some(format!("v{}", latest)),
-        release_url: Some(release_url.clone()),
-    };
-    let _ = save_cache(&cache);
-
-    if latest > current {
+    if latest_tag != normalize_tag(current_version) {
         Ok(Some(UpdateNotification {
-            latest_version: format!("v{}", latest),
+            latest_version: latest_tag,
             release_url,
         }))
     } else {
@@ -141,15 +110,45 @@ fn check_for_update(current_version: &str) -> Result<Option<UpdateNotification>>
     }
 }
 
+fn ensure_cache_initialized() -> Result<()> {
+    let path = path_utils::updater_cache_file()?;
+    if path.exists() {
+        return Ok(());
+    }
+    path_utils::ensure_parent_dir(&path)?;
+    fs::write(path, format!("\"{}\"\n", CURRENT_VERSION_TAG))?;
+    Ok(())
+}
+
+fn normalize_tag(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return CURRENT_VERSION_TAG.to_string();
+    }
+    if trimmed.starts_with('v') || trimmed.starts_with('V') {
+        format!("v{}", trimmed[1..].trim())
+    } else {
+        format!("v{}", trimmed)
+    }
+}
+
 /// Runs external updater script (version.bat/version.sh) and returns whether it was started.
 pub fn run_external_update_script(notification: &UpdateNotification) -> Result<bool> {
-    let script = path_utils::version_script_file()?;
-    if !script.exists() {
-        return Ok(false);
-    }
+    let runtime = path_utils::runtime_dir()?;
+    let bat = runtime.join("version.bat");
+    let sh = runtime.join("version.sh");
 
-    #[cfg(target_os = "windows")]
-    {
+    let Some(script) = select_version_script(&bat, &sh) else {
+        return Ok(false);
+    };
+
+    let ext = script
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+
+    if ext == "bat" {
         let _child = Command::new("cmd")
             .arg("/C")
             .arg(script.as_os_str())
@@ -159,80 +158,53 @@ pub fn run_external_update_script(notification: &UpdateNotification) -> Result<b
         return Ok(true);
     }
 
-    #[cfg(not(target_os = "windows"))]
-    {
-        let _child = Command::new("sh")
-            .arg(script.as_os_str())
-            .arg(notification.latest_version.as_str())
-            .arg(notification.release_url.as_str())
-            .spawn()?;
-        Ok(true)
+    let _child = Command::new("sh")
+        .arg(script.as_os_str())
+        .arg(notification.latest_version.as_str())
+        .arg(notification.release_url.as_str())
+        .spawn()?;
+    Ok(true)
+}
+
+fn select_version_script(bat: &Path, sh: &Path) -> Option<PathBuf> {
+    if bat.exists() {
+        return Some(bat.to_path_buf());
     }
-}
-fn parse_version(input: &str) -> Result<Version> {
-    let normalized = input.trim().trim_start_matches('v');
-    Ok(Version::parse(normalized)?)
-}
-
-fn load_cache() -> Result<Option<CacheState>> {
-    let path = path_utils::updater_cache_file()?;
-    if !path.exists() {
-        path_utils::ensure_parent_dir(&path)?;
-        fs::write(&path, "0\n\n\n")?;
-        return Ok(None);
+    if sh.exists() {
+        return Some(sh.to_path_buf());
     }
-
-    let content = fs::read_to_string(path)?;
-    let mut lines = content.lines();
-    let last_check_unix = lines
-        .next()
-        .and_then(|v| v.parse::<u64>().ok())
-        .unwrap_or(0);
-    let latest_version = lines
-        .next()
-        .map(|v| v.trim().to_string())
-        .filter(|v| !v.is_empty());
-    let release_url = lines
-        .next()
-        .map(|v| v.trim().to_string())
-        .filter(|v| !v.is_empty());
-    let cache = CacheState {
-        last_check_unix,
-        latest_version,
-        release_url,
-    };
-    Ok(Some(cache))
-}
-
-fn save_cache(state: &CacheState) -> Result<()> {
-    let path = path_utils::updater_cache_file()?;
-    path_utils::ensure_parent_dir(&path)?;
-    let latest = state.latest_version.clone().unwrap_or_default();
-    let url = state.release_url.clone().unwrap_or_default();
-    let content = format!("{}\n{}\n{}\n", state.last_check_unix, latest, url);
-    fs::write(path, content)?;
-    Ok(())
-}
-
-fn now_unix() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
+    None
 }
 
 #[cfg(test)]
 mod tests {
-    use semver::Version;
-
-    use super::parse_version;
+    use super::{normalize_tag, select_version_script};
 
     #[test]
-    fn parse_version_accepts_prefixed_tag() {
-        let parsed = parse_version("v1.2.3").expect("version should parse");
-        assert_eq!(parsed, Version::new(1, 2, 3));
+    fn normalize_tag_adds_prefix() {
+        assert_eq!(normalize_tag("0.1.4"), "v0.1.4");
+        assert_eq!(normalize_tag("v0.1.4"), "v0.1.4");
+    }
+
+    #[test]
+    fn script_selection_prefers_bat_then_sh() {
+        let base = std::env::temp_dir().join("tui_game_updater_script_select");
+        let _ = std::fs::create_dir_all(&base);
+        let bat = base.join("version.bat");
+        let sh = base.join("version.sh");
+
+        let _ = std::fs::remove_file(&bat);
+        let _ = std::fs::remove_file(&sh);
+        assert!(select_version_script(&bat, &sh).is_none());
+
+        let _ = std::fs::write(&sh, "echo sh");
+        assert_eq!(select_version_script(&bat, &sh), Some(sh.clone()));
+
+        let _ = std::fs::write(&bat, "echo bat");
+        assert_eq!(select_version_script(&bat, &sh), Some(bat.clone()));
+
+        let _ = std::fs::remove_file(&bat);
+        let _ = std::fs::remove_file(&sh);
+        let _ = std::fs::remove_dir_all(&base);
     }
 }
-
-
-

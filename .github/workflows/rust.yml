@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
 
 jobs:
   build:
@@ -40,19 +40,23 @@ jobs:
         run: |
           # 1. 创建打包临时目录
           mkdir -p dist
-          
-          # 2. 拷贝二进制文件。注意路径在 target/release/ 下
+
+          # 2. 拷贝二进制文件
           cp target/release/${{ matrix.artifact_name }} dist/
-          
+
           # 3. 拷贝资源和脚本目录 (如果存在)
           if [ -d "assets" ]; then cp -r assets dist/; fi
           if [ -d "scripts" ]; then cp -r scripts dist/; fi
-          
-          # 4. 压缩
+
+          # 4. 分平台采用正确的压缩方式
           cd dist
           if [ "${{ matrix.os }}" = "windows-latest" ]; then
             7z a ../${{ matrix.asset_name }} *
+          elif [ "${{ matrix.os }}" = "macos-latest" ]; then
+            # macOS 使用 zip 命令，-r 参数确保包含文件夹内容
+            zip -r ../${{ matrix.asset_name }} *
           else
+            # Linux 继续使用 tar，对应 .tar.gz 后缀
             tar -czf ../${{ matrix.asset_name }} *
           fi
 
