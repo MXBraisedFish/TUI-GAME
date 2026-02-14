@@ -7,6 +7,9 @@
     "menu.settings":  "设置",
     "menu.about":  "关于",
     "menu.quit":  "退出",
+    "settings.hub.language":  "语言选择",
+    "settings.hub.uninstall":  "卸载 TUI GAME",
+    "settings.hub.back_hint":  "[ESC]/[Q] 返回主菜单",
     "placeholder.about":  "TUI GAME\n版本: 0.1.0\n作者: 123\nGitHub: https://github.com/your-username/tui-game",
     "placeholder.continue":  "继续游戏功能暂未实现。",
     "updater.new_version":  "发现新版本",
@@ -220,5 +223,4 @@
     "game.lights_out.time":  "时间",
     "game.lights_out.input_jump_prompt":  "快速定位 (行 列): "
 }
-
 

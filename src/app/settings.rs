@@ -1,8 +1,8 @@
-﻿use crossterm::event::KeyCode;
+use crossterm::event::KeyCode;
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::Line;
+use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use unicode_width::UnicodeWidthStr;
 
@@ -10,6 +10,27 @@ use crate::app::i18n;
 
 const MAX_COLS: usize = 12;
 const H_GAP: u16 = 1;
+const TRIANGLE: &str = "\u{25B6} ";
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SettingsPage {
+    Hub,
+    Language,
+}
+
+#[derive(Clone, Debug)]
+pub struct SettingsState {
+    pub page: SettingsPage,
+    pub hub_selected: usize,
+    pub lang_selected: usize,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SettingsAction {
+    None,
+    BackToMenu,
+    RunUninstall,
+}
 
 #[derive(Clone, Copy, Debug)]
 pub struct GridMetrics {
@@ -18,7 +39,18 @@ pub struct GridMetrics {
     pub outer_width: u16,
 }
 
-/// Returns the default selected index (current active language).
+impl SettingsState {
+    /// Creates default settings state at settings hub page.
+    pub fn new() -> Self {
+        Self {
+            page: SettingsPage::Hub,
+            hub_selected: 0,
+            lang_selected: default_selected_index(),
+        }
+    }
+}
+
+/// Returns the default selected language index (current active language).
 pub fn default_selected_index() -> usize {
     let languages = i18n::available_languages();
     let current = i18n::current_language_code();
@@ -26,6 +58,33 @@ pub fn default_selected_index() -> usize {
         .iter()
         .position(|pack| pack.code == current)
         .unwrap_or(0)
+}
+
+/// Handles keyboard input for settings pages.
+pub fn handle_key(state: &mut SettingsState, code: KeyCode) -> SettingsAction {
+    match state.page {
+        SettingsPage::Hub => handle_hub_key(state, code),
+        SettingsPage::Language => {
+            handle_language_key(state, code);
+            SettingsAction::None
+        }
+    }
+}
+
+/// Returns minimum terminal size needed by the active settings page.
+pub fn minimum_size(state: &SettingsState) -> (u16, u16) {
+    match state.page {
+        SettingsPage::Hub => minimum_size_hub(),
+        SettingsPage::Language => minimum_size_language(),
+    }
+}
+
+/// Renders settings page based on current sub-page state.
+pub fn render(frame: &mut ratatui::Frame<'_>, state: &SettingsState) {
+    match state.page {
+        SettingsPage::Hub => render_hub(frame, state.hub_selected),
+        SettingsPage::Language => render_language_selector(frame, state.lang_selected),
+    }
 }
 
 /// Calculates metrics for language grid rendering and navigation.
@@ -47,7 +106,9 @@ pub fn grid_metrics(term_width: u16, languages: &[i18n::LanguagePack]) -> GridMe
     let inner_width = (max_name_width + 2) as u16;
     let outer_width = inner_width + 2;
 
-    let cols_by_width = (((term_width as usize) + H_GAP as usize) / (outer_width as usize + H_GAP as usize)).max(1);
+    let cols_by_width = (((term_width as usize) + H_GAP as usize)
+        / (outer_width as usize + H_GAP as usize))
+        .max(1);
     let cols = languages.len().min(MAX_COLS).min(cols_by_width).max(1);
 
     GridMetrics {
@@ -57,35 +118,7 @@ pub fn grid_metrics(term_width: u16, languages: &[i18n::LanguagePack]) -> GridMe
     }
 }
 
-/// Returns minimum terminal size needed by the language selector.
-pub fn minimum_size() -> (u16, u16) {
-    let languages = i18n::available_languages();
-    if languages.is_empty() {
-        return (40, 8);
-    }
-
-    let max_name_width = languages
-        .iter()
-        .map(|pack| UnicodeWidthStr::width(pack.name.as_str()))
-        .max()
-        .unwrap_or(4);
-
-    let inner_width = (max_name_width + 2) as u16;
-    let outer_width = inner_width + 2;
-    let cols = languages.len().min(MAX_COLS).max(1) as u16;
-    let rows = ((languages.len() + cols as usize - 1) / cols as usize).max(1) as u16;
-
-    let grid_width = cols * outer_width + cols.saturating_sub(1) * H_GAP;
-    let grid_height = rows * 3;
-    let hint = i18n::t("confirm_language");
-    let hint_width = UnicodeWidthStr::width(hint.as_str()) as u16;
-
-    let min_w = grid_width.max(hint_width).max(30) + 2;
-    let min_h = 1 + 1 + grid_height + 1 + 2;
-    (min_w, min_h.max(10))
-}
-
-/// Moves selection inside the grid with non-cycling boundaries.
+/// Moves selection inside the language grid with non-cycling boundaries.
 pub fn move_selection(selected: usize, key: KeyCode, metrics: GridMetrics, total: usize) -> usize {
     if total == 0 {
         return 0;
@@ -128,8 +161,185 @@ pub fn move_selection(selected: usize, key: KeyCode, metrics: GridMetrics, total
     }
 }
 
-/// Renders settings language selection page.
-pub fn render_language_selector(frame: &mut ratatui::Frame<'_>, selected: usize) {
+fn handle_hub_key(state: &mut SettingsState, code: KeyCode) -> SettingsAction {
+    match code {
+        KeyCode::Up | KeyCode::Char('k') => {
+            if state.hub_selected > 0 {
+                state.hub_selected -= 1;
+            }
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            if state.hub_selected < 1 {
+                state.hub_selected += 1;
+            }
+        }
+        KeyCode::Char('1') => state.hub_selected = 0,
+        KeyCode::Char('2') => state.hub_selected = 1,
+        KeyCode::Enter => {
+            if state.hub_selected == 0 {
+                state.page = SettingsPage::Language;
+                state.lang_selected = default_selected_index();
+            } else {
+                return SettingsAction::RunUninstall;
+            }
+        }
+        KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => {
+            return SettingsAction::BackToMenu;
+        }
+        _ => {}
+    }
+
+    SettingsAction::None
+}
+
+fn handle_language_key(state: &mut SettingsState, code: KeyCode) {
+    let languages = i18n::available_languages();
+    if languages.is_empty() {
+        if matches!(code, KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q')) {
+            state.page = SettingsPage::Hub;
+        }
+        return;
+    }
+
+    if state.lang_selected >= languages.len() {
+        state.lang_selected = languages.len() - 1;
+    }
+
+    let (term_width, _) = crossterm::terminal::size().unwrap_or((80, 24));
+    let metrics = grid_metrics(term_width, &languages);
+
+    match code {
+        KeyCode::Left | KeyCode::Right | KeyCode::Up | KeyCode::Down => {
+            state.lang_selected =
+                move_selection(state.lang_selected, code, metrics, languages.len());
+        }
+        KeyCode::Enter => {
+            if let Some(pack) = languages.get(state.lang_selected) {
+                let _ = i18n::set_language(&pack.code);
+            }
+        }
+        KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => {
+            state.page = SettingsPage::Hub;
+        }
+        _ => {}
+    }
+}
+
+fn minimum_size_hub() -> (u16, u16) {
+    let label_lang = i18n::t("settings.hub.language");
+    let label_uninstall = i18n::t("settings.hub.uninstall");
+    let enter_key = i18n::t("menu.enter_shortcut");
+    let back_hint = i18n::t("settings.hub.back_hint");
+
+    let widths = [
+        UnicodeWidthStr::width(format!("{}[1] {}", TRIANGLE, label_lang).as_str()),
+        UnicodeWidthStr::width(format!("{}[2] {}", TRIANGLE, label_uninstall).as_str()),
+        UnicodeWidthStr::width(format!("{}{} {}", TRIANGLE, enter_key, label_uninstall).as_str()),
+        UnicodeWidthStr::width(back_hint.as_str()),
+    ];
+
+    let max_width = widths.into_iter().max().unwrap_or(30) as u16;
+    (max_width + 4, 10)
+}
+
+fn minimum_size_language() -> (u16, u16) {
+    let languages = i18n::available_languages();
+    if languages.is_empty() {
+        return (40, 8);
+    }
+
+    let max_name_width = languages
+        .iter()
+        .map(|pack| UnicodeWidthStr::width(pack.name.as_str()))
+        .max()
+        .unwrap_or(4);
+
+    let inner_width = (max_name_width + 2) as u16;
+    let outer_width = inner_width + 2;
+    let cols = languages.len().min(MAX_COLS).max(1) as u16;
+    let rows = ((languages.len() + cols as usize - 1) / cols as usize).max(1) as u16;
+
+    let grid_width = cols * outer_width + cols.saturating_sub(1) * H_GAP;
+    let grid_height = rows * 3;
+    let hint = i18n::t("confirm_language");
+    let hint_width = UnicodeWidthStr::width(hint.as_str()) as u16;
+
+    let min_w = grid_width.max(hint_width).max(30) + 2;
+    let min_h = 1 + 1 + grid_height + 1 + 2;
+    (min_w, min_h.max(10))
+}
+
+fn render_hub(frame: &mut ratatui::Frame<'_>, selected: usize) {
+    let area = frame.area();
+    let items = [
+        ("[1]", i18n::t("settings.hub.language")),
+        ("[2]", i18n::t("settings.hub.uninstall")),
+    ];
+    let enter_hint = i18n::t("menu.enter_shortcut");
+
+    let content_width = items
+        .iter()
+        .map(|(shortcut, text)| {
+            let normal = format!("{}{} {}", TRIANGLE, shortcut, text);
+            let enter = format!("{}{} {}", TRIANGLE, enter_hint, text);
+            UnicodeWidthStr::width(normal.as_str()).max(UnicodeWidthStr::width(enter.as_str()))
+        })
+        .max()
+        .unwrap_or(1) as u16;
+
+    let width = area.width.saturating_sub(2).max(1).min(content_width.max(1));
+    let height = (items.len() + 2) as u16;
+    let menu_area = Rect {
+        x: area.x + area.width.saturating_sub(width) / 2,
+        y: area.y + area.height.saturating_sub(height) / 2,
+        width,
+        height,
+    };
+
+    let left_pad = menu_area.width.saturating_sub(content_width) / 2;
+    let mut lines = Vec::new();
+
+    for (idx, (shortcut, text)) in items.iter().enumerate() {
+        let is_selected = idx == selected.min(items.len().saturating_sub(1));
+        let base_style = if is_selected {
+            Style::default()
+                .fg(Color::LightCyan)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
+        };
+        let key_style = Style::default()
+            .fg(Color::DarkGray)
+            .add_modifier(if is_selected {
+                Modifier::BOLD
+            } else {
+                Modifier::empty()
+            });
+        let key = if is_selected {
+            enter_hint.as_str()
+        } else {
+            shortcut
+        };
+
+        lines.push(Line::from(vec![
+            Span::raw(" ".repeat(left_pad as usize)),
+            Span::styled(if is_selected { TRIANGLE } else { "  " }, base_style),
+            Span::styled(key.to_string(), key_style),
+            Span::styled(format!(" {}", text), base_style),
+        ]));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        i18n::t("settings.hub.back_hint"),
+        Style::default().fg(Color::DarkGray),
+    )));
+
+    let widget = Paragraph::new(lines).alignment(Alignment::Left);
+    frame.render_widget(widget, menu_area);
+}
+
+fn render_language_selector(frame: &mut ratatui::Frame<'_>, selected: usize) {
     let area = frame.area();
     let sections = Layout::default()
         .direction(Direction::Vertical)
@@ -207,12 +417,18 @@ fn draw_language_grid(
         let label = center_text(pack.name.as_str(), metrics.inner_width as usize);
 
         if is_selected {
-            let top = format!("╔{}╗", "═".repeat(metrics.inner_width as usize));
-            let bottom = format!("╚{}╝", "═".repeat(metrics.inner_width as usize));
+            let top = format!(
+                "\u{2554}{}\u{2557}",
+                "\u{2550}".repeat(metrics.inner_width as usize)
+            );
+            let bottom = format!(
+                "\u{255A}{}\u{255D}",
+                "\u{2550}".repeat(metrics.inner_width as usize)
+            );
             buffer.set_string(x, y, top, border_style);
-            buffer.set_string(x, y + 1, "║", border_style);
+            buffer.set_string(x, y + 1, "\u{2551}", border_style);
             buffer.set_string(x + 1, y + 1, label.clone(), text_style);
-            buffer.set_string(x + 1 + metrics.inner_width, y + 1, "║", border_style);
+            buffer.set_string(x + 1 + metrics.inner_width, y + 1, "\u{2551}", border_style);
             buffer.set_string(x, y + 2, bottom, border_style);
         } else {
             let blank = " ".repeat(metrics.outer_width as usize);

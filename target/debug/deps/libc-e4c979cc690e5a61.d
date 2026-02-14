@@ -1,0 +1,13 @@
+E:\Code\tui-game(github)\target\debug\deps\libc-e4c979cc690e5a61.d: C:\Users\123\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libc-0.2.181\src\lib.rs C:\Users\123\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libc-0.2.181\src\macros.rs C:\Users\123\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libc-0.2.181\src\new\mod.rs C:\Users\123\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libc-0.2.181\src\new\common\mod.rs C:\Users\123\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libc-0.2.181\src\new\ucrt\mod.rs C:\Users\123\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libc-0.2.181\src\primitives.rs C:\Users\123\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libc-0.2.181\src\windows\mod.rs C:\Users\123\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libc-0.2.181\src\windows\gnu\mod.rs C:\Users\123\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libc-0.2.181\src\types.rs
+
+E:\Code\tui-game(github)\target\debug\deps\liblibc-e4c979cc690e5a61.rmeta: C:\Users\123\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libc-0.2.181\src\lib.rs C:\Users\123\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libc-0.2.181\src\macros.rs C:\Users\123\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libc-0.2.181\src\new\mod.rs C:\Users\123\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libc-0.2.181\src\new\common\mod.rs C:\Users\123\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libc-0.2.181\src\new\ucrt\mod.rs C:\Users\123\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libc-0.2.181\src\primitives.rs C:\Users\123\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libc-0.2.181\src\windows\mod.rs C:\Users\123\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libc-0.2.181\src\windows\gnu\mod.rs C:\Users\123\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libc-0.2.181\src\types.rs
+
+C:\Users\123\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libc-0.2.181\src\lib.rs:
+C:\Users\123\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libc-0.2.181\src\macros.rs:
+C:\Users\123\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libc-0.2.181\src\new\mod.rs:
+C:\Users\123\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libc-0.2.181\src\new\common\mod.rs:
+C:\Users\123\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libc-0.2.181\src\new\ucrt\mod.rs:
+C:\Users\123\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libc-0.2.181\src\primitives.rs:
+C:\Users\123\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libc-0.2.181\src\windows\mod.rs:
+C:\Users\123\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libc-0.2.181\src\windows\gnu\mod.rs:
+C:\Users\123\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libc-0.2.181\src\types.rs:

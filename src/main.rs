@@ -5,6 +5,7 @@ mod updater;
 mod utils;
 
 use std::io::{self, Stdout};
+use std::process::Command;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -31,11 +32,12 @@ use crate::terminal::size_watcher;
 use crate::updater::github::{
     CURRENT_VERSION_TAG, UpdateNotification, Updater, UpdaterEvent, run_external_update_script,
 };
+use crate::utils::path_utils;
 
 pub enum AppState {
     MainMenu { menu: Menu },
     GameSelection { ui: GameSelection },
-    Settings { selected: usize },
+    Settings { ui: settings::SettingsState },
     About,
     Continue,
     Exiting,
@@ -149,8 +151,8 @@ fn run() -> Result<()> {
                         ui.render(frame, frame.area());
                     }
                 }
-                AppState::Settings { selected } => {
-                    settings::render_language_selector(frame, *selected);
+                AppState::Settings { ui } => {
+                    settings::render(frame, ui);
                 }
                 AppState::About => {
                     placeholder_pages::render_placeholder(
@@ -185,7 +187,7 @@ fn minimum_size_for_state(state: &AppState) -> (u16, u16) {
     match state {
         AppState::MainMenu { .. } => (MENU_MIN_WIDTH, MENU_MIN_HEIGHT),
         AppState::GameSelection { ui } => ui.minimum_size(),
-        AppState::Settings { .. } => settings::minimum_size(),
+        AppState::Settings { ui } => settings::minimum_size(ui),
         AppState::About | AppState::Continue => (MENU_MIN_WIDTH, MENU_MIN_HEIGHT),
         AppState::Exiting => (MENU_MIN_WIDTH, MENU_MIN_HEIGHT),
     }
@@ -301,30 +303,17 @@ fn handle_key_event(
                 }
             }
         }
-        AppState::Settings { selected } => {
-            let languages = i18n::available_languages();
-            if languages.is_empty() {
-                return Ok(());
-            }
-            if *selected >= languages.len() {
-                *selected = languages.len() - 1;
-            }
-            let (term_width, _) = crossterm::terminal::size().unwrap_or((80, 24));
-            let metrics = settings::grid_metrics(term_width, &languages);
-
-            match key.code {
-                KeyCode::Left | KeyCode::Right | KeyCode::Up | KeyCode::Down => {
-                    *selected = settings::move_selection(*selected, key.code, metrics, languages.len());
-                }
-                KeyCode::Enter => {
-                    if let Some(pack) = languages.get(*selected) {
-                        let _ = i18n::set_language(&pack.code);
-                    }
-                }
-                KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => {
+        AppState::Settings { ui } => {
+            match settings::handle_key(ui, key.code) {
+                settings::SettingsAction::None => {}
+                settings::SettingsAction::BackToMenu => {
                     *state = AppState::MainMenu { menu: Menu::new() };
                 }
-                _ => {}
+                settings::SettingsAction::RunUninstall => {
+                    if run_uninstall_script().unwrap_or(false) {
+                        *state = AppState::Exiting;
+                    }
+                }
             }
         }
         AppState::About | AppState::Continue => match key.code {
@@ -410,11 +399,39 @@ fn apply_menu_action(action: MenuAction, continue_game_id: Option<&str>) -> AppS
             }
         }
         MenuAction::Settings => AppState::Settings {
-            selected: settings::default_selected_index(),
+            ui: settings::SettingsState::new(),
         },
         MenuAction::About => AppState::About,
         MenuAction::Quit => AppState::Exiting,
     }
+}
+
+fn run_uninstall_script() -> Result<bool> {
+    let runtime = path_utils::runtime_dir()?;
+    let bat = runtime.join("delete-tui-game.bat");
+    let sh = runtime.join("delete-tui-game.sh");
+
+    let script = if bat.exists() {
+        bat
+    } else if sh.exists() {
+        sh
+    } else {
+        return Ok(false);
+    };
+
+    let ext = script
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+
+    if ext == "bat" {
+        let _child = Command::new("cmd").arg("/C").arg(script.as_os_str()).spawn()?;
+        return Ok(true);
+    }
+
+    let _child = Command::new("sh").arg(script.as_os_str()).spawn()?;
+    Ok(true)
 }
 
 fn sync_continue_item(menu: &mut Menu) {

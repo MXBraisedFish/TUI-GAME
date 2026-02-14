@@ -283,6 +283,18 @@ fn builtin_english_pack() -> LanguagePack {
     dict.insert("menu.about".to_string(), "About".to_string());
     dict.insert("menu.quit".to_string(), "Quit".to_string());
     dict.insert(
+        "settings.hub.language".to_string(),
+        "Language".to_string(),
+    );
+    dict.insert(
+        "settings.hub.uninstall".to_string(),
+        "Uninstall TUI GAME".to_string(),
+    );
+    dict.insert(
+        "settings.hub.back_hint".to_string(),
+        "[ESC]/[Q] Back to main menu".to_string(),
+    );
+    dict.insert(
         "placeholder.settings".to_string(),
         "Settings page is under construction. Please check back later.".to_string(),
     );
