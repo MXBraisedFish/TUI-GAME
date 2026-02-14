@@ -1,0 +1,52 @@
+name: Release
+
+# 只有当我们推送以 v 开头的标签（如 v1.0.0）时，才触发这个流程
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build for ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        # 同时开启三个系统的虚拟机
+        include:
+          - os: ubuntu-latest
+            artifact_name: tui-game-linux
+            asset_name: tui-game-linux.tar.gz
+          - os: windows-latest
+            artifact_name: tui-game.exe
+            asset_name: tui-game-windows.zip
+          - os: macos-latest
+            artifact_name: tui-game
+            asset_name: tui-game-macos.zip
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build release
+        run: cargo build --release
+
+      - name: Package assets
+        shell: bash
+        run: |
+          cd target/release
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            7z a ../../${{ matrix.asset_name }} ${{ matrix.artifact_name }}
+          else
+            tar -czf ../../${{ matrix.asset_name }} ${{ matrix.artifact_name }}
+          fi
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ matrix.asset_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
