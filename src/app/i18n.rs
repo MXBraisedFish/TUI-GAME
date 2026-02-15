@@ -300,7 +300,11 @@ fn builtin_english_pack() -> LanguagePack {
     );
     dict.insert(
         "placeholder.about".to_string(),
-        "TUI GAME\nVersion: 0.1.0\nAuthor: 123\nGitHub: https://github.com/your-username/tui-game".to_string(),
+        "TUI GAME\nAuthor: MXBraisedFish(MXFish)\nGitHub: https://github.com/MXBraisedFish/TUI-GAME".to_string(),
+    );
+    dict.insert(
+        "placeholder.latest_version".to_string(),
+        "Latest version:".to_string(),
     );
     dict.insert(
         "placeholder.continue".to_string(),

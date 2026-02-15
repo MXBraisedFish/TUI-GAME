@@ -226,7 +226,7 @@ local function make_hand(cards, bet, adj_mult)
     local total = hand_total(h.cards)
     h.bust = total > 21
     h.blackjack = is_blackjack(h.cards)
-    if h.bust or h.blackjack or total >= 21 then
+    if h.bust then
         h.stood = true
     end
     return h
@@ -236,7 +236,7 @@ local function update_hand_state(h)
     local total = hand_total(h.cards)
     h.bust = total > 21
     h.blackjack = is_blackjack(h.cards)
-    if h.bust or total >= 21 then
+    if h.bust or (total >= 21 and not h.blackjack) then
         h.stood = true
     end
 end
@@ -332,7 +332,7 @@ local function can_stand(h)
 end
 
 local function can_double(h)
-    if h == nil or h.resolved or h.stood or h.bust or h.blackjack then return false end
+    if h == nil or h.resolved or h.stood or h.bust then return false end
     if h.has_hit or h.doubled then return false end
     return true
 end
@@ -370,7 +370,7 @@ local function active_hand_ref()
 end
 
 local function can_adjust_multiplier(h)
-    if h == nil or h.resolved or h.stood or h.bust or h.blackjack then return false end
+    if h == nil or h.resolved or h.stood or h.bust then return false end
     return not h.adj_locked
 end
 
@@ -403,7 +403,7 @@ local function multiplier_display_text(h)
     local base = effective_mult(h)
     local settle = settlement_factor(h)
     if settle > 1.001 then
-        return string.format("x%.1f x x%.1f = x%.1f", base, settle, base * settle)
+        return string.format("x%.1f", base * settle)
     end
     return string.format("x%.1f", base)
 end
@@ -443,7 +443,7 @@ local function adjust_bet_multiplier(delta)
 end
 
 local function hand_actions_text(h)
-    if h.stood or h.resolved or h.bust or h.blackjack or hand_total(h.cards) >= 21 then
+    if h.stood or h.resolved or h.bust then
         return {
             text = tr("game.blackjack.msg_stood", "Stood"),
             color = "red"

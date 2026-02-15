@@ -1,4 +1,4 @@
-﻿use ratatui::layout::Alignment;
+use ratatui::layout::{Alignment, Constraint, Direction, Layout};
 use ratatui::style::{Color, Style};
 use ratatui::widgets::{Paragraph, Wrap};
 
@@ -12,22 +12,35 @@ pub enum PlaceholderPage {
 }
 
 /// Renders a simple placeholder page.
-pub fn render_placeholder(frame: &mut ratatui::Frame<'_>, page: PlaceholderPage, version: &str) {
+pub fn render_placeholder(
+    frame: &mut ratatui::Frame<'_>,
+    page: PlaceholderPage,
+    runtime_version: &str,
+    latest_version: Option<&str>,
+) {
     let message = match page {
         PlaceholderPage::Settings => t("placeholder.settings").to_string(),
         PlaceholderPage::About => format!(
-            "{}\n{} {}",
+            "{}\n{} {}\n{} {}",
             t("placeholder.about"),
+            t("placeholder.latest_version"),
+            latest_version.unwrap_or(runtime_version),
             t("placeholder.runtime_version"),
-            version
+            runtime_version
         ),
         PlaceholderPage::Continue => t("placeholder.continue").to_string(),
     };
 
     let text = format!("{}\n\n{}", message, t("common.back_hint"));
+    let lines = text.lines().count() as u16;
+    let sections = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(0), Constraint::Length(lines), Constraint::Min(0)])
+        .split(frame.area());
+
     let paragraph = Paragraph::new(text)
         .style(Style::default().fg(Color::White))
         .alignment(Alignment::Center)
-        .wrap(Wrap { trim: true });
-    frame.render_widget(paragraph, frame.area());
+        .wrap(Wrap { trim: false });
+    frame.render_widget(paragraph, sections[1]);
 }

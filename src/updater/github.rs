@@ -15,7 +15,7 @@ use crate::utils::path_utils;
 const GITHUB_API_LATEST: &str = "https://api.github.com/repos/MXBraisedFish/TUI-GAME/releases/latest";
 const FALLBACK_RELEASE_URL: &str = "https://github.com/MXBraisedFish/TUI-GAME/releases/latest";
 pub const GITHUB_TOKEN: &str = "";
-pub const CURRENT_VERSION_TAG: &str = "0.1.8";
+pub const CURRENT_VERSION_TAG: &str = "0.1.9";
 
 #[derive(Clone, Debug)]
 pub struct UpdateNotification {
@@ -25,6 +25,7 @@ pub struct UpdateNotification {
 
 #[derive(Clone, Debug)]
 pub enum UpdaterEvent {
+    LatestVersion(UpdateNotification),
     NewVersion(UpdateNotification),
     NoUpdate,
 }
@@ -47,12 +48,12 @@ impl Updater {
         let current = normalize_tag(current_version);
 
         thread::spawn(move || {
-            if let Ok(result) = check_for_update(&current) {
-                match result {
-                    Some(notification) => {
-                        let _ = tx.send(UpdaterEvent::NewVersion(notification));
-                    }
-                    None => {
+            if let Ok(result) = fetch_latest_release() {
+                if let Some(latest) = result {
+                    let _ = tx.send(UpdaterEvent::LatestVersion(latest.clone()));
+                    if latest.latest_version != current {
+                        let _ = tx.send(UpdaterEvent::NewVersion(latest));
+                    } else {
                         let _ = tx.send(UpdaterEvent::NoUpdate);
                     }
                 }
@@ -68,7 +69,7 @@ impl Updater {
     }
 }
 
-fn check_for_update(current_version: &str) -> Result<Option<UpdateNotification>> {
+fn fetch_latest_release() -> Result<Option<UpdateNotification>> {
     ensure_cache_initialized()?;
 
     let client = Client::builder().timeout(Duration::from_secs(8)).build()?;
@@ -100,14 +101,10 @@ fn check_for_update(current_version: &str) -> Result<Option<UpdateNotification>>
         .html_url
         .unwrap_or_else(|| FALLBACK_RELEASE_URL.to_string());
 
-    if latest_tag != normalize_tag(current_version) {
-        Ok(Some(UpdateNotification {
-            latest_version: latest_tag,
-            release_url,
-        }))
-    } else {
-        Ok(None)
-    }
+    Ok(Some(UpdateNotification {
+        latest_version: latest_tag,
+        release_url,
+    }))
 }
 
 fn ensure_cache_initialized() -> Result<()> {

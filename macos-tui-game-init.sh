@@ -1,6 +1,5 @@
 #!/bin/bash
 
-# 基础配置
 REPO_API="https://api.github.com/repos/MXBraisedFish/TUI-GAME/releases/latest"
 ZIP_NAME="tui-game-macos.zip"
 EXE_NAME="tui-game"

@@ -95,6 +95,8 @@ fn run() -> Result<()> {
     let updater = Updater::spawn(CURRENT_VERSION_TAG);
 
     let mut update_notification: Option<UpdateNotification> = None;
+    let mut latest_release_version = normalized_tag(CURRENT_VERSION_TAG);
+    let runtime_version = normalized_tag(CURRENT_VERSION_TAG);
     let mut state = AppState::MainMenu { menu: Menu::new() };
     let mut pending_new_game_start: Option<PendingNewGameStart> = None;
 
@@ -104,8 +106,14 @@ fn run() -> Result<()> {
         let frame_start = Instant::now();
 
         while let Some(event) = updater.try_recv() {
-            if let UpdaterEvent::NewVersion(notification) = event {
-                update_notification = Some(notification);
+            match event {
+                UpdaterEvent::LatestVersion(latest) => {
+                    latest_release_version = latest.latest_version;
+                }
+                UpdaterEvent::NewVersion(notification) => {
+                    update_notification = Some(notification);
+                }
+                UpdaterEvent::NoUpdate => {}
             }
         }
 
@@ -158,14 +166,16 @@ fn run() -> Result<()> {
                     placeholder_pages::render_placeholder(
                         frame,
                         PlaceholderPage::About,
-                        CURRENT_VERSION_TAG,
+                        runtime_version.as_str(),
+                        Some(latest_release_version.as_str()),
                     );
                 }
                 AppState::Continue => {
                     placeholder_pages::render_placeholder(
                         frame,
                         PlaceholderPage::Continue,
-                        CURRENT_VERSION_TAG,
+                        runtime_version.as_str(),
+                        None,
                     );
                 }
                 AppState::Exiting => {}
@@ -440,4 +450,13 @@ fn sync_continue_item(menu: &mut Menu) {
         .as_deref()
         .map(|id| i18n::t_or(&format!("game.{}.name", id), id));
     menu.set_continue_target(game_id, game_name);
+}
+
+fn normalized_tag(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.starts_with('v') || trimmed.starts_with('V') {
+        format!("v{}", trimmed[1..].trim())
+    } else {
+        format!("v{}", trimmed)
+    }
 }

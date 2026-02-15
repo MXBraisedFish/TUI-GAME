@@ -667,12 +667,13 @@ local function draw_board(x, y, frame_w, frame_h)
 end
 local function draw_status(x, y, frame_w)
     local elapsed = elapsed_seconds()
+    local term_w = terminal_size()
     local left = tr("game.minesweeper.time", "Time") .. " " .. format_duration(elapsed)
     local center = face_text()
     local right = tr("game.minesweeper.mines_left", "Mines") .. " " .. tostring(state.mines - count_flags())
-    draw_text(x, y - 3, string.rep(" ", frame_w), "white", "black")
-    draw_text(x, y - 2, string.rep(" ", frame_w), "white", "black")
-    draw_text(x, y - 1, string.rep(" ", frame_w), "white", "black")
+    draw_text(1, y - 3, string.rep(" ", term_w), "white", "black")
+    draw_text(1, y - 2, string.rep(" ", term_w), "white", "black")
+    draw_text(1, y - 1, string.rep(" ", term_w), "white", "black")
 
     local left_x = x
     local center_x = x + math.floor((frame_w - key_width(center)) / 2)
