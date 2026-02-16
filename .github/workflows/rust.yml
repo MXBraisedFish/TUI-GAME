@@ -59,13 +59,13 @@ jobs:
             [ -f "Windows/tg.bat" ] && cp Windows/tg.bat dist/
           elif [ "${{ matrix.os }}" = "macos-latest" ]; then
             # macOS 专用脚本 (目录名为 macOS)
-            [ -f "MacOS/version-macos.sh" ] && cp MacOS/version-macos.sh dist/
-            [ -f "MacOS/delete-tui-game-macos.sh" ] && cp MacOS/delete-tui-game-macos.sh dist/
+            [ -f "MacOS/version-macos.sh" ] && cp MacOS/version.sh dist/
+            [ -f "MacOS/delete-tui-game-macos.sh" ] && cp MacOS/delete-tui-game.sh dist/
             [ -f "MacOS/tg.sh" ] && cp MacOS/tg.sh dist/
           else
             # Linux 专用脚本 (目录名为 linux)
-            [ -f "Linux/version-linux.sh" ] && cp Linux/version-linux.sh dist/
-            [ -f "Linux/delete-tui-game-linux.sh" ] && cp Linux/delete-tui-game-linux.sh dist/
+            [ -f "Linux/version-linux.sh" ] && cp Linux/version.sh dist/
+            [ -f "Linux/delete-tui-game-linux.sh" ] && cp Linux/delete-tui-game.sh dist/
             [ -f "Linux/tg.sh" ] && cp Linux/tg.sh dist/
           fi
 
