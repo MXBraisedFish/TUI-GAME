@@ -421,10 +421,20 @@ fn run_uninstall_script() -> Result<bool> {
     let bat = runtime.join("delete-tui-game.bat");
     let sh = runtime.join("delete-tui-game.sh");
 
+    #[cfg(target_os = "windows")]
     let script = if bat.exists() {
         bat
     } else if sh.exists() {
         sh
+    } else {
+        return Ok(false);
+    };
+
+    #[cfg(not(target_os = "windows"))]
+    let script = if sh.exists() {
+        sh
+    } else if bat.exists() {
+        bat
     } else {
         return Ok(false);
     };

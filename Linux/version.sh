@@ -1,8 +1,25 @@
 #!/bin/bash
+set -u
 echo "[INFO] Starting update process..."
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR" || { echo "[ERROR] Failed to change to script directory."; exit 1; }
+
+if ! command -v curl >/dev/null 2>&1; then
+    echo "[ERROR] curl is required but not found."
+    read -n1 -r -p "Press any key to exit..."
+    exit 1
+fi
+if ! command -v python3 >/dev/null 2>&1; then
+    echo "[ERROR] python3 is required but not found."
+    read -n1 -r -p "Press any key to exit..."
+    exit 1
+fi
+if ! command -v tar >/dev/null 2>&1; then
+    echo "[ERROR] tar is required but not found."
+    read -n1 -r -p "Press any key to exit..."
+    exit 1
+fi
 
 # Step 1: Fetch latest release info
 echo "[INFO] Fetching latest release information from GitHub..."
@@ -64,8 +81,8 @@ fi
 rm -f "$TEMP_TGZ"
 echo "[INFO] Temporary files cleaned up."
 
-# Step 6: Ensure extracted files have execute permissions (tui-game)
-chmod +x "$SCRIPT_DIR/tui-game" 2>/dev/null || true
+# Step 6: Ensure extracted files have execute permissions (binary + helper scripts)
+chmod +x "$SCRIPT_DIR/tui-game" "$SCRIPT_DIR"/*.sh 2>/dev/null || true
 
 echo "[SUCCESS] Update completed successfully!"
 echo "[INFO] Press any key to exit."

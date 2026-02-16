@@ -1,8 +1,25 @@
 #!/bin/bash
+set -u
 echo "[INFO] Starting TUI-GAME installation for macOS..."
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR" || exit 1
+
+if ! command -v curl >/dev/null 2>&1; then
+    echo "[ERROR] curl is required but not found."
+    read -n1 -r -p "Press any key to exit..."
+    exit 1
+fi
+if ! command -v python3 >/dev/null 2>&1; then
+    echo "[ERROR] python3 is required but not found."
+    read -n1 -r -p "Press any key to exit..."
+    exit 1
+fi
+if ! command -v unzip >/dev/null 2>&1; then
+    echo "[ERROR] unzip is required but not found."
+    read -n1 -r -p "Press any key to exit..."
+    exit 1
+fi
 
 # Step 1: Fetch latest release info
 echo "[INFO] Fetching latest release information from GitHub..."
@@ -16,20 +33,23 @@ if ! curl -s -L -o "$TEMP_JSON" "$API_URL"; then
     exit 1
 fi
 
-# Step 2: Extract macOS asset download URL using awk
+# Step 2: Extract macOS asset download URL
 echo "[INFO] Extracting download URL for macOS package..."
 ASSET_NAME="tui-game-macos.zip"
-DOWNLOAD_URL=$(awk -v name="$ASSET_NAME" '
-    $0 ~ "\"name\": \"" name "\"" {found=1}
-    found && $0 ~ "\"browser_download_url\"" {
-        gsub(/[",]/, "")
-        split($0, a, ": ")
-        url=a[2]
-        gsub(/^[ \t]+|[ \t]+$/, "", url)
-        print url
-        exit
-    }
-' "$TEMP_JSON")
+DOWNLOAD_URL=$(python3 -c "
+import json
+url = ''
+try:
+    with open('$TEMP_JSON', 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    for asset in data.get('assets', []):
+        if asset.get('name') == '$ASSET_NAME':
+            url = asset.get('browser_download_url', '')
+            break
+except Exception:
+    pass
+print(url)
+")
 
 if [ -z "$DOWNLOAD_URL" ]; then
     echo "[ERROR] Could not find macOS asset '$ASSET_NAME' in the latest release."
@@ -110,9 +130,12 @@ fi
 # Step 7: Final messages
 echo
 echo "[SUCCESS] TUI-GAME has been installed successfully!"
-echo "[INFO] Enjoy the game!"
+echo =================================
+echo "[INFO] Enjoy the game! :)"
+echo
 echo "[INFO] If you like it, please give a star on GitHub: https://github.com/MXBraisedFish/TUI-GAME"
 echo "[INFO] Author: MXBraisedFish (MXFish)"
+echo =================================
 
 if [ "$REG_OPTION" = "yes" ]; then
     echo "[INFO] You can start the game by typing 'tg' in any terminal (ensure the symlink directory is in PATH)."
@@ -128,4 +151,4 @@ read -n1 -r
 # Delete this script itself
 rm -f "$0" && echo "[INFO] Installer removed." || echo "[ERROR] Failed to delete installer. Please remove it manually."
 
-exit 0
+exit 0 

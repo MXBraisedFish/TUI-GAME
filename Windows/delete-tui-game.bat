@@ -1,83 +1,99 @@
 @echo off
 setlocal enabledelayedexpansion
 
-echo [WARNING] This script will permanently delete game files and may remove saved data.
-
-REM ----- Step 1: Confirmation -----
-set /p CONFIRM="Are you sure you want to delete all game files? (Y/N): "
+echo [WARNING] This script will permanently delete TUI-GAME runtime files.
+echo [WARNING] Save data under "tui-game-data" will also be removed.
+echo.
+set /p CONFIRM="Continue uninstall? (Y/N): "
 if /i not "!CONFIRM!"=="Y" (
-    echo [INFO] Deletion cancelled by user.
+    echo [INFO] Uninstall cancelled.
     pause
     exit /b 0
 )
 
-REM ----- Step 2: Delete specific files and folders -----
-echo [INFO] Deleting game files from current directory...
+set "SCRIPT_DIR=%~dp0"
+if "!SCRIPT_DIR:~-1!"=="\" set "SCRIPT_DIR=!SCRIPT_DIR:~0,-1!"
 
-set "CUR_DIR=%~dp0"
+echo [INFO] Working directory: !SCRIPT_DIR!
 
-REM Delete tui-game.exe
-if exist "!CUR_DIR!tui-game.exe" (
-    del /f /q "!CUR_DIR!tui-game.exe" 2>nul
-    if !errorlevel! equ 0 ( echo [OK] Deleted tui-game.exe ) else ( echo [ERROR] Failed to delete tui-game.exe )
-) else ( echo [INFO] tui-game.exe not found, skipping. )
+set "HAS_ERROR=0"
+set "EXE=!SCRIPT_DIR!\tui-game.exe"
+set "DATA_DIR=!SCRIPT_DIR!\tui-game-data"
+set "VERSION_BAT=!SCRIPT_DIR!\version.bat"
+set "TG_BAT=!SCRIPT_DIR!\tg.bat"
+set "ASSETS_DIR=!SCRIPT_DIR!\assets"
+set "SCRIPTS_DIR=!SCRIPT_DIR!\scripts"
 
-REM Delete assets folder
-if exist "!CUR_DIR!assets\" (
-    rmdir /s /q "!CUR_DIR!assets" 2>nul
-    if !errorlevel! equ 0 ( echo [OK] Deleted assets folder ) else ( echo [ERROR] Failed to delete assets folder )
-) else ( echo [INFO] assets folder not found, skipping. )
+call :delete_file "!EXE!"
+call :delete_dir "!DATA_DIR!"
+call :delete_file "!VERSION_BAT!"
+call :delete_file "!TG_BAT!"
+call :delete_dir "!ASSETS_DIR!"
+call :delete_dir "!SCRIPTS_DIR!"
 
-REM Delete scripts folder
-if exist "!CUR_DIR!scripts\" (
-    rmdir /s /q "!CUR_DIR!scripts" 2>nul
-    if !errorlevel! equ 0 ( echo [OK] Deleted scripts folder ) else ( echo [ERROR] Failed to delete scripts folder )
-) else ( echo [INFO] scripts folder not found, skipping. )
-
-REM Delete version.bat
-if exist "!CUR_DIR!version.bat" (
-    del /f /q "!CUR_DIR!version.bat" 2>nul
-    if !errorlevel! equ 0 ( echo [OK] Deleted version.bat ) else ( echo [ERROR] Failed to delete version.bat )
-) else ( echo [INFO] version.bat not found, skipping. )
-
-REM Delete tg.bat (current script will be deleted later, so we skip deleting itself now)
-if exist "!CUR_DIR!tg.bat" (
-    del /f /q "!CUR_DIR!tg.bat" 2>nul
-    if !errorlevel! equ 0 ( echo [OK] Deleted tg.bat ) else ( echo [ERROR] Failed to delete tg.bat )
-) else ( echo [INFO] tg.bat not found, skipping. )
-
-REM ----- Step 3: Registry cleanup (optional) -----
 echo.
-set /p REG_CONFIRM="Do you want to delete registry entries for this folder? (Y/N): "
-if /i "!REG_CONFIRM!"=="Y" (
-    echo [INFO] Removing registry entries...
-    REM Here we assume registry files are .reg files in current directory.
-    for %%f in ("!CUR_DIR!*.reg") do (
-        del /f /q "%%f" 2>nul
-        if !errorlevel! equ 0 ( echo [OK] Deleted %%~nxf ) else ( echo [ERROR] Failed to delete %%~nxf )
+set /p CLEAN_PATH="Remove this install directory from User PATH? (Y/N): "
+if /i "!CLEAN_PATH!"=="Y" (
+    echo [INFO] Cleaning User PATH...
+    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+        "$target = [System.IO.Path]::GetFullPath('%SCRIPT_DIR%').TrimEnd('\');" ^
+        "$userPath = [Environment]::GetEnvironmentVariable('Path','User');" ^
+        "if ([string]::IsNullOrWhiteSpace($userPath)) { exit 0 }" ^
+        "$parts = @();" ^
+        "foreach ($p in ($userPath -split ';')) {" ^
+        "  if ([string]::IsNullOrWhiteSpace($p)) { continue }" ^
+        "  try { $full = [System.IO.Path]::GetFullPath($p).TrimEnd('\') } catch { $full = $p.TrimEnd('\') }" ^
+        "  if ($full -ne $target) { $parts += $p }" ^
+        "}" ^
+        "$newPath = ($parts -join ';').Trim(';');" ^
+        "[Environment]::SetEnvironmentVariable('Path', $newPath, 'User')"
+    if errorlevel 1 (
+        echo [WARNING] Failed to update User PATH automatically.
+    ) else (
+        echo [OK] User PATH updated.
     )
-    echo [INFO] Registry cleanup finished.
-    set "REG_REMOVED=1"
 ) else (
-    set "REG_REMOVED=0"
+    echo [INFO] Skipped PATH cleanup.
 )
 
-REM ----- Step 4: Final messages -----
 echo.
-echo [INFO] Goodbye!
-if !REG_REMOVED! equ 0 (
-    echo [REMINDER] Please manually clean up any registry entries for this folder if needed.
+if "!HAS_ERROR!"=="1" (
+    echo [WARNING] Uninstall completed with errors. Some files may remain.
+) else (
+    echo [SUCCESS] Uninstall completed.
 )
 
-REM ----- Step 5: Wait for key press and self-delete -----
-echo [INFO] Press any key to close this window and delete this script.
+echo [INFO] Press any key to exit and remove this script.
 pause >nul
+del /f /q "%~f0" >nul 2>&1
+exit /b 0
 
-REM Delete this batch file itself (delete-tui-game.bat)
-del /f /q "%~f0" 2>nul
-if %errorlevel% neq 0 (
-    echo [ERROR] Failed to delete this script. You may need to remove it manually.
-    pause
+:delete_file
+set "TARGET=%~1"
+if exist "!TARGET!" (
+    del /f /q "!TARGET!" >nul 2>&1
+    if errorlevel 1 (
+        echo [ERROR] Failed to delete file: !TARGET!
+        set "HAS_ERROR=1"
+    ) else (
+        echo [OK] Deleted file: !TARGET!
+    )
+) else (
+    echo [INFO] File not found, skip: !TARGET!
 )
+exit /b 0
 
+:delete_dir
+set "TARGET=%~1"
+if exist "!TARGET!" (
+    rmdir /s /q "!TARGET!" >nul 2>&1
+    if errorlevel 1 (
+        echo [ERROR] Failed to delete folder: !TARGET!
+        set "HAS_ERROR=1"
+    ) else (
+        echo [OK] Deleted folder: !TARGET!
+    )
+) else (
+    echo [INFO] Folder not found, skip: !TARGET!
+)
 exit /b 0

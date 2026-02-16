@@ -1,8 +1,25 @@
 #!/bin/bash
+set -u
 echo "[INFO] Starting update process..."
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR" || { echo "[ERROR] Failed to change to script directory."; exit 1; }
+
+if ! command -v curl >/dev/null 2>&1; then
+    echo "[ERROR] curl is required but not found."
+    read -n1 -r -p "Press any key to exit..."
+    exit 1
+fi
+if ! command -v python3 >/dev/null 2>&1; then
+    echo "[ERROR] python3 is required but not found."
+    read -n1 -r -p "Press any key to exit..."
+    exit 1
+fi
+if ! command -v unzip >/dev/null 2>&1; then
+    echo "[ERROR] unzip is required but not found."
+    read -n1 -r -p "Press any key to exit..."
+    exit 1
+fi
 
 # Step 1: Fetch latest release info
 echo "[INFO] Fetching latest release information from GitHub..."
@@ -16,20 +33,23 @@ if ! curl -s -L -o "$TEMP_JSON" "$API_URL"; then
     exit 1
 fi
 
-# Step 2: Extract macOS asset download URL using awk
+# Step 2: Extract macOS asset download URL
 echo "[INFO] Extracting download URL for macOS package..."
 ASSET_NAME="tui-game-macos.zip"
-DOWNLOAD_URL=$(awk -v name="$ASSET_NAME" '
-    $0 ~ "\"name\": \"" name "\"" {found=1}
-    found && $0 ~ "\"browser_download_url\"" {
-        gsub(/[",]/, "")
-        split($0, a, ": ")
-        url=a[2]
-        gsub(/^[ \t]+|[ \t]+$/, "", url)
-        print url
-        exit
-    }
-' "$TEMP_JSON")
+DOWNLOAD_URL=$(python3 -c "
+import json
+url = ''
+try:
+    with open('$TEMP_JSON', 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    for asset in data.get('assets', []):
+        if asset.get('name') == '$ASSET_NAME':
+            url = asset.get('browser_download_url', '')
+            break
+except Exception:
+    pass
+print(url)
+")
 
 if [ -z "$DOWNLOAD_URL" ]; then
     echo "[ERROR] Could not find macOS asset '$ASSET_NAME' in the latest release."

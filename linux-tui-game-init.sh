@@ -1,8 +1,25 @@
 #!/bin/bash
+set -u
 echo "[INFO] Starting TUI-GAME installation for Linux..."
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR" || exit 1
+
+if ! command -v curl >/dev/null 2>&1; then
+    echo "[ERROR] curl is required but not found."
+    read -n1 -r -p "Press any key to exit..."
+    exit 1
+fi
+if ! command -v python3 >/dev/null 2>&1; then
+    echo "[ERROR] python3 is required but not found."
+    read -n1 -r -p "Press any key to exit..."
+    exit 1
+fi
+if ! command -v tar >/dev/null 2>&1; then
+    echo "[ERROR] tar is required but not found."
+    read -n1 -r -p "Press any key to exit..."
+    exit 1
+fi
 
 # Step 1: Fetch latest release info
 echo "[INFO] Fetching latest release information from GitHub..."

@@ -46,6 +46,7 @@ impl Updater {
     pub fn spawn(current_version: &str) -> Self {
         let (tx, rx) = mpsc::channel();
         let current = normalize_tag(current_version);
+        let _ = write_current_version_cache(&current);
 
         thread::spawn(move || {
             if let Ok(result) = fetch_latest_release() {
@@ -70,8 +71,6 @@ impl Updater {
 }
 
 fn fetch_latest_release() -> Result<Option<UpdateNotification>> {
-    ensure_cache_initialized()?;
-
     let client = Client::builder().timeout(Duration::from_secs(8)).build()?;
     let mut req = client
         .get(GITHUB_API_LATEST)
@@ -107,20 +106,17 @@ fn fetch_latest_release() -> Result<Option<UpdateNotification>> {
     }))
 }
 
-fn ensure_cache_initialized() -> Result<()> {
+fn write_current_version_cache(current_version: &str) -> Result<()> {
     let path = path_utils::updater_cache_file()?;
-    if path.exists() {
-        return Ok(());
-    }
     path_utils::ensure_parent_dir(&path)?;
-    fs::write(path, format!("\"{}\"\n", CURRENT_VERSION_TAG))?;
+    fs::write(path, format!("\"{}\"\n", normalize_tag(current_version)))?;
     Ok(())
 }
 
 fn normalize_tag(raw: &str) -> String {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
-        return CURRENT_VERSION_TAG.to_string();
+        return format!("v{}", CURRENT_VERSION_TAG.trim_start_matches(['v', 'V']));
     }
     if trimmed.starts_with('v') || trimmed.starts_with('V') {
         format!("v{}", trimmed[1..].trim())
@@ -164,13 +160,26 @@ pub fn run_external_update_script(notification: &UpdateNotification) -> Result<b
 }
 
 fn select_version_script(bat: &Path, sh: &Path) -> Option<PathBuf> {
-    if bat.exists() {
-        return Some(bat.to_path_buf());
+    #[cfg(target_os = "windows")]
+    {
+        if bat.exists() {
+            return Some(bat.to_path_buf());
+        }
+        if sh.exists() {
+            return Some(sh.to_path_buf());
+        }
+        return None;
     }
-    if sh.exists() {
-        return Some(sh.to_path_buf());
+    #[cfg(not(target_os = "windows"))]
+    {
+        if sh.exists() {
+            return Some(sh.to_path_buf());
+        }
+        if bat.exists() {
+            return Some(bat.to_path_buf());
+        }
+        None
     }
-    None
 }
 
 #[cfg(test)]
@@ -198,7 +207,10 @@ mod tests {
         assert_eq!(select_version_script(&bat, &sh), Some(sh.clone()));
 
         let _ = std::fs::write(&bat, "echo bat");
+        #[cfg(target_os = "windows")]
         assert_eq!(select_version_script(&bat, &sh), Some(bat.clone()));
+        #[cfg(not(target_os = "windows"))]
+        assert_eq!(select_version_script(&bat, &sh), Some(sh.clone()));
 
         let _ = std::fs::remove_file(&bat);
         let _ = std::fs::remove_file(&sh);

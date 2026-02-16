@@ -1,90 +1,99 @@
 #!/bin/bash
-echo "[WARNING] This script will permanently delete game files and may remove saved data."
+set -u
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR" || exit 1
-
-# Step 1: Confirmation
-read -p "Are you sure you want to delete all game files? (Y/N): " CONFIRM
+echo "[WARNING] This script will permanently delete TUI-GAME runtime files."
+echo "[WARNING] Save data in tui-game-data will also be removed."
+echo
+read -r -p "Continue uninstall? (Y/N): " CONFIRM
 if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
-    echo "[INFO] Deletion cancelled by user."
+    echo "[INFO] Uninstall cancelled."
     read -n1 -r -p "Press any key to exit..."
     exit 0
 fi
 
-# Step 2: Delete specific files and folders
-echo "[INFO] Deleting game files from current directory..."
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+    DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+    TARGET="$(readlink "$SOURCE")"
+    if [[ "$TARGET" != /* ]]; then
+        SOURCE="$DIR/$TARGET"
+    else
+        SOURCE="$TARGET"
+    fi
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+cd "$SCRIPT_DIR" || exit 1
 
-# tui-game
-if [ -f "tui-game" ]; then
-    rm -f "tui-game" && echo "[OK] Deleted tui-game" || echo "[ERROR] Failed to delete tui-game"
-else
-    echo "[INFO] tui-game not found, skipping."
-fi
+HAS_ERROR=0
 
-# assets folder
-if [ -d "assets" ]; then
-    rm -rf "assets" && echo "[OK] Deleted assets folder" || echo "[ERROR] Failed to delete assets folder"
-else
-    echo "[INFO] assets folder not found, skipping."
-fi
+delete_file() {
+    local file="$1"
+    if [ -f "$file" ]; then
+        if rm -f "$file"; then
+            echo "[OK] Deleted file: $file"
+        else
+            echo "[ERROR] Failed to delete file: $file"
+            HAS_ERROR=1
+        fi
+    else
+        echo "[INFO] File not found, skip: $file"
+    fi
+}
 
-# scripts folder
-if [ -d "scripts" ]; then
-    rm -rf "scripts" && echo "[OK] Deleted scripts folder" || echo "[ERROR] Failed to delete scripts folder"
-else
-    echo "[INFO] scripts folder not found, skipping."
-fi
+delete_dir() {
+    local dir="$1"
+    if [ -d "$dir" ]; then
+        if rm -rf "$dir"; then
+            echo "[OK] Deleted folder: $dir"
+        else
+            echo "[ERROR] Failed to delete folder: $dir"
+            HAS_ERROR=1
+        fi
+    else
+        echo "[INFO] Folder not found, skip: $dir"
+    fi
+}
 
-# version.sh
-if [ -f "version.sh" ]; then
-    rm -f "version.sh" && echo "[OK] Deleted version.sh" || echo "[ERROR] Failed to delete version.sh"
-else
-    echo "[INFO] version.sh not found, skipping."
-fi
+echo "[INFO] Working directory: $SCRIPT_DIR"
+delete_file "$SCRIPT_DIR/tui-game"
+delete_dir "$SCRIPT_DIR/tui-game-data"
+delete_file "$SCRIPT_DIR/version.sh"
+delete_file "$SCRIPT_DIR/tg.sh"
+delete_dir "$SCRIPT_DIR/assets"
+delete_dir "$SCRIPT_DIR/scripts"
 
-# tg.sh (current script will be deleted later)
-if [ -f "tg.sh" ]; then
-    rm -f "tg.sh" && echo "[OK] Deleted tg.sh" || echo "[ERROR] Failed to delete tg.sh"
-else
-    echo "[INFO] tg.sh not found, skipping."
-fi
-
-# Step 3: System integration cleanup (optional)
 echo
-read -p "Do you want to remove any system integration (e.g., PATH symlinks, desktop entries) for this game? (Y/N): " REG_CONFIRM
-if [[ "$REG_CONFIRM" =~ ^[Yy]$ ]]; then
-    echo "[INFO] Removing system integration..."
-    # Check for common symlink locations
-    SYMLINK_PATHS=("/usr/local/bin/tg" "$HOME/.local/bin/tg" "/usr/bin/tg")
-    for link in "${SYMLINK_PATHS[@]}"; do
-        if [ -L "$link" ] && [ "$(readlink -f "$link")" = "$SCRIPT_DIR/tg.sh" ]; then
-            rm -f "$link" 2>/dev/null && echo "[OK] Removed $link" || echo "[ERROR] Failed to remove $link"
+read -r -p "Remove system integration (tg symlink/desktop entry)? (Y/N): " CLEAN_SYS
+if [[ "$CLEAN_SYS" =~ ^[Yy]$ ]]; then
+    echo "[INFO] Cleaning system integration..."
+    for link in "/usr/local/bin/tg" "$HOME/.local/bin/tg" "/usr/bin/tg"; do
+        if [ -L "$link" ]; then
+            target="$(readlink -f "$link" 2>/dev/null || true)"
+            if [ "$target" = "$SCRIPT_DIR/tg.sh" ]; then
+                if rm -f "$link"; then
+                    echo "[OK] Removed symlink: $link"
+                else
+                    echo "[WARNING] Failed to remove symlink: $link"
+                fi
+            fi
         fi
     done
-    # Check for .desktop files
-    DESKTOP_FILE="$HOME/.local/share/applications/tui-game.desktop"
-    if [ -f "$DESKTOP_FILE" ]; then
-        rm -f "$DESKTOP_FILE" && echo "[OK] Removed desktop entry" || echo "[ERROR] Failed to remove desktop entry"
+    desktop="$HOME/.local/share/applications/tui-game.desktop"
+    if [ -f "$desktop" ]; then
+        rm -f "$desktop" && echo "[OK] Removed desktop entry." || echo "[WARNING] Failed to remove desktop entry."
     fi
-    echo "[INFO] System integration cleanup finished."
-    REG_REMOVED=1
 else
-    REG_REMOVED=0
+    echo "[INFO] Skipped system integration cleanup."
 fi
 
-# Step 4: Final messages
 echo
-echo "[INFO] Goodbye!"
-if [ $REG_REMOVED -eq 0 ]; then
-    echo "[REMINDER] Please manually remove any system integration (symlinks, desktop entries) if needed."
+if [ "$HAS_ERROR" -eq 1 ]; then
+    echo "[WARNING] Uninstall completed with errors. Some files may remain."
+else
+    echo "[SUCCESS] Uninstall completed."
 fi
 
-# Step 5: Wait for key press and self-delete
-echo "[INFO] Press any key to close this window and delete this script."
+echo "[INFO] Press any key to exit and remove this script."
 read -n1 -r
-
-# Delete this script itself
-rm -f "$0" && echo "[INFO] Self-deletion successful." || echo "[ERROR] Failed to delete this script. Please remove it manually."
-
+rm -f "$0"
 exit 0

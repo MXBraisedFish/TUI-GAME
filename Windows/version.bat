@@ -3,6 +3,20 @@ setlocal enabledelayedexpansion
 
 echo [INFO] Starting update process...
 
+where curl >nul 2>nul
+if %errorlevel% neq 0 (
+    echo [ERROR] curl is required but was not found in PATH.
+    pause
+    exit /b 1
+)
+
+where powershell >nul 2>nul
+if %errorlevel% neq 0 (
+    echo [ERROR] PowerShell is required but was not found in PATH.
+    pause
+    exit /b 1
+)
+
 REM ----- Step 1: Fetch latest release info -----
 echo [INFO] Fetching latest release information from GitHub...
 set "API_URL=https://api.github.com/repos/MXBraisedFish/TUI-GAME/releases/latest"
