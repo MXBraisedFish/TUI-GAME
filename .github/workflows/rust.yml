@@ -13,15 +13,12 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            # Rust 在 Linux 默认生成的文件名（与 Cargo.toml 里的 name 一致）
             artifact_name: tui-game
             asset_name: tui-game-linux.tar.gz
           - os: windows-latest
-            # Windows 会自带 .exe 后缀
             artifact_name: tui-game.exe
             asset_name: tui-game-windows.zip
           - os: macos-latest
-            # MacOS 默认也没有后缀
             artifact_name: tui-game
             asset_name: tui-game-macos.zip
 
@@ -41,22 +38,47 @@ jobs:
           # 1. 创建打包临时目录
           mkdir -p dist
 
-          # 2. 拷贝二进制文件
+          # 2. 拷贝二进制文件到 dist 根目录
           cp target/release/${{ matrix.artifact_name }} dist/
 
-          # 3. 拷贝资源和脚本目录 (如果存在)
-          if [ -d "assets" ]; then cp -r assets dist/; fi
-          if [ -d "scripts" ]; then cp -r scripts dist/; fi
+          # 3. 拷贝 assets 目录（如果存在）
+          if [ -d "assets" ]; then
+            cp -r assets dist/
+          fi
 
-          # 4. 分平台采用正确的压缩方式
+          # 4. 拷贝 scripts 目录（如果存在）
+          if [ -d "scripts" ]; then
+            cp -r scripts dist/
+          fi
+
+          # 5. 根据平台从根目录下对应的平台目录拷贝脚本到 dist 根目录
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            # Windows 专用脚本 (目录名为 Windows)
+            [ -f "Windows/version.bat" ] && cp Windows/version.bat dist/
+            [ -f "Windows/delete-tui-game.bat" ] && cp Windows/delete-tui-game.bat dist/
+            [ -f "Windows/tg.bat" ] && cp Windows/tg.bat dist/
+          elif [ "${{ matrix.os }}" = "macos-latest" ]; then
+            # macOS 专用脚本 (目录名为 macOS)
+            [ -f "MacOS/version-macos.sh" ] && cp MacOS/version-macos.sh dist/
+            [ -f "MacOS/delete-tui-game-macos.sh" ] && cp MacOS/delete-tui-game-macos.sh dist/
+            [ -f "MacOS/tg.sh" ] && cp MacOS/tg.sh dist/
+          else
+            # Linux 专用脚本 (目录名为 linux)
+            [ -f "Linux/version-linux.sh" ] && cp Linux/version-linux.sh dist/
+            [ -f "Linux/delete-tui-game-linux.sh" ] && cp Linux/delete-tui-game-linux.sh dist/
+            [ -f "Linux/tg.sh" ] && cp Linux/tg.sh dist/
+          fi
+
+          # 6. 进入 dist 目录并打包
           cd dist
           if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            # Windows 使用 7z 打包为 zip
             7z a ../${{ matrix.asset_name }} *
           elif [ "${{ matrix.os }}" = "macos-latest" ]; then
-            # macOS 使用 zip 命令，-r 参数确保包含文件夹内容
+            # macOS 使用 zip 命令打包
             zip -r ../${{ matrix.asset_name }} *
           else
-            # Linux 继续使用 tar，对应 .tar.gz 后缀
+            # Linux 使用 tar 打包为 tar.gz
             tar -czf ../${{ matrix.asset_name }} *
           fi
 
