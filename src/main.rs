@@ -99,6 +99,7 @@ fn run() -> Result<()> {
     let runtime_version = normalized_tag(CURRENT_VERSION_TAG);
     let mut state = AppState::MainMenu { menu: Menu::new() };
     let mut pending_new_game_start: Option<PendingNewGameStart> = None;
+    let mut should_run_uninstall = false;
 
     let frame_budget = Duration::from_millis(16);
 
@@ -127,6 +128,7 @@ fn run() -> Result<()> {
                 handle_key_event(
                     &mut state,
                     &mut pending_new_game_start,
+                    &mut should_run_uninstall,
                     key,
                     update_notification.as_ref(),
                 )?;
@@ -190,6 +192,11 @@ fn run() -> Result<()> {
         }
     }
 
+    drop(session);
+    if should_run_uninstall {
+        let _ = run_uninstall_script();
+    }
+
     Ok(())
 }
 
@@ -206,6 +213,7 @@ fn minimum_size_for_state(state: &AppState) -> (u16, u16) {
 fn handle_key_event(
     state: &mut AppState,
     pending_new_game_start: &mut Option<PendingNewGameStart>,
+    should_run_uninstall: &mut bool,
     key: KeyEvent,
     update_notification: Option<&UpdateNotification>,
 ) -> Result<()> {
@@ -320,7 +328,8 @@ fn handle_key_event(
                     *state = AppState::MainMenu { menu: Menu::new() };
                 }
                 settings::SettingsAction::RunUninstall => {
-                    if run_uninstall_script().unwrap_or(false) {
+                    if has_uninstall_script().unwrap_or(false) {
+                        *should_run_uninstall = true;
                         *state = AppState::Exiting;
                     }
                 }
@@ -417,25 +426,7 @@ fn apply_menu_action(action: MenuAction, continue_game_id: Option<&str>) -> AppS
 }
 
 fn run_uninstall_script() -> Result<bool> {
-    let runtime = path_utils::runtime_dir()?;
-    let bat = runtime.join("delete-tui-game.bat");
-    let sh = runtime.join("delete-tui-game.sh");
-
-    #[cfg(target_os = "windows")]
-    let script = if bat.exists() {
-        bat
-    } else if sh.exists() {
-        sh
-    } else {
-        return Ok(false);
-    };
-
-    #[cfg(not(target_os = "windows"))]
-    let script = if sh.exists() {
-        sh
-    } else if bat.exists() {
-        bat
-    } else {
+    let Some(script) = resolve_uninstall_script()? else {
         return Ok(false);
     };
 
@@ -454,6 +445,36 @@ fn run_uninstall_script() -> Result<bool> {
     Ok(true)
 }
 
+fn has_uninstall_script() -> Result<bool> {
+    Ok(resolve_uninstall_script()?.is_some())
+}
+
+fn resolve_uninstall_script() -> Result<Option<std::path::PathBuf>> {
+    let runtime = path_utils::runtime_dir()?;
+    let bat = runtime.join("delete-tui-game.bat");
+    let sh = runtime.join("delete-tui-game.sh");
+
+    #[cfg(target_os = "windows")]
+    let script = if bat.exists() {
+        Some(bat)
+    } else if sh.exists() {
+        Some(sh)
+    } else {
+        None
+    };
+
+    #[cfg(not(target_os = "windows"))]
+    let script = if sh.exists() {
+        Some(sh)
+    } else if bat.exists() {
+        Some(bat)
+    } else {
+        None
+    };
+
+    Ok(script)
+}
+
 fn sync_continue_item(menu: &mut Menu) {
     let game_id = latest_saved_game_id();
     let game_name = game_id
@@ -470,3 +491,4 @@ fn normalized_tag(raw: &str) -> String {
         format!("v{}", trimmed)
     }
 }
+
