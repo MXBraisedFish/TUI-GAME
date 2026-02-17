@@ -102,7 +102,7 @@ cargo run
 cargo build --release
 ```
 
-### Linux
+### Linux (still needs bug testing)  
 
 #### - Terminal Script Installation (Recommended)
 
@@ -154,7 +154,7 @@ cargo run
 cargo build --release
 ```
 
-### MacOS
+### MacOS (still needs bug testing)  
 
 #### - Terminal Script Installation (Recommended)
 

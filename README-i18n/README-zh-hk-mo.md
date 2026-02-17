@@ -102,7 +102,7 @@ cargo run
 cargo build --release
 ```
 
-### Linux
+### Linux (仍需測試 bug)
 
 #### - 終端腳本安裝(推薦)
 
@@ -154,7 +154,7 @@ cargo run
 cargo build --release
 ```
 
-### MacOS
+### MacOS (仍需測試 bug)
 
 #### - 終端腳本安裝(推薦)
 

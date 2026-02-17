@@ -102,7 +102,7 @@ cargo run
 cargo build --release
 ```
 
-### Linux
+### Linux (仍需测试 bug)
 
 #### - 终端脚本安装(推荐)
 
@@ -154,7 +154,7 @@ cargo run
 cargo build --release
 ```
 
-### MacOS
+### MacOS (仍需测试 bug)
 
 #### - 终端脚本安装(推荐)
 

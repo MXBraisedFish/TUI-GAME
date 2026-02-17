@@ -102,7 +102,7 @@ cargo run
 cargo build --release
 ```
 
-### Linux
+### Linux（バグテスト未完了）  
 
 #### - ターミナルスクリプトによるインストール（推奨）
 
@@ -154,7 +154,7 @@ cargo run
 cargo build --release
 ```
 
-### MacOS
+### MacOS（バグテスト未完了）  
 
 #### - ターミナルスクリプトによるインストール（推奨）
 
