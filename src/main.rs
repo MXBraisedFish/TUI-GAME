@@ -437,11 +437,14 @@ fn run_uninstall_script() -> Result<bool> {
         .to_ascii_lowercase();
 
     if ext == "bat" {
-        let _child = Command::new("cmd").arg("/C").arg(script.as_os_str()).spawn()?;
+        let _status = Command::new("cmd")
+            .arg("/C")
+            .arg(script.as_os_str())
+            .status()?;
         return Ok(true);
     }
 
-    let _child = Command::new("sh").arg(script.as_os_str()).spawn()?;
+    let _status = Command::new("sh").arg(script.as_os_str()).status()?;
     Ok(true)
 }
 
@@ -491,4 +494,5 @@ fn normalized_tag(raw: &str) -> String {
         format!("v{}", trimmed)
     }
 }
+
 

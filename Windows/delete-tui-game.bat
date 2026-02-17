@@ -13,6 +13,7 @@ if /i not "!CONTINUE_UNINSTALL!"=="Y" (
 
 set "SCRIPT_DIR=%~dp0"
 if "!SCRIPT_DIR:~-1!"=="\" set "SCRIPT_DIR=!SCRIPT_DIR:~0,-1!"
+set "EXE_PATH=!SCRIPT_DIR!\tui-game.exe"
 set "ENV_CLEANED=0"
 
 set /p CLEAN_ENV="Use system cleanup for environment variable? (Y/N): "
@@ -51,7 +52,7 @@ if /i "!CLEAN_ENV!"=="Y" (
 
 call :delete_file "!SCRIPT_DIR!\tg.bat"
 call :delete_file "!SCRIPT_DIR!\version.bat"
-call :delete_file "!SCRIPT_DIR!\tui-game.exe"
+call :delete_file "!EXE_PATH!"
 call :delete_dir "!SCRIPT_DIR!\assets"
 call :delete_dir "!SCRIPT_DIR!\scripts"
 call :delete_dir "!SCRIPT_DIR!\tui-game-data"
@@ -84,5 +85,5 @@ exit /b 0
 
 :SELF_DELETE
 set "SELF_BAT=%~f0"
-start "" /b cmd /c "ping 127.0.0.1 -n 2 >nul & del /f /q ""%SELF_BAT%"" >nul 2>&1"
+start "" /b cmd /c "ping 127.0.0.1 -n 3 >nul & del /f /q ""%EXE_PATH%"" >nul 2>&1 & ping 127.0.0.1 -n 3 >nul & del /f /q ""%EXE_PATH%"" >nul 2>&1 & del /f /q ""%SELF_BAT%"" >nul 2>&1"
 exit /b 0

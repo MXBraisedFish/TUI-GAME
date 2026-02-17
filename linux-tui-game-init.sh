@@ -86,7 +86,7 @@ echo "[INFO] Temporary files cleaned up."
 
 # Step 6: Ask about adding to PATH (via symlink)
 echo
-read -p "Do you want to create a symbolic link to 'tg.sh' in a directory in your PATH (e.g., ~/.local/bin)? (Y/N): " ADD_PATH
+read -p "Do you want to add the installation folder to your PATH environment variable? (Y/N): " ADD_PATH
 if [[ "$ADD_PATH" =~ ^[Yy]$ ]]; then
     echo "[INFO] Setting up command 'tg'..."
     TARGET_DIR="$HOME/.local/bin"
@@ -137,3 +137,4 @@ read -n1 -r
 rm -f "$0" && echo "[INFO] Installer removed." || echo "[ERROR] Failed to delete installer. Please remove it manually."
 
 exit 0
+
