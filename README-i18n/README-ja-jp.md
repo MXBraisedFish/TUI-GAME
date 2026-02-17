@@ -7,7 +7,7 @@
 # 本プロジェクトについて
 
 本プロジェクトは、Rust と Lua を用いて作成された、ターミナル上で遊べるクラシック軽量ゲーム集です。ターミナル内でゲームをプレイするというアイデアを実現し、多言語国際化（i18n）とクロスプラットフォームに対応しています。  
-Windows、Linux、macOS
+Windows、Linux、MacOS
 
 > 最新安定版：  
 > [![Release](https://img.shields.io/github/v/release/MXBraisedFish/TUI-GAME?maxAge=3600&label=Release&labelColor=cc8400&color=ffa500)](https://github.com/MXBraisedFish/TUI-GAME/releases/latest)
@@ -45,7 +45,7 @@ Windows、Linux、macOS
 ## 対応プラットフォーム
 
 - Windows  
-- Linux（バグテスト未完了）  
+- Linux
 - macOS（バグテスト未完了）  
 
 ## インストールガイド
@@ -102,7 +102,7 @@ cargo run
 cargo build --release
 ```
 
-### Linux（バグテスト未完了）  
+### Linux
 
 #### - ターミナルスクリプトによるインストール（推奨）
 
@@ -250,6 +250,6 @@ cargo build --release
 このプロジェクトを気に入っていただけたら、ぜひリポジトリにスター⭐をお願いします！継続的な更新の励みになります。
 より良いアイデアや提案があれば、Issue の作成を歓迎します。
 
-macOS と Linux 版は対応する実機がないため十分にテストできていません。バグを発見した場合は、ぜひご報告ください。ありがとうございます！
+MacOS 版は対応する実機がないため十分にテストできていません。バグを発見した場合は、ぜひご報告ください。ありがとうございます！
 
 GitHub Repo: [MXBraisedFish/TUI-GAME](https://github.com/MXBraisedFish/TUI-GAME)

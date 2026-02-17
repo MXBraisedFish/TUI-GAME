@@ -7,7 +7,7 @@
 # About This Project
 
 This project is a classic lightweight game collection built with Rust and Lua, designed to be played directly in the terminal. It supports internationalization (i18n) with multiple languages and is cross-platform compatible.  
-Windows, Linux, macOS
+Windows, Linux, MacOS
 
 > Latest stable release:  
 > [![Release](https://img.shields.io/github/v/release/MXBraisedFish/TUI-GAME?maxAge=3600&label=Release&labelColor=cc8400&color=ffa500)](https://github.com/MXBraisedFish/TUI-GAME/releases/latest)
@@ -45,7 +45,7 @@ Windows, Linux, macOS
 ## Platform Support
 
 - Windows  
-- Linux (still needs bug testing)  
+- Linux
 - macOS (still needs bug testing)  
 
 ## Installation Guide
@@ -102,7 +102,7 @@ cargo run
 cargo build --release
 ```
 
-### Linux (still needs bug testing)  
+### Linux 
 
 #### - Terminal Script Installation (Recommended)
 
@@ -250,6 +250,6 @@ cargo build --release
 If you like this project, please consider giving the repository a star⭐! It motivates me to keep updating.
 If you have better ideas or suggestions, feel free to open an Issue.
 
-The macOS and Linux versions have not been fully tested due to lack of corresponding devices. If you encounter any bugs, please report them. Thank you very much!
+The macOS versions have not been fully tested due to lack of corresponding devices. If you encounter any bugs, please report them. Thank you very much!
 
 GitHub Repo: [MXBraisedFish/TUI-GAME](https://github.com/MXBraisedFish/TUI-GAME)

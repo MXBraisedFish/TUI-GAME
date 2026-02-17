@@ -9,7 +9,7 @@
 本项目基于 Rust 和 Lua 所制作的可在终端游玩的经典轻量级游戏合集，实现了在终端中游玩游戏的想法，支持国际化多语言和跨平台。
 Windows，Linux，MacOS
 
-> 最新正式版：
+> 最新正式版：  
 > [![Release](https://img.shields.io/github/v/release/MXBraisedFish/TUI-GAME?maxAge=3600&label=Release&labelColor=cc8400&color=ffa500)](https://github.com/MXBraisedFish/TUI-GAME/releases/latest)
 
 ## 目录
@@ -45,7 +45,7 @@ Windows，Linux，MacOS
 ## 平台支持
 
 - Windows
-- Linux (仍需测试 bug)
+- Linux
 - macOS (仍需测试 bug)
 
 ## 安装指南
@@ -102,7 +102,7 @@ cargo run
 cargo build --release
 ```
 
-### Linux (仍需测试 bug)
+### Linux
 
 #### - 终端脚本安装(推荐)
 
@@ -249,6 +249,6 @@ cargo build --release
 
 如果您喜欢这个项目，请为我的仓库点一颗星星⭐！这也是我持续更新的动力。如果您有更好的想法或建议，欢迎提出 Issue。
 
-MacOS和Linux版本未经过测试，我没有相关的系统设备，如果您发现有Bug请及时反馈，十分感谢！
+MacOS版本未经过测试，我没有相关的系统设备，如果您发现有Bug请及时反馈，十分感谢！
 
 GitHub Repo: [MXBraisedFish/TUI-GAME](https://github.com/MXBraisedFish/TUI-GAME)

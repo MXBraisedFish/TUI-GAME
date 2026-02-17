@@ -45,7 +45,7 @@ Windows，Linux，MacOS
 ## 平台支援
 
 - Windows
-- Linux (仍需測試 bug)
+- Linux
 - macOS (仍需測試 bug)
 
 ## 安裝指南
@@ -102,7 +102,7 @@ cargo run
 cargo build --release
 ```
 
-### Linux (仍需測試 bug)
+### Linux
 
 #### - 終端機腳本安裝(推薦)
 
@@ -249,6 +249,6 @@ cargo build --release
 
 如果您喜歡這個專案，請為我的倉庫點一顆星星⭐！這也是我持續更新的動力。如果您有更好的想法或建議，歡迎提出 Issue。
 
-MacOS和Linux版本未經過測試，我沒有相關的系統設備，如果您發現有Bug請及時回饋，十分感謝！
+MacOS版本未經過測試，我沒有相關的系統設備，如果您發現有Bug請及時回饋，十分感謝！
 
 GitHub Repo: [MXBraisedFish/TUI-GAME](https://github.com/MXBraisedFish/TUI-GAME)
