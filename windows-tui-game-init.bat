@@ -111,7 +111,9 @@ REM ----- Step 6: Final messages -----
 echo.
 echo [SUCCESS] TUI-GAME has been installed successfully!
 echo =================================
+setlocal disabledelayedexpansion
 echo Enjoy the game! :^)
+setlocal enabledelayedexpansion
 echo.
 echo If you like it, please give a star on GitHub: https://github.com/MXBraisedFish/TUI-GAME
 echo Author: MXBraisedFish (MXFish)
