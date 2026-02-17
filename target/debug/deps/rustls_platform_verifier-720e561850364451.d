@@ -1,8 +1,0 @@
-E:\Code\tui-game(github)\target\debug\deps\rustls_platform_verifier-720e561850364451.d: C:\Users\123\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\rustls-platform-verifier-0.6.2\src\lib.rs C:\Users\123\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\rustls-platform-verifier-0.6.2\src\verification\mod.rs C:\Users\123\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\rustls-platform-verifier-0.6.2\src\verification\windows.rs C:\Users\123\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\rustls-platform-verifier-0.6.2\src\../README.md
-
-E:\Code\tui-game(github)\target\debug\deps\librustls_platform_verifier-720e561850364451.rmeta: C:\Users\123\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\rustls-platform-verifier-0.6.2\src\lib.rs C:\Users\123\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\rustls-platform-verifier-0.6.2\src\verification\mod.rs C:\Users\123\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\rustls-platform-verifier-0.6.2\src\verification\windows.rs C:\Users\123\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\rustls-platform-verifier-0.6.2\src\../README.md
-
-C:\Users\123\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\rustls-platform-verifier-0.6.2\src\lib.rs:
-C:\Users\123\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\rustls-platform-verifier-0.6.2\src\verification\mod.rs:
-C:\Users\123\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\rustls-platform-verifier-0.6.2\src\verification\windows.rs:
-C:\Users\123\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\rustls-platform-verifier-0.6.2\src\../README.md:
