@@ -1,6 +1,8 @@
 ![LOGO](./image/logo.png)
 
-**[English](../README.md)** | **[日本語](./README-ja-jp.md)**
+# 语言
+
+**[English](../README.md)** | **[繁體中文(港澳)](./README-zh-hk-mo.md)** | **[繁體中文(台)](./README-tw.md)** | **[日本語](./README-ja-jp.md)**
 
 # 本项目是
 
@@ -52,7 +54,7 @@ Windows，Linux，MacOS
 
 #### - 终端脚本安装(推荐)
 
-> 包含所有自动服务(已编译，自动更新，快捷卸载)
+> 包含所有自动服务(已编译，自动更新，快捷卸载，自动注册环境变量)
 
 ```Shell
 # 新建文件夹
@@ -62,47 +64,49 @@ mkdir tui-game
 cd tui-game
 
 # 拉取安装脚本
-# 镜像源
-curl -L -o windows-tui-game-init.bat https://fastly.jsdelivr.net/gh/MXBraisedFish/TUI-GAME@main/windows-tui-game-init.bat
 # 官方源
 curl -L -o windows-tui-game-init.bat https://raw.githubusercontent.com/MXBraisedFish/TUI-GAME/main/windows-tui-game-init.bat
+# 镜像源
+curl -L -o windows-tui-game-init.bat https://fastly.jsdelivr.net/gh/MXBraisedFish/TUI-GAME@main/windows-tui-game-init.bat
 
 # 运行安装脚本
 windows-tui-game-init.bat
 ```
 
-#### - 下载编译版本
+#### - 下载压缩包
 
-> 无快捷卸载程序，无自动更新程序
+> 包含部分自动服务(已编译，自动更新，快捷卸载，无自动注册环境变量)
 
 ```text
 进入Releases界面:
 https://github.com/MXBraisedFish/TUI-GAME/releases/latest
 下载压缩包 tui-game-windows.zip
 解压 tui-game-windows.zip
-运行 tui-game.exe 文件
+运行 tg.bat 脚本
 ```
 
 #### - 源代码
 
-> 无编译，无快捷卸载程序，无自动更新程序
+> 源代码版本，无任何自动服务
 
 ```Shell
 # 新建文件夹
 mkdir tui-game
 # 进入文件夹
 cd tui-game
-# 拉取安装脚本
+# 拉取源代码
 git clone https://github.com/MXBraisedFish/TUI-GAME.git
 # 运行调试
 cargo run
+# 构建编译
+cargo build --release
 ```
 
 ### Linux
 
 #### - 终端脚本安装(推荐)
 
-> 包含所有自动服务(已编译，自动更新，快捷卸载)
+> 包含所有自动服务(已编译，自动更新，快捷卸载，自动注册环境变量)
 
 ```Shell
 # 新建文件夹
@@ -112,47 +116,49 @@ mkdir tui-game
 cd tui-game
 
 # 拉取安装脚本
-# 镜像源
-curl -L -o linux-tui-game-init.sh https://fastly.jsdelivr.net/gh/MXBraisedFish/TUI-GAME@main/linux-tui-game-init.sh
 # 官方源
 curl -L -o linux-tui-game-init.sh https://raw.githubusercontent.com/MXBraisedFish/TUI-GAME/main/linux-tui-game-init.sh
+# 镜像源
+curl -L -o linux-tui-game-init.sh https://fastly.jsdelivr.net/gh/MXBraisedFish/TUI-GAME@main/linux-tui-game-init.sh
 
 # 运行安装脚本
 sh linux-tui-game-init.sh
 ```
 
-#### - 下载编译版本
+#### - 下载压缩包
 
-> 无快捷卸载程序，无自动更新程序
+> 包含部分自动服务(已编译，自动更新，快捷卸载，无自动注册环境变量)
 
 ```text
 进入Releases界面:
 https://github.com/MXBraisedFish/TUI-GAME/releases/latest
 下载压缩包 tui-game-linux.tar.gz
 解压 tui-game-linux.tar.gz
-运行 tui-game字节码 文件
+运行 tui-game.sh 脚本
 ```
 
 #### - 源代码
 
-> 无编译，无快捷卸载程序，无自动更新程序
+> 源代码版本，无任何自动服务
 
 ```Shell
 # 新建文件夹
 mkdir tui-game
 # 进入文件夹
 cd tui-game
-# 拉取安装脚本
+# 拉取源代码
 git clone https://github.com/MXBraisedFish/TUI-GAME.git
 # 运行调试
 cargo run
+# 构建编译
+cargo build --release
 ```
 
 ### MacOS
 
 #### - 终端脚本安装(推荐)
 
-> 包含所有自动服务(已编译，自动更新，快捷卸载)
+> 包含所有自动服务(已编译，自动更新，快捷卸载，自动注册环境变量)
 
 ```Shell
 # 新建文件夹
@@ -162,10 +168,10 @@ mkdir tui-game
 cd tui-game
 
 # 拉取安装脚本
-# 镜像源
-curl -L -o macos-tui-game-init.sh https://fastly.jsdelivr.net/gh/MXBraisedFish/TUI-GAME@main/macos-tui-game-init.sh
 # 官方源
 curl -L -o macos-tui-game-init.sh https://raw.githubusercontent.com/MXBraisedFish/TUI-GAME/main/macos-tui-game-init.sh
+# 镜像源
+curl -L -o macos-tui-game-init.sh https://fastly.jsdelivr.net/gh/MXBraisedFish/TUI-GAME@main/macos-tui-game-init.sh
 
 # 运行安装脚本
 sh macos-tui-game-init.sh
@@ -180,22 +186,24 @@ sh macos-tui-game-init.sh
 https://github.com/MXBraisedFish/TUI-GAME/releases/latest
 下载压缩包 tui-game-macos.zip
 解压 tui-game-macos.zip
-运行 tui-game字节码 文件
+运行 tui-game.sh 脚本
 ```
 
 #### - 源代码
 
-> 无编译，无快捷卸载程序，无自动更新程序
+> 源代码版本，无任何自动服务
 
 ```Shell
 # 新建文件夹
 mkdir tui-game
 # 进入文件夹
 cd tui-game
-# 拉取安装脚本
+# 拉取源代码
 git clone https://github.com/MXBraisedFish/TUI-GAME.git
 # 运行调试
 cargo run
+# 构建编译
+cargo build --release
 ```
 
 ## 界面截图
@@ -239,7 +247,7 @@ cargo run
 
 ## 支持本项目
 
-如果您喜欢这个项目，请为我的仓库点一颗星星！这也是我持续更新的动力。如果您有更好的想法或建议，欢迎提出 Issue。
+如果您喜欢这个项目，请为我的仓库点一颗星星⭐！这也是我持续更新的动力。如果您有更好的想法或建议，欢迎提出 Issue。
 
 MacOS和Linux版本未经过测试，我没有相关的系统设备，如果您发现有Bug请及时反馈，十分感谢！
 

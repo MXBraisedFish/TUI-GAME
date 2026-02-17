@@ -145,7 +145,7 @@
     "game.maze_escape.timer":  "時間制限なし",
     "game.maze_escape.remaining":  "残り時間",
     "game.maze_escape.controls":  "[↑]/[↓]/[←]/[→] 移動  [P] サイズ/モード変更  [R] リスタート  [S] 保存  [Q]/[ESC] 終了",
-    "game.maze_escape.input_config_hint":  "入力: モード(1-4) または 列 行 [モード]（偶数サイズは自動で-1） 例: 4 / 18 12 4",
+    "game.maze_escape.input_config_hint":  "入力: モード(1-4) または 列 行 [モード] 例: 4 / 18 12 4",
     "game.maze_escape.input_config_invalid":  "入力が無効です。列10-32、行8-22、モード1-4。",
     "game.maze_escape.win_banner":  "迷路から脱出成功！",
     "game.maze_escape.lose_banner":  "迷路に閉じ込められました！",

@@ -1,49 +1,52 @@
 ![LOGO](./README-i18n/image/logo.png)
 
-**[简体中文](./README-i18n/README-zh-cn.md)** | **[日本語](./README-i18n/README-ja-jp.md)**
+# Language
 
-# This project is
+**[简体中文](./README-i18n/README-zh-cn.md)** | **[繁體中文(港澳)](./README-i18n/README-zh-hk-mo.md)** | **[繁體中文(台)](./README-i18n/README-zh-tw.md)** | **[日本語](./README-i18n/README-ja-jp.md)**
 
-A collection of classic lightweight games playable in the terminal, built with Rust and Lua. It realizes the idea of playing games within a terminal environment, supporting internationalization (multi-language) and cross-platform compatibility.
-Windows，Linux，MacOS
+# About This Project
 
-> Latest Official Version:
+This project is a classic lightweight game collection built with Rust and Lua, designed to be played directly in the terminal. It supports internationalization (i18n) with multiple languages and is cross-platform compatible.  
+Windows, Linux, macOS
+
+> Latest stable release:  
 > [![Release](https://img.shields.io/github/v/release/MXBraisedFish/TUI-GAME?maxAge=3600&label=Release&labelColor=cc8400&color=ffa500)](https://github.com/MXBraisedFish/TUI-GAME/releases/latest)
 
 ## Table of Contents
 
-- [Implemented Games](#Implemented-Games)
-- [Language Support](#Language-Support)
-- [Platform Support](#Platform-Support)
-- [Installation Guide](#Installation-Guide)
-  - [Windows](#Windows)
-  - [Linux](#Linux)
-  - [MacOS](#MacOS)
-- [UI Screenshots](#UI-Screenshots)
-- [Support This Project](#Support-This-Project)
+- [Implemented Games](#implemented-games)
+- [Language Support](#language-support)
+- [Platform Support](#platform-support)
+- [Other Features](#other-features)
+- [Installation Guide](#installation-guide)
+  - [Windows](#windows)
+  - [Linux](#linux)
+  - [MacOS](#macos)
+- [Screenshots](#screenshots)
+- [Support This Project](#support-this-project)
 
 ## Implemented Games
 
-- 2048
-- Blackjack
-- Color Memory Game
-- Lights Out
-- Maze Escape
-- Memory Flip
-- Minesweeper
-- Rock Paper Scissors
+- 2048  
+- Blackjack  
+- Color Memory  
+- Lights Out  
+- Maze Escape  
+- Memory Flip  
+- Minesweeper  
+- Rock Paper Scissors  
 
 ## Language Support
 
-- English
-- Chinese
-- Japanese
+- English  
+- Chinese  
+- Japanese  
 
 ## Platform Support
 
-- Windows
-- Linux (Bugs pending testing)
-- macOS (Bugs pending testing)
+- Windows  
+- Linux (still needs bug testing)  
+- macOS (still needs bug testing)  
 
 ## Installation Guide
 
@@ -51,155 +54,159 @@ Windows，Linux，MacOS
 
 #### - Terminal Script Installation (Recommended)
 
-> Includes all automated services (Pre-compiled, Auto-update, Quick uninstall)
+> Includes full automation services (precompiled, auto update, quick uninstall, automatic environment variable registration)
 
-```shell
-# Create a new folder
+```Shell
+# Create folder
 mkdir tui-game
 
-# Enter the folder
+# Enter folder
 cd tui-game
 
-# Pull the installation script
-# Mirror Source
-curl -L -o windows-tui-game-init.bat https://fastly.jsdelivr.net/gh/MXBraisedFish/TUI-GAME@main/windows-tui-game-init.bat
-# Official Source
+# Download install script
+# Official source
 curl -L -o windows-tui-game-init.bat https://raw.githubusercontent.com/MXBraisedFish/TUI-GAME/main/windows-tui-game-init.bat
+# Mirror source
+curl -L -o windows-tui-game-init.bat https://fastly.jsdelivr.net/gh/MXBraisedFish/TUI-GAME@main/windows-tui-game-init.bat
 
-# Run the installation script
+# Run install script
 windows-tui-game-init.bat
-
 ```
 
-#### - Download Compiled Version
+#### - Download Archive
 
-> No quick uninstaller, no auto-updater
+> Includes partial automation services (precompiled, auto update, quick uninstall, no automatic environment variable registration)
 
 ```text
 Go to the Releases page:
 https://github.com/MXBraisedFish/TUI-GAME/releases/latest
-Download the archive: tui-game-windows.zip
-Extract: tui-game-windows.zip
-Run the file: tui-game.exe
-
+Download tui-game-windows.zip
+Extract tui-game-windows.zip
+Run tg.bat
 ```
 
 #### - Source Code
 
-> No compilation, no quick uninstaller, no auto-updater
+> Source version, no automation services
 
-```shell
-# Create a new folder
+```Shell
+# Create folder
 mkdir tui-game
-# Enter the folder
+# Enter folder
 cd tui-game
-# Clone the repository
+# Clone source code
 git clone https://github.com/MXBraisedFish/TUI-GAME.git
-# Run/Debug
+# Run debug
 cargo run
+# Build release
+cargo build --release
 ```
 
 ### Linux
 
 #### - Terminal Script Installation (Recommended)
 
-> Includes all automated services (Pre-compiled, Auto-update, Quick uninstall)
+> Includes full automation services (precompiled, auto update, quick uninstall, automatic environment variable registration)
 
-```shell
-# Create a new folder
+```Shell
+# Create folder
 mkdir tui-game
 
-# Enter the folder
+# Enter folder
 cd tui-game
 
-# Pull the installation script
-# Mirror Source
-curl -L -o linux-tui-game-init.sh https://fastly.jsdelivr.net/gh/MXBraisedFish/TUI-GAME@main/linux-tui-game-init.sh
-# Official Source
+# Download install script
+# Official source
 curl -L -o linux-tui-game-init.sh https://raw.githubusercontent.com/MXBraisedFish/TUI-GAME/main/linux-tui-game-init.sh
+# Mirror source
+curl -L -o linux-tui-game-init.sh https://fastly.jsdelivr.net/gh/MXBraisedFish/TUI-GAME@main/linux-tui-game-init.sh
 
-# Run the installation script
+# Run install script
 sh linux-tui-game-init.sh
-
 ```
 
-#### - Download Compiled Version
+#### - Download Archive
 
-> No quick uninstaller, no auto-updater
+> Includes partial automation services (precompiled, auto update, quick uninstall, no automatic environment variable registration)
 
 ```text
 Go to the Releases page:
 https://github.com/MXBraisedFish/TUI-GAME/releases/latest
-Download the archive: tui-game-linux.tar.gz
-Extract: tui-game-linux.tar.gz
-Run the file: tui-game bytecode file
-
+Download tui-game-linux.tar.gz
+Extract tui-game-linux.tar.gz
+Run tui-game.sh
 ```
 
 #### - Source Code
 
-```shell
-# Create a new folder
+> Source version, no automation services
+
+```Shell
+# Create folder
 mkdir tui-game
-# Enter the folder
+# Enter folder
 cd tui-game
-# Clone the repository
+# Clone source code
 git clone https://github.com/MXBraisedFish/TUI-GAME.git
-# Run/Debug
+# Run debug
 cargo run
+# Build release
+cargo build --release
 ```
 
 ### MacOS
 
 #### - Terminal Script Installation (Recommended)
 
-> Includes all automated services (Pre-compiled, Auto-update, Quick uninstall)
+> Includes full automation services (precompiled, auto update, quick uninstall, automatic environment variable registration)
 
-```shell
-# Create a new folder
+```Shell
+# Create folder
 mkdir tui-game
 
-# Enter the folder
+# Enter folder
 cd tui-game
 
-# Pull the installation script
-# Mirror Source
-curl -L -o macos-tui-game-init.sh https://fastly.jsdelivr.net/gh/MXBraisedFish/TUI-GAME@main/macos-tui-game-init.sh
-# Official Source
+# Download install script
+# Official source
 curl -L -o macos-tui-game-init.sh https://raw.githubusercontent.com/MXBraisedFish/TUI-GAME/main/macos-tui-game-init.sh
+# Mirror source
+curl -L -o macos-tui-game-init.sh https://fastly.jsdelivr.net/gh/MXBraisedFish/TUI-GAME@main/macos-tui-game-init.sh
 
-# Run the installation script
+# Run install script
 sh macos-tui-game-init.sh
-
 ```
 
 #### - Download Compiled Version
 
-> No quick uninstaller, no auto-updater
+> No quick uninstall, no auto update
 
 ```text
 Go to the Releases page:
 https://github.com/MXBraisedFish/TUI-GAME/releases/latest
-Download the archive: tui-game-macos.zip
-Extract: tui-game-macos.zip
-Run the file: tui-game bytecode file
-
+Download tui-game-macos.zip
+Extract tui-game-macos.zip
+Run tui-game.sh
 ```
 
 #### - Source Code
 
-```shell
-# Create a new folder
+> Source version, no automation services
+
+```Shell
+# Create folder
 mkdir tui-game
-# Enter the folder
+# Enter folder
 cd tui-game
-# Clone the repository
+# Clone source code
 git clone https://github.com/MXBraisedFish/TUI-GAME.git
-# Run/Debug
+# Run debug
 cargo run
+# Build release
+cargo build --release
 ```
 
-## UI Screenshots
+## Screenshots
 
 ### Home and Game List
 
@@ -214,9 +221,9 @@ cargo run
 
 ![Blackjack](./README-i18n/image/blackjack.png)
 
-### Color Memory Game
+### Color Memory
 
-![Color Memory Game](./README-i18n/image/colormemory.png)
+![Color Memory](./README-i18n/image/colormemory.png)
 
 ### Lights Out
 
@@ -232,7 +239,7 @@ cargo run
 
 ### Minesweeper
 
-![inesweeper](./README-i18n/image/minesweeper.png)
+![Minesweeper](./README-i18n/image/minesweeper.png)
 
 ### Rock Paper Scissors
 
@@ -240,8 +247,9 @@ cargo run
 
 ## Support This Project
 
-If you like this project, please give my repository a star! This is my motivation to keep updating. If you have better ideas or suggestions, feel free to open an Issue.
+If you like this project, please consider giving the repository a star⭐! It motivates me to keep updating.
+If you have better ideas or suggestions, feel free to open an Issue.
 
-The macOS and Linux versions have not been tested as I do not have the relevant hardware. If you find any bugs, please provide feedback. Thank you very much!
+The macOS and Linux versions have not been fully tested due to lack of corresponding devices. If you encounter any bugs, please report them. Thank you very much!
 
 GitHub Repo: [MXBraisedFish/TUI-GAME](https://github.com/MXBraisedFish/TUI-GAME)
