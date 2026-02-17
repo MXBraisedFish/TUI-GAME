@@ -49,6 +49,7 @@ if /i "!CLEAN_ENV!"=="Y" (
     echo [INFO] Environment variable cleanup skipped.
 )
 
+call :delete_file "!SCRIPT_DIR!\tg.bat"
 call :delete_file "!SCRIPT_DIR!\version.bat"
 call :delete_file "!SCRIPT_DIR!\tui-game.exe"
 call :delete_dir "!SCRIPT_DIR!\assets"
