@@ -25,6 +25,7 @@ SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 cd "$SCRIPT_DIR" || exit 1
 
 HAS_ERROR=0
+INTEGRATION_CLEAN_OK=0
 
 delete_file() {
     local file="$1"
@@ -66,6 +67,7 @@ echo
 read -r -p "Remove system integration (tg symlink/app link)? (Y/N): " CLEAN_SYS
 if [[ "$CLEAN_SYS" =~ ^[Yy]$ ]]; then
     echo "[INFO] Cleaning system integration..."
+    clean_failed=0
     expected="$SCRIPT_DIR/tg.sh"
     for link in "/usr/local/bin/tg" "$HOME/bin/tg" "$HOME/.local/bin/tg"; do
         if [ -L "$link" ]; then
@@ -82,13 +84,26 @@ if [[ "$CLEAN_SYS" =~ ^[Yy]$ ]]; then
             fi
             resolved="$target_dir/$(basename "$target")"
             if [ "$resolved" = "$expected" ]; then
-                rm -f "$link" && echo "[OK] Removed symlink: $link" || echo "[WARNING] Failed to remove symlink: $link"
+                if rm -f "$link"; then
+                    echo "[OK] Removed symlink: $link"
+                else
+                    echo "[WARNING] Failed to remove symlink: $link"
+                    clean_failed=1
+                fi
             fi
         fi
     done
     app_link="$HOME/Applications/TUI-GAME"
     if [ -L "$app_link" ]; then
-        rm -f "$app_link" && echo "[OK] Removed application link." || echo "[WARNING] Failed to remove application link."
+        if rm -f "$app_link"; then
+            echo "[OK] Removed application link."
+        else
+            echo "[WARNING] Failed to remove application link."
+            clean_failed=1
+        fi
+    fi
+    if [ "$clean_failed" -eq 0 ]; then
+        INTEGRATION_CLEAN_OK=1
     fi
 else
     echo "[INFO] Skipped system integration cleanup."
@@ -99,6 +114,10 @@ if [ "$HAS_ERROR" -eq 1 ]; then
     echo "[WARNING] Uninstall completed with errors. Some files may remain."
 else
     echo "[SUCCESS] Uninstall completed."
+fi
+
+if [ "$INTEGRATION_CLEAN_OK" -ne 1 ]; then
+    echo "[WARNING] Environment variable was not removed. Please clean it manually."
 fi
 
 echo "[INFO] Press any key to exit and remove this script."

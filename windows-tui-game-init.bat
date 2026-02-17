@@ -77,22 +77,29 @@ REM ----- Step 5: Ask about adding installation folder to PATH -----
 echo.
 set /p ADD_PATH="Do you want to add the installation folder to your PATH environment variable? (Y/N): "
 if /i "!ADD_PATH!"=="Y" (
-    echo [INFO] Adding %~dp0 to user PATH...
-    set "INSTALL_DIR=%~dp0"
-    REM Remove trailing backslash
+    set "INSTALL_DIR=%CD%"
     if "!INSTALL_DIR:~-1!"=="\" set "INSTALL_DIR=!INSTALL_DIR:~0,-1!"
+    set "TUI_GAME_INSTALL_DIR=!INSTALL_DIR!"
+    echo [INFO] Adding !INSTALL_DIR! to user PATH...
 
-    REM Check if already in PATH
-    echo !PATH! | findstr /i /c:"!INSTALL_DIR!" >nul
-    if !errorlevel! equ 0 (
-        echo [INFO] Directory already in PATH. Skipping.
+    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+        "$ErrorActionPreference = 'Stop';" ^
+        "$target = [System.IO.Path]::GetFullPath($env:TUI_GAME_INSTALL_DIR).TrimEnd('\');" ^
+        "$userPath = [Environment]::GetEnvironmentVariable('Path','User');" ^
+        "$parts = @(); if (-not [string]::IsNullOrWhiteSpace($userPath)) { $parts = $userPath -split ';' | Where-Object { $_ } }" ^
+        "$exists = $false;" ^
+        "foreach ($p in $parts) { try { $full = [System.IO.Path]::GetFullPath($p).TrimEnd('\') } catch { $full = $p.TrimEnd('\') }; if ($full -eq $target) { $exists = $true; break } }" ^
+        "if ($exists) { exit 10 }" ^
+        "$newPath = if ([string]::IsNullOrWhiteSpace($userPath)) { $target } else { $userPath.TrimEnd(';') + ';' + $target };" ^
+        "[Environment]::SetEnvironmentVariable('Path', $newPath, 'User');" ^
+        "exit 0"
+
+    if !errorlevel! equ 10 (
+        echo [INFO] Directory already in User PATH. Skipping.
+    ) else if !errorlevel! neq 0 (
+        echo [WARNING] Failed to update User PATH. You may need to add it manually.
     ) else (
-        setx PATH "%PATH%;!INSTALL_DIR!"
-        if !errorlevel! neq 0 (
-            echo [WARNING] Failed to update PATH. You may need to add it manually.
-        ) else (
-            echo [SUCCESS] PATH updated. You can now use 'tg' command from any terminal (may need to reopen).
-        )
+        echo [SUCCESS] User PATH updated. You can now use 'tg' command from any terminal ^(may need to reopen^).
     )
     set "REG_OPTION=yes"
 ) else (
@@ -122,10 +129,7 @@ echo [INFO] Press any key to exit and delete this installer.
 pause >nul
 
 REM ----- Delete this script itself -----
-del "%~f0" >nul 2>&1
-if %errorlevel% neq 0 (
-    echo [ERROR] Failed to delete installer. Please remove it manually.
-    pause
-)
+set "SELF_BAT=%~f0"
+start "" /b cmd /c "ping 127.0.0.1 -n 2 >nul & del /f /q ""%SELF_BAT%"" >nul 2>&1"
 
 exit /b 0

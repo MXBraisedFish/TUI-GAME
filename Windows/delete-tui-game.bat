@@ -17,6 +17,7 @@ if "!SCRIPT_DIR:~-1!"=="\" set "SCRIPT_DIR=!SCRIPT_DIR:~0,-1!"
 echo [INFO] Working directory: !SCRIPT_DIR!
 
 set "HAS_ERROR=0"
+set "PATH_CLEAN_OK=0"
 set "EXE=!SCRIPT_DIR!\tui-game.exe"
 set "DATA_DIR=!SCRIPT_DIR!\tui-game-data"
 set "VERSION_BAT=!SCRIPT_DIR!\version.bat"
@@ -35,22 +36,34 @@ echo.
 set /p CLEAN_PATH="Remove this install directory from User PATH? (Y/N): "
 if /i "!CLEAN_PATH!"=="Y" (
     echo [INFO] Cleaning User PATH...
+    set "TUI_GAME_INSTALL_DIR=!SCRIPT_DIR!"
+
     powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-        "$target = [System.IO.Path]::GetFullPath('%SCRIPT_DIR%').TrimEnd('\');" ^
+        "$ErrorActionPreference = 'Stop';" ^
+        "$target = [System.IO.Path]::GetFullPath($env:TUI_GAME_INSTALL_DIR).TrimEnd('\');" ^
         "$userPath = [Environment]::GetEnvironmentVariable('Path','User');" ^
-        "if ([string]::IsNullOrWhiteSpace($userPath)) { exit 0 }" ^
+        "if ([string]::IsNullOrWhiteSpace($userPath)) { exit 10 }" ^
         "$parts = @();" ^
+        "$removed = $false;" ^
         "foreach ($p in ($userPath -split ';')) {" ^
         "  if ([string]::IsNullOrWhiteSpace($p)) { continue }" ^
         "  try { $full = [System.IO.Path]::GetFullPath($p).TrimEnd('\') } catch { $full = $p.TrimEnd('\') }" ^
-        "  if ($full -ne $target) { $parts += $p }" ^
+        "  if ($full -eq $target) { $removed = $true; continue }" ^
+        "  $parts += $p" ^
         "}" ^
+        "if (-not $removed) { exit 10 }" ^
         "$newPath = ($parts -join ';').Trim(';');" ^
-        "[Environment]::SetEnvironmentVariable('Path', $newPath, 'User')"
-    if errorlevel 1 (
-        echo [WARNING] Failed to update User PATH automatically.
-    ) else (
+        "[Environment]::SetEnvironmentVariable('Path', $newPath, 'User');" ^
+        "exit 0"
+
+    if !errorlevel! equ 0 (
         echo [OK] User PATH updated.
+        set "PATH_CLEAN_OK=1"
+    ) else if !errorlevel! equ 10 (
+        echo [INFO] Target directory was not found in User PATH. Nothing to clean.
+        set "PATH_CLEAN_OK=1"
+    ) else (
+        echo [WARNING] Failed to update User PATH automatically.
     )
 ) else (
     echo [INFO] Skipped PATH cleanup.
@@ -63,9 +76,15 @@ if "!HAS_ERROR!"=="1" (
     echo [SUCCESS] Uninstall completed.
 )
 
+if "!PATH_CLEAN_OK!"=="0" (
+    echo [WARNING] Environment variable was not removed. Please clean it manually.
+)
+
 echo [INFO] Press any key to exit and remove this script.
 pause >nul
-del /f /q "%~f0" >nul 2>&1
+
+set "SELF_BAT=%~f0"
+start "" /b cmd /c "ping 127.0.0.1 -n 2 >nul & del /f /q ""%SELF_BAT%"" >nul 2>&1"
 exit /b 0
 
 :delete_file

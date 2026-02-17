@@ -25,6 +25,7 @@ SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 cd "$SCRIPT_DIR" || exit 1
 
 HAS_ERROR=0
+INTEGRATION_CLEAN_OK=0
 
 delete_file() {
     local file="$1"
@@ -66,6 +67,7 @@ echo
 read -r -p "Remove system integration (tg symlink/desktop entry)? (Y/N): " CLEAN_SYS
 if [[ "$CLEAN_SYS" =~ ^[Yy]$ ]]; then
     echo "[INFO] Cleaning system integration..."
+    clean_failed=0
     for link in "/usr/local/bin/tg" "$HOME/.local/bin/tg" "/usr/bin/tg"; do
         if [ -L "$link" ]; then
             target="$(readlink -f "$link" 2>/dev/null || true)"
@@ -74,13 +76,22 @@ if [[ "$CLEAN_SYS" =~ ^[Yy]$ ]]; then
                     echo "[OK] Removed symlink: $link"
                 else
                     echo "[WARNING] Failed to remove symlink: $link"
+                    clean_failed=1
                 fi
             fi
         fi
     done
     desktop="$HOME/.local/share/applications/tui-game.desktop"
     if [ -f "$desktop" ]; then
-        rm -f "$desktop" && echo "[OK] Removed desktop entry." || echo "[WARNING] Failed to remove desktop entry."
+        if rm -f "$desktop"; then
+            echo "[OK] Removed desktop entry."
+        else
+            echo "[WARNING] Failed to remove desktop entry."
+            clean_failed=1
+        fi
+    fi
+    if [ "$clean_failed" -eq 0 ]; then
+        INTEGRATION_CLEAN_OK=1
     fi
 else
     echo "[INFO] Skipped system integration cleanup."
@@ -91,6 +102,10 @@ if [ "$HAS_ERROR" -eq 1 ]; then
     echo "[WARNING] Uninstall completed with errors. Some files may remain."
 else
     echo "[SUCCESS] Uninstall completed."
+fi
+
+if [ "$INTEGRATION_CLEAN_OK" -ne 1 ]; then
+    echo "[WARNING] Environment variable was not removed. Please clean it manually."
 fi
 
 echo "[INFO] Press any key to exit and remove this script."
