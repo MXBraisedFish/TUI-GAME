@@ -251,5 +251,9 @@
     "game.pacman.game_time":  "Game Time",
     "game.pacman.power_left":  "Power Left",
     "game.pacman.status_fruit":  "Fruit collected!",
-    "game.pacman.mode_chase":  "Chase"
+    "game.pacman.mode_chase":  "Chase",
+    "game.pacman.confirm_restart":  "Confirm restart? [Y] Yes / [N] No",
+    "game.pacman.confirm_exit":  "Confirm exit? [Y] Yes / [N] No",
+    "game.pacman.countdown":  "Starting in",
+    "game.pacman.seconds_unit":  "s"
 }

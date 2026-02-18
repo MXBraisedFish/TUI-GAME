@@ -251,5 +251,9 @@
     "game.pacman.game_time":  "プレイ時間",
     "game.pacman.power_left":  "パワー残り",
     "game.pacman.status_fruit":  "フルーツ獲得！",
-    "game.pacman.mode_chase":  "追跡"
+    "game.pacman.mode_chase":  "追跡",
+    "game.pacman.confirm_restart":  "リスタートしますか？[Y] はい / [N] いいえ",
+    "game.pacman.confirm_exit":  "終了しますか？[Y] はい / [N] いいえ",
+    "game.pacman.countdown":  "開始まで",
+    "game.pacman.seconds_unit":  "秒"
 }

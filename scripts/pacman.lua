@@ -5,7 +5,8 @@
 
 local FPS = 60
 local FRAME_MS = 16
-local PLAYER_STEP_FRAMES = 4
+local PLAYER_STEP_FRAMES = 12
+local GHOST_SLOW_FACTOR = 2
 local MAX_LEVEL = 20
 local EXTRA_LIFE_SCORE = 10000
 
@@ -83,7 +84,12 @@ local state = {
     power_until = 0, power_chain = 0, power_eaten = {},
     phase = "playing", frame = 0, run_start_frame = 0, level_start_frame = 0,
     end_frame = nil, stats_committed = false,
+    confirm_mode = nil,
+    countdown_until = 0,
+    last_countdown_sec = nil,
     info_message = "", info_color = "dark_gray",
+    info_message_until = nil,
+    collected_fruits = {},
     dirty = true, last_area = nil, last_term_w = 0, last_term_h = 0,
     size_warning_active = false,
     last_warn_term_w = 0, last_warn_term_h = 0, last_warn_min_w = 0, last_warn_min_h = 0,
@@ -326,6 +332,32 @@ local function init_positions_from_map()
     end
 end
 
+local function randomize_fruit_spawn_for_level()
+    local candidates = {}
+    for r = 2, state.rows - 1 do
+        for c = 2, state.cols - 1 do
+            local ch = state.base_map[r][c]
+            local walkable = (not is_wall(r, c)) and (not is_door(r, c))
+            if walkable and ch ~= "<" and ch ~= ">" then
+                local is_player_spawn = (r == state.player_start.r and c == state.player_start.c)
+                local is_ghost_spawn = (r == state.ghost_spawn.r and c == state.ghost_spawn.c)
+                if (not is_player_spawn) and (not is_ghost_spawn) then
+                    candidates[#candidates + 1] = { r = r, c = c }
+                end
+            end
+        end
+    end
+
+    if #candidates == 0 then return end
+
+    local idx = 1
+    if type(random) == "function" then
+        idx = random(#candidates) + 1
+    end
+    local pick = candidates[idx] or candidates[1]
+    state.fruit.r, state.fruit.c = pick.r, pick.c
+end
+
 local function load_best_score()
     state.best_score = 0
     if type(load_data) ~= "function" then return end
@@ -346,8 +378,50 @@ local function commit_stats_once()
     state.stats_committed = true
 end
 
-local function set_info_message(text, color)
+local function set_info_message(text, color, duration_sec)
     state.info_message, state.info_color = text, (color or "dark_gray")
+    if duration_sec ~= nil and duration_sec > 0 then
+        state.info_message_until = state.frame + math.floor(duration_sec * FPS)
+    else
+        state.info_message_until = nil
+    end
+end
+
+local function start_round_countdown(seconds)
+    local sec = math.max(0, math.floor(seconds or 0))
+    state.countdown_until = state.frame + sec * FPS
+    state.last_countdown_sec = nil
+    if state.global_pause_until < state.countdown_until then
+        state.global_pause_until = state.countdown_until
+    end
+    if type(clear_input_buffer) == "function" then
+        pcall(clear_input_buffer)
+    end
+end
+
+local function countdown_seconds_left()
+    if state.phase ~= "playing" then return 0 end
+    if state.countdown_until <= state.frame then return 0 end
+    return math.max(1, math.ceil((state.countdown_until - state.frame) / FPS))
+end
+
+local function current_banner_message()
+    if state.confirm_mode == "restart" then
+        return tr("game.pacman.confirm_restart", "Confirm restart? [Y] Yes / [N] No"), "yellow"
+    end
+    if state.confirm_mode == "exit" then
+        return tr("game.pacman.confirm_exit", "Confirm exit? [Y] Yes / [N] No"), "yellow"
+    end
+
+    local countdown = countdown_seconds_left()
+    if countdown > 0 then
+        return tr("game.pacman.countdown", "Starting in") .. " " .. tostring(countdown), "yellow"
+    end
+
+    if state.info_message == "" then
+        return "", state.info_color or "dark_gray"
+    end
+    return state.info_message, state.info_color or "dark_gray"
 end
 
 local function reset_power_cycle()
@@ -380,9 +454,26 @@ local function create_ghost(id, color, home_r, home_c)
     }
 end
 
+local function reset_player_auto_direction()
+    local order = { "left", "up", "right", "down" }
+    for i = 1, #order do
+        local dir = order[i]
+        local dr, dc = direction_delta(dir)
+        local can_move = can_move_player(state.player.r + dr, state.player.c + dc)
+        if can_move then
+            state.player.dir = dir
+            state.player.next_dir = dir
+            return
+        end
+    end
+    state.player.dir = "left"
+    state.player.next_dir = "left"
+end
+
 local function reset_entities_for_level()
     state.player.r, state.player.c = state.player_start.r, state.player_start.c
-    state.player.dir, state.player.next_dir, state.player.next_step_at = "left", "left", state.frame
+    state.player.next_step_at = state.frame
+    reset_player_auto_direction()
 
     local top, left, right, bottom = 2, 2, state.cols - 1, state.rows - 1
     state.ghosts = {
@@ -409,6 +500,8 @@ local function start_level(level)
     parse_map(); init_positions_from_map()
     state.total_pellets = pellet_counts(); state.remaining_pellets = state.total_pellets
     reset_entities_for_level()
+    randomize_fruit_spawn_for_level()
+    start_round_countdown(3)
     set_info_message(tr("game.pacman.status_ready", "Ready!"), "yellow")
     state.dirty = true
 end
@@ -417,6 +510,8 @@ local function start_new_run()
     state.score, state.lives, state.extra_life_granted = 0, 3, false
     state.phase, state.run_start_frame, state.end_frame = "playing", state.frame, nil
     state.stats_committed = false
+    state.confirm_mode = nil
+    state.collected_fruits = {}
     start_level(1)
 end
 
@@ -440,14 +535,15 @@ local function consume_current_cell()
     elseif pellet == POWER_CHAR then
         state.pellets[r][c], state.remaining_pellets = " ", state.remaining_pellets - 1
         add_score(50); activate_power_cycle()
-        set_info_message(tr("game.pacman.status_power", "Power pellet active!"), "cyan")
+        set_info_message(tr("game.pacman.status_power", "Power pellet active!"), "cyan", 3)
         state.dirty = true
     end
 
     if state.fruit.active and r == state.fruit.r and c == state.fruit.c then
         local fruit = fruit_for_level(state.level)
         add_score(fruit.points); state.fruit.active = false
-        set_info_message(tr("game.pacman.status_fruit", "Fruit collected!"), "magenta")
+        state.collected_fruits[#state.collected_fruits + 1] = fruit.symbol
+        set_info_message(tr("game.pacman.status_fruit", "Fruit collected!"), "magenta", 3)
         state.dirty = true
     end
 
@@ -579,11 +675,13 @@ local function ghost_target(g)
 end
 
 local function ghost_step_interval(g)
-    if g.state == "eyes" then return 2 end
-    local base = (state.level >= 11 and 3) or (state.level >= 5 and 4) or 5
-    if g.id == "blinky" and blinky_enraged() then base = math.max(2, base - 1) end
-    if g.state == "frightened" and (not state.power_eaten[g.id]) then base = base + 2 end
-    return base
+    if g.state == "eyes" then
+        return math.max(1, math.floor(4 * GHOST_SLOW_FACTOR + 0.5))
+    end
+    local base = (state.level >= 11 and 6) or (state.level >= 5 and 7) or 8
+    if g.id == "blinky" and blinky_enraged() then base = math.max(4, base - 1) end
+    if g.state == "frightened" and (not state.power_eaten[g.id]) then base = base + 3 end
+    return math.max(1, math.floor(base * GHOST_SLOW_FACTOR + 0.5))
 end
 
 local function ghost_enter_house(g)
@@ -602,15 +700,15 @@ local function eat_ghost(g)
     state.power_eaten[g.id] = true
     g.state = "eyes"
     g.next_step_at = state.frame
-    set_info_message(tr("game.pacman.status_ghost_eaten", "Ghost eaten!"), "cyan")
+    set_info_message(tr("game.pacman.status_ghost_eaten", "Ghost eaten!"), "cyan", 3)
     state.dirty = true
     return true
 end
 
 local function reset_after_player_death()
     state.player.r, state.player.c = state.player_start.r, state.player_start.c
-    state.player.dir, state.player.next_dir = "left", "left"
-    state.player.next_step_at = state.frame + FPS
+    state.player.next_step_at = state.frame
+    reset_player_auto_direction()
 
     local delays = ghost_release_delays(state.level)
     for i = 1, #state.ghosts do
@@ -694,7 +792,7 @@ local function update_ghosts()
 end
 
 local function update_player_and_collisions()
-    if state.phase ~= "playing" or state.frame < state.global_pause_until then return end
+    if state.phase ~= "playing" or countdown_seconds_left() > 0 then return end
     try_move_player()
     for i = 1, #state.ghosts do
         check_collision_with_ghost(state.ghosts[i])
@@ -702,10 +800,30 @@ local function update_player_and_collisions()
     end
 end
 
+local function handle_confirm_input(key)
+    if state.confirm_mode == nil then return false end
+    if key == "y" then
+        if state.confirm_mode == "restart" then
+            start_new_run()
+        else
+            commit_stats_once()
+            exit_game()
+        end
+        return true
+    end
+    if key == "n" or key == "q" or key == "esc" then
+        state.confirm_mode = nil
+        state.dirty = true
+        return true
+    end
+    return true
+end
+
 local function handle_playing_input(key)
+    if handle_confirm_input(key) then return end
     if key == "up" or key == "down" or key == "left" or key == "right" then state.player.next_dir = key; return end
-    if key == "r" then start_new_run(); return end
-    if key == "q" or key == "esc" then commit_stats_once(); exit_game() end
+    if key == "r" then state.confirm_mode = "restart"; state.dirty = true; return end
+    if key == "q" or key == "esc" then state.confirm_mode = "exit"; state.dirty = true; return end
 end
 
 local function handle_result_input(key)
@@ -716,20 +834,20 @@ end
 local function ghost_at(r, c)
     for i = 1, #state.ghosts do
         local g = state.ghosts[i]
-        if g.r == r and g.c == c and g.state ~= "house" then return g end
+        if g.r == r and g.c == c then return g end
     end
     return nil
 end
 
 local function cell_visual(r, c)
     if state.player.r == r and state.player.c == c then
-        return "@", (is_power_active() and "cyan" or "yellow")
+        return "@", (is_power_active() and "light_cyan" or "light_yellow")
     end
 
     local g = ghost_at(r, c)
     if g then
         if g.state == "eyes" then return "&", "white" end
-        if g.state == "frightened" and (not state.power_eaten[g.id]) then return "&", "blue" end
+        if g.state == "frightened" and (not state.power_eaten[g.id]) then return "&", "light_blue" end
         return "&", g.color
     end
 
@@ -742,6 +860,7 @@ local function cell_visual(r, c)
     if pellet == POWER_CHAR then return POWER_CHAR, "rgb(255,165,0)" end
 
     local ch = state.base_map[r][c]
+    if ch == PELLET_CHAR or ch == POWER_CHAR then return " ", "white" end
     if WALL_SET[ch] then return ch, "blue" end
     if ch == DOOR_CHAR then return DOOR_CHAR, "white" end
     if ch == "<" or ch == ">" then return " ", "white" end
@@ -759,35 +878,53 @@ local function fill_rect(x, y, w, h)
     for i = 0, h - 1 do draw_text(x, y + i, line, "white", "black") end
 end
 
-local function build_info_lines()
-    local lines = {}
-    lines[#lines + 1] = tr("game.pacman.current_score", "Current Score") .. ": " .. tostring(state.score)
-    lines[#lines + 1] = tr("game.pacman.best_score", "Best Score") .. ": " .. tostring(state.best_score)
-    lines[#lines + 1] = tr("game.pacman.game_time", "Game Time") .. ": " .. format_duration(elapsed_seconds())
-    lines[#lines + 1] = tr("game.pacman.level", "Level") .. ": " .. tostring(state.level)
-    lines[#lines + 1] = tr("game.pacman.lives", "Lives") .. ": " .. tostring(state.lives)
-    local fruit = fruit_for_level(state.level)
-    lines[#lines + 1] = tr("game.pacman.fruit", "Fruit") .. ": " .. tr(fruit.key, fruit.fallback) .. " (" .. tostring(fruit.points) .. ")"
-    local remain = is_power_active() and math.max(0, math.ceil((state.power_until - state.frame) / FPS)) or 0
-    lines[#lines + 1] = tr("game.pacman.power_left", "Power Left") .. ": " .. tostring(remain) .. "s"
-    return lines
+local function collected_fruit_symbols()
+    if #state.collected_fruits == 0 then
+        return "-"
+    end
+    return table.concat(state.collected_fruits, " ")
+end
+
+local function build_info_width()
+    local best_line = tr("game.pacman.best_score", "Best Score") .. ": " .. tostring(state.best_score)
+    local score_line = tr("game.pacman.current_score", "Current Score") .. ": " .. tostring(state.score)
+    local time_line = tr("game.pacman.game_time", "Game Time") .. ": " .. format_duration(elapsed_seconds())
+    local level_line = tr("game.pacman.level", "Level") .. ": " .. tostring(state.level)
+    local power_left = is_power_active() and math.max(0, math.ceil((state.power_until - state.frame) / FPS)) or 0
+    local power_line = tr("game.pacman.power_left", "Power") .. " " .. tostring(power_left) .. tr("game.pacman.seconds_unit", "s")
+    local lives_label = tr("game.pacman.lives", "Lives") .. ": "
+    local lives_icons = string.rep("@", math.max(0, state.lives))
+    if lives_icons == "" then lives_icons = "-" end
+    local fruits_line = collected_fruit_symbols()
+
+    local max_w = 18
+    local candidates = { best_line, score_line, time_line, level_line, power_line, fruits_line, lives_label .. lives_icons }
+    for i = 1, #candidates do
+        local w = key_width(candidates[i])
+        if w > max_w then max_w = w end
+    end
+    return max_w + 1
 end
 
 local function board_geometry()
     local term_w, term_h = terminal_size()
     local map_w, map_h = state.cols, state.rows
-    local info_lines = build_info_lines()
-    local info_w = 18
-    for i = 1, #info_lines do if key_width(info_lines[i]) > info_w then info_w = key_width(info_lines[i]) end end
+    local info_w = build_info_width()
+    local gap = 4
 
-    local content_w = map_w + 4 + info_w
-    local content_h = math.max(map_h, #info_lines)
+    local content_w = map_w + gap + info_w
+    local content_h = map_h
 
-    local controls = tr("game.pacman.controls", "[↑]/[↓]/[←]/[→] Move  [R] Restart  [Q]/[ESC] Exit")
+    local controls = tr("game.pacman.controls", "[?]/[?]/[?]/[?] Move  [R] Restart  [Q]/[ESC] Exit")
     local controls_w = min_width_for_lines(controls, 3, 24)
     local result_w = key_width(tr("game.pacman.lose_banner", "You lost all lives!") .. " " .. tr("game.pacman.result_controls", "[R] Restart  [Q]/[ESC] Exit"))
+    local confirm_w = math.max(
+        key_width(tr("game.pacman.confirm_restart", "Confirm restart? [Y] Yes / [N] No")),
+        key_width(tr("game.pacman.confirm_exit", "Confirm exit? [Y] Yes / [N] No"))
+    )
+    local countdown_w = key_width(tr("game.pacman.countdown", "Starting in") .. " 3")
 
-    local total_w = math.max(content_w, controls_w, result_w)
+    local total_w = math.max(content_w, controls_w, result_w, confirm_w, countdown_w)
     local total_h = content_h + 1 + 3
 
     local x = math.floor((term_w - total_w) / 2) + 1
@@ -796,13 +933,22 @@ local function board_geometry()
     if y < 1 then y = 1 end
 
     local map_x = x
-    local info_x = map_x + map_w + 4
+    local map_y = y
+    local info_x = map_x + map_w + gap
     if info_x + info_w - 1 > x + total_w - 1 then info_x = x + total_w - info_w end
+
+    local mid_y = map_y + math.floor(map_h / 2) - 1
+    if mid_y < map_y then mid_y = map_y end
+    if mid_y > map_y + map_h - 3 then mid_y = map_y + map_h - 3 end
+
+    local fruits_y = mid_y + 5
+    if fruits_y > map_y + map_h - 1 then fruits_y = map_y + map_h - 1 end
 
     return {
         x = x, y = y, total_w = total_w, total_h = total_h,
-        map_x = map_x, map_y = y, map_w = map_w, map_h = map_h,
-        info_x = info_x, info_y = y,
+        map_x = map_x, map_y = map_y, map_w = map_w, map_h = map_h,
+        info_x = info_x, info_y = map_y, info_w = info_w,
+        info_mid_y = mid_y, info_fruits_y = fruits_y,
         message_y = y + content_h,
         controls_y = y + content_h + 1,
     }
@@ -818,26 +964,47 @@ local function draw_map(layout)
 end
 
 local function draw_info(layout)
-    local lines = build_info_lines()
-    for i = 1, #lines do draw_text(layout.info_x, layout.info_y + i - 1, lines[i], "white", "black") end
+    fill_rect(layout.info_x, layout.info_y, layout.info_w, layout.map_h)
 
-    local mode_line = tr("game.pacman.mode", "Mode") .. ": "
-    if is_power_active() then mode_line = mode_line .. tr("game.pacman.mode_frightened", "Frightened")
-    else
-        local mode = current_chase_mode()
-        mode_line = mode_line .. ((mode == "scatter") and tr("game.pacman.mode_scatter", "Scatter") or tr("game.pacman.mode_chase", "Chase"))
-    end
-    draw_text(layout.info_x, layout.info_y + #lines + 1, mode_line, "dark_gray", "black")
+    local top_y = layout.info_y
+    local mid_y = layout.info_mid_y
+
+    local best_line = tr("game.pacman.best_score", "Best Score") .. ": " .. tostring(state.best_score)
+    local score_line = tr("game.pacman.current_score", "Current Score") .. ": " .. tostring(state.score)
+    local time_line = tr("game.pacman.game_time", "Game Time") .. ": " .. format_duration(elapsed_seconds())
+
+    draw_text(layout.info_x, top_y, best_line, "dark_gray", "black")
+    draw_text(layout.info_x, top_y + 1, score_line, "white", "black")
+    draw_text(layout.info_x, top_y + 2, time_line, "light_cyan", "black")
+
+    local level_line = tr("game.pacman.level", "Level") .. ": " .. tostring(state.level)
+    draw_text(layout.info_x, mid_y, level_line, "white", "black")
+
+    local lives_label = tr("game.pacman.lives", "Lives") .. ": "
+    local lives_icons = string.rep("@", math.max(0, state.lives))
+    if lives_icons == "" then lives_icons = "-" end
+    draw_text(layout.info_x, mid_y + 1, lives_label, "white", "black")
+    draw_text(layout.info_x + key_width(lives_label), mid_y + 1, lives_icons, "yellow", "black")
+
+    local remain = is_power_active() and math.max(0, math.ceil((state.power_until - state.frame) / FPS)) or 0
+    local power_line = tr("game.pacman.power_left", "Power") .. " " .. tostring(remain) .. tr("game.pacman.seconds_unit", "s")
+    draw_text(layout.info_x, mid_y + 2, power_line, "white", "black")
+
+    draw_text(layout.info_x, layout.info_fruits_y, collected_fruit_symbols(), "light_magenta", "black")
 end
 
 local function draw_message(layout)
-    if state.info_message ~= "" then
-        draw_text(centered_x(state.info_message, layout.x, layout.total_w), layout.message_y, state.info_message, state.info_color or "dark_gray", "black")
+    local term_w, _ = terminal_size()
+    draw_text(1, layout.message_y, string.rep(" ", term_w), "white", "black")
+
+    local msg, color = current_banner_message()
+    if msg ~= "" then
+        draw_text(centered_x(msg, 1, term_w), layout.message_y, msg, color or "dark_gray", "black")
     end
 end
 
 local function draw_controls(layout)
-    local controls = tr("game.pacman.controls", "[↑]/[↓]/[←]/[→] Move  [R] Restart  [Q]/[ESC] Exit")
+    local controls = tr("game.pacman.controls", "[?]/[?]/[?]/[?] Move  [R] Restart  [Q]/[ESC] Exit")
     local term_w, _ = terminal_size()
     local lines = wrap_words(controls, math.max(10, term_w - 2))
     if #lines > 3 then lines = { lines[1], lines[2], lines[3] } end
@@ -869,20 +1036,21 @@ end
 
 local function minimum_required_size()
     local map_w, map_h = state.cols, state.rows
-    local info_lines = build_info_lines()
-    local info_w = 18
-    for i = 1, #info_lines do if key_width(info_lines[i]) > info_w then info_w = key_width(info_lines[i]) end end
+    local info_w = build_info_width()
     local content_w = map_w + 4 + info_w
 
-    local controls_text = tr("game.pacman.controls", "[↑]/[↓]/[←]/[→] Move  [R] Restart  [Q]/[ESC] Exit")
+    local controls_text = tr("game.pacman.controls", "[?]/[?]/[?]/[?] Move  [R] Restart  [Q]/[ESC] Exit")
     local controls_w = min_width_for_lines(controls_text, 3, 24)
     local result_w = key_width(tr("game.pacman.lose_banner", "You lost all lives!") .. " " .. tr("game.pacman.result_controls", "[R] Restart  [Q]/[ESC] Exit"))
+    local confirm_w = math.max(
+        key_width(tr("game.pacman.confirm_restart", "Confirm restart? [Y] Yes / [N] No")),
+        key_width(tr("game.pacman.confirm_exit", "Confirm exit? [Y] Yes / [N] No"))
+    )
 
-    local min_w = math.max(content_w, controls_w, result_w) + 2
-    local min_h = math.max(map_h, #info_lines) + 1 + 3 + 2
+    local min_w = math.max(content_w, controls_w, result_w, confirm_w) + 2
+    local min_h = map_h + 1 + 3 + 2
     return min_w, min_h
 end
-
 local function draw_terminal_size_warning(term_w, term_h, min_w, min_h)
     clear()
     local lines = {
@@ -942,7 +1110,27 @@ end
 
 local function update_logic(key)
     if state.phase == "playing" then handle_playing_input(key) else handle_result_input(key) end
+
+    local countdown = countdown_seconds_left()
+    if countdown > 0 then
+        if state.last_countdown_sec ~= countdown then
+            state.last_countdown_sec = countdown
+            state.dirty = true
+        end
+    elseif state.last_countdown_sec ~= nil then
+        state.last_countdown_sec = nil
+        state.dirty = true
+    end
+
+    if state.info_message_until ~= nil and state.frame >= state.info_message_until then
+        state.info_message = ""
+        state.info_message_until = nil
+        state.dirty = true
+    end
+
+    if state.confirm_mode ~= nil then return end
     if state.phase ~= "playing" then return end
+
     update_power_state(); spawn_fruit_if_needed(); update_player_and_collisions(); update_ghosts()
 end
 

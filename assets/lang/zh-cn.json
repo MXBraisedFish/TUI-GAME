@@ -251,5 +251,9 @@
     "game.pacman.game_time":  "游戏时间",
     "game.pacman.power_left":  "大力丸剩余",
     "game.pacman.status_fruit":  "收集物到手！",
-    "game.pacman.mode_chase":  "追逐"
+    "game.pacman.mode_chase":  "追逐",
+    "game.pacman.confirm_restart":  "确认重新开始？[Y] 确认 / [N] 取消",
+    "game.pacman.confirm_exit":  "确认退出游戏？[Y] 确认 / [N] 取消",
+    "game.pacman.countdown":  "倒计时",
+    "game.pacman.seconds_unit":  "秒"
 }
