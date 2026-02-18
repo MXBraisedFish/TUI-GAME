@@ -49,7 +49,7 @@ Windows，Linux，MacOS
 
 - Windows
 - Linux
-- macOS (仍需测试 bug)
+- MacOS (仍需测试 bug)
 
 ## 安装指南
 

@@ -49,7 +49,7 @@ Windows, Linux, MacOS
 
 - Windows  
 - Linux
-- macOS (still needs bug testing)  
+- MacOS (still needs bug testing)  
 
 ## Installation Guide
 
@@ -256,6 +256,6 @@ cargo build --release
 If you like this project, please consider giving the repository a star⭐! It motivates me to keep updating.
 If you have better ideas or suggestions, feel free to open an Issue.
 
-The macOS versions have not been fully tested due to lack of corresponding devices. If you encounter any bugs, please report them. Thank you very much!
+TheMacOS versions have not been fully tested due to lack of corresponding devices. If you encounter any bugs, please report them. Thank you very much!
 
 GitHub Repo: [MXBraisedFish/TUI-GAME](https://github.com/MXBraisedFish/TUI-GAME)

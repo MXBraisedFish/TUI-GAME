@@ -9,7 +9,7 @@
 本項目基於 Rust 和 Lua 所製作的可在終端遊玩的經典輕量級遊戲合集，實現了在終端中遊玩遊戲的想法，支援國際化多語言和跨平台。
 Windows，Linux，MacOS
 
-> 最新正式版：
+> 最新正式版：  
 > [![Release](https://img.shields.io/github/v/release/MXBraisedFish/TUI-GAME?maxAge=3600&label=Release&labelColor=cc8400&color=ffa500)](https://github.com/MXBraisedFish/TUI-GAME/releases/latest)
 
 ## 目錄
@@ -49,7 +49,7 @@ Windows，Linux，MacOS
 
 - Windows
 - Linux
-- macOS (仍需測試 bug)
+- MacOS (仍需測試 bug)
 
 ## 安裝指南
 
