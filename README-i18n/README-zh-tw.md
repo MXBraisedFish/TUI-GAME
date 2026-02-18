@@ -245,7 +245,7 @@ cargo build --release
 ![踩地雷](./image/minesweeper-zh-tw.png)
 
 ### 小精靈
-![小精靈](./README-i18n/image/pacman-zh-tw.png)
+![小精靈](./image/pacman-zh-tw.png)
 
 ### 石頭剪刀布
 

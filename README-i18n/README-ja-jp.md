@@ -245,7 +245,7 @@ cargo build --release
 ![扫雷](./image/minesweeper-ja-jp.png)
 
 ### パックマン
-![パックマン](./README-i18n/image/pacman-ja-jp.png)
+![パックマン](./image/pacman-ja-jp.png)
 
 ### じゃんけん
 

@@ -245,7 +245,7 @@ cargo build --release
 ![扫雷](./image/minesweeper-zh-cn.png)
 
 ### 吃豆人
-![吃豆人](./README-i18n/image/pacman-zh-cn.png)
+![吃豆人](./image/pacman-zh-cn.png)
 
 ### 石头剪刀布
 
