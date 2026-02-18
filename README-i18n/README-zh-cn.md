@@ -34,13 +34,16 @@ Windows，Linux，MacOS
 - 走迷宫
 - 记忆翻牌
 - 扫雷
+- 吃豆人
 - 石头剪刀布
 
 ## 语言支持
 
-- 英文
-- 中文
-- 日文
+- English  
+- 简体中文
+- 繁體中文(港澳)
+- 繁體中文(台)
+- 日本語
 
 ## 平台支持
 
@@ -240,6 +243,9 @@ cargo build --release
 ### 扫雷
 
 ![扫雷](./image/minesweeper-zh-cn.png)
+
+### 吃豆人
+![吃豆人](./README-i18n/image/pacman-zh-cn.png)
 
 ### 石头剪刀布
 

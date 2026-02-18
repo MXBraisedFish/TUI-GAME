@@ -34,13 +34,16 @@ Windows，Linux，MacOS
 - 走迷宮
 - 記憶翻牌
 - 掃雷
+- 小精靈
 - 石頭剪刀布
 
 ## 語言支援
 
-- 英文
-- 中文
-- 日文
+- English  
+- 简体中文
+- 繁體中文(港澳)
+- 繁體中文(台)
+- 日本語
 
 ## 平台支援
 
@@ -240,6 +243,9 @@ cargo build --release
 ### 掃雷
 
 ![掃雷](./image/minesweeper-zh-hk-mo.png)
+
+### 小精靈
+![小精靈](./README-i18n/image/pacman-zh-hk-mo.png)
 
 ### 石頭剪刀布
 

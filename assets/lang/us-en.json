@@ -1,7 +1,7 @@
 ﻿{
     "language_name":  "English",
     "language":  "Language",
-    "confirm_language":  "[Enter] Confirm language. [ESC] or [Q] Return to main menu",
+    "confirm_language":  "[Enter] Confirm language. [ESC] / [Q] Return to main menu",
     "menu.play":  "Play Game",
     "menu.continue":  "Continue",
     "menu.settings":  "Settings",

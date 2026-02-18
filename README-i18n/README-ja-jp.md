@@ -34,13 +34,16 @@ Windows、Linux、MacOS
 - 迷路脱出  
 - メモリーフリップ  
 - マインスイーパー  
+- パックマン
 - じゃんけん  
 
 ## 対応言語
 
-- 英語  
-- 中国語  
-- 日本語  
+- English  
+- 简体中文
+- 繁體中文(港澳)
+- 繁體中文(台)
+- 日本語
 
 ## 対応プラットフォーム
 
@@ -240,6 +243,9 @@ cargo build --release
 ### マインスイーパー
 
 ![扫雷](./image/minesweeper-ja-jp.png)
+
+### パックマン
+![パックマン](./README-i18n/image/pacman-ja-jp.png)
 
 ### じゃんけん
 

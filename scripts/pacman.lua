@@ -341,7 +341,8 @@ local function randomize_fruit_spawn_for_level()
             if walkable and ch ~= "<" and ch ~= ">" then
                 local is_player_spawn = (r == state.player_start.r and c == state.player_start.c)
                 local is_ghost_spawn = (r == state.ghost_spawn.r and c == state.ghost_spawn.c)
-                if (not is_player_spawn) and (not is_ghost_spawn) then
+                local no_pellet = state.pellets[r][c] == " "
+                if (not is_player_spawn) and (not is_ghost_spawn) and no_pellet then
                     candidates[#candidates + 1] = { r = r, c = c }
                 end
             end
@@ -502,7 +503,7 @@ local function start_level(level)
     reset_entities_for_level()
     randomize_fruit_spawn_for_level()
     start_round_countdown(3)
-    set_info_message(tr("game.pacman.status_ready", "Ready!"), "yellow")
+    set_info_message(tr("game.pacman.status_ready", "Ready!"), "yellow", 3)
     state.dirty = true
 end
 
@@ -555,7 +556,7 @@ local function consume_current_cell()
             state.dirty = true
         else
             start_level(state.level + 1)
-            set_info_message(tr("game.pacman.status_level_clear", "Level clear!") .. " " .. tostring(state.level), "green")
+            set_info_message(tr("game.pacman.status_level_clear", "Level clear!") .. " " .. tostring(state.level), "green", 3)
         end
     end
 end
@@ -721,7 +722,7 @@ local function reset_after_player_death()
 
     state.global_pause_until = state.frame + 4 * FPS
     reset_power_cycle()
-    set_info_message(tr("game.pacman.status_wait", "Ghosts retreating..."), "yellow")
+    set_info_message(tr("game.pacman.status_wait", "Ghosts retreating..."), "yellow", 4)
     state.dirty = true
 end
 

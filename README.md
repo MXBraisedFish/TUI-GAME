@@ -33,14 +33,17 @@ Windows, Linux, MacOS
 - Lights Out  
 - Maze Escape  
 - Memory Flip  
-- Minesweeper  
+- Minesweeper
+- Pac-Man
 - Rock Paper Scissors  
 
 ## Language Support
 
 - English  
-- Chinese  
-- Japanese  
+- 简体中文
+- 繁體中文(港澳)
+- 繁體中文(台)
+- 日本語
 
 ## Platform Support
 
@@ -240,6 +243,9 @@ cargo build --release
 ### Minesweeper
 
 ![Minesweeper](./README-i18n/image/minesweeper.png)
+
+### Pac-Man
+![Pac-Man](./README-i18n/image/pacman.png)
 
 ### Rock Paper Scissors
 
