@@ -104,6 +104,7 @@ impl GameSelection {
                         || game.id == "rock_paper_scissors"
                         || game.id == "blackjack"
                         || game.id == "maze_escape"
+                        || game.id == "pacman"
                     {
                         return Some(GameSelectionAction::LaunchGame(game));
                     }
@@ -379,6 +380,12 @@ impl GameSelection {
             } else {
                 lines.push(Line::from(i18n::t("game.maze_escape.best_none")));
             }
+        } else if game.id == "pacman" {
+            lines.push(Line::from(format!(
+                "{} {}",
+                i18n::t("game_selection.label.high_score"),
+                s.high_score
+            )));
         } else if game.id == "rock_paper_scissors" {
             lines.push(Line::from(format!(
                 "{} {}",
@@ -538,3 +545,5 @@ impl GameSelection {
         self.list_state.select(Some(selected_in_page));
     }
 }
+
+
