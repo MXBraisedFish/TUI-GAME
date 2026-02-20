@@ -27,15 +27,16 @@ Windows, Linux, MacOS
 
 ## Implemented Games
 
-- 2048  
-- Blackjack  
-- Color Memory  
-- Lights Out  
-- Maze Escape  
-- Memory Flip  
-- Minesweeper
-- Pac-Man
-- Rock Paper Scissors  
+- [2048](#2048)
+- [Blackjack](#blackjack)
+- [Color Memory](#color-memory)
+- [Lights Out](#lights-out)
+- [Maze Escape](#maze-escape)
+- [Memory Flip](#memory-flip)
+- [Minesweeper](#minesweeper)
+- [Pac-Man](#pac-man)
+- [Rock Paper Scissors](#rock-paper-scissors)
+- [Air Shooter](#air-shooter)
 
 ## Language Support
 
@@ -250,6 +251,10 @@ cargo build --release
 ### Rock Paper Scissors
 
 ![Rock Paper Scissors](./README-i18n/image/rockpaperscissors.png)
+
+### Air Shooter
+
+![Air Shooter](./README-i18n/image/airshooter.png)
 
 ## Support This Project
 

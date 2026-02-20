@@ -260,7 +260,7 @@
     "game.shooter.best_stage": "歷史最高階段",
     "game.shooter.score": "遊戲分數",
     "game.shooter.time": "遊戲時間",
-    "game.shooter.stage": "當前關卡",
+    "game.shooter.stage": "現階段",
     "game.shooter.hp": "生命",
     "game.shooter.controls": "[←]/[→] 移動 [Z] 開火模式 [Space] 開火 [X] 核彈 [S] 保存 [R] 重開 [Q]/[ESC] 退出",
     "game.shooter.confirm_restart": "確認重開？ [Y] 確認 / [N] 取消",

@@ -1,4 +1,4 @@
-﻿GAME_META = {
+GAME_META = {
     name = "Air Shooter",
     description = "Pilot a fighter and dodge enemy fire."
 }
@@ -323,6 +323,7 @@ local function make_snapshot()
     end
 
     return {
+        frame = state.frame,
         score = state.score,
         stage = state.stage,
         hp = state.hp,
@@ -422,6 +423,55 @@ local function restore_snapshot(snap)
     state.enemy_bullets = type(snap.enemy_bullets) == "table" and snap.enemy_bullets or {}
     state.player_bullets = type(snap.player_bullets) == "table" and snap.player_bullets or {}
     state.items = type(snap.items) == "table" and snap.items or {}
+
+    local saved_frame = math.floor(tonumber(snap.frame) or state.frame)
+    local has_saved_frame = tonumber(snap.frame) ~= nil
+    local function rebase_timer(next_at)
+        if not has_saved_frame then return state.frame end
+        local raw = math.floor(tonumber(next_at) or saved_frame)
+        local left = raw - saved_frame
+        if left < 0 then left = 0 end
+        local cap = sec_to_frames(5)
+        if left > cap then left = cap end
+        return state.frame + left
+    end
+
+    for i = 1, #state.enemies do
+        local e = state.enemies[i]
+        if type(e) == "table" then
+            local def = nil
+            if type(e.kind) == "string" then def = ENEMY_TYPES[e.kind] end
+            local base_speed = (def ~= nil and def.speed) or 2
+            e.move_interval = math.max(1, math.floor(tonumber(e.move_interval) or speed_to_interval(base_speed / 4)))
+            e.next_move_at = rebase_timer(e.next_move_at)
+            e.shot_active = tonumber(e.shot_active) or ((def ~= nil and def.shot_active) or 3.0)
+            e.shot_idle = tonumber(e.shot_idle) or ((def ~= nil and def.shot_idle) or 6.0)
+            e.next_shot_at = rebase_timer(e.next_shot_at)
+        end
+    end
+
+    for i = 1, #state.enemy_bullets do
+        local b = state.enemy_bullets[i]
+        if type(b) == "table" then
+            b.move_interval = math.max(1, math.floor(tonumber(b.move_interval) or speed_to_interval(1)))
+            b.next_move_at = rebase_timer(b.next_move_at)
+        end
+    end
+
+    for i = 1, #state.player_bullets do
+        local b = state.player_bullets[i]
+        if type(b) == "table" then
+            b.move_interval = math.max(1, math.floor(tonumber(b.move_interval) or speed_to_interval(2)))
+            b.next_move_at = rebase_timer(b.next_move_at)
+        end
+    end
+
+    for i = 1, #state.items do
+        local it = state.items[i]
+        if type(it) == "table" then
+            it.next_move_at = rebase_timer(it.next_move_at)
+        end
+    end
 
     if type(snap.boss) == "table" then
         local b = snap.boss
