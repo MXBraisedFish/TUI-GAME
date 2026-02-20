@@ -1,4 +1,4 @@
-GAME_META = {
+﻿GAME_META = {
     name = "Air Shooter",
     description = "Pilot a fighter and dodge enemy fire."
 }
@@ -10,30 +10,38 @@ local INNER_W, INNER_H = 30, 16
 local PLAYER_ROW = INNER_H
 local PLAYER_MIN_C, PLAYER_MAX_C = 2, 29
 local ENEMY_COL_MIN, ENEMY_COL_MAX = 2, 29
-local BASE_BOSS_SCORE = 200
+local BASE_BOSS_SCORE = 100
 local BOSS_HP_BAR_W = 20
+local CH_DBL_TL = utf8.char(9556)  -- ╔
+local CH_DBL_TR = utf8.char(9559)  -- ╗
+local CH_DBL_BL = utf8.char(9562)  -- ╚
+local CH_DBL_BR = utf8.char(9565)  -- ╝
+local CH_DBL_H  = utf8.char(9552)  -- ═
+local CH_DBL_V  = utf8.char(9553)  -- ║
+local CH_BLOCK  = utf8.char(9608)  -- █
 
 local ENEMY_TYPES = {
-    normal = { glyph = "V", color = "rgb(255,170,170)", score = 2, hp = 2, speed = 2, collide = 2, shooter = true, bullet = "v", base_dmg = 1, tracking = false },
+    normal = { glyph = "V", color = "rgb(255,170,170)", score = 2, hp = 2, speed = 2, collide = 2, shooter = true, bullet = "v", base_dmg = 1, tracking = false, shot_active = 3.0, shot_idle = 6.0 },
     fast =   { glyph = "Y", color = "rgb(255,170,170)", score = 1, hp = 1, speed = 4, collide = 3, shooter = false, bullet = "",  base_dmg = 0, tracking = false },
-    tank =   { glyph = "W", color = "rgb(255,170,170)", score = 3, hp = 6, speed = 1, collide = 4, shooter = true, bullet = "v", base_dmg = 1, tracking = false },
-    heavy =  { glyph = "U", color = "rgb(255,170,170)", score = 4, hp = 2, speed = 2, collide = 2, shooter = true, bullet = "u", base_dmg = 4, tracking = true },
+    tank =   { glyph = "W", color = "rgb(255,170,170)", score = 3, hp = 6, speed = 1, collide = 4, shooter = true, bullet = "v", base_dmg = 1, tracking = false, shot_active = 6.0, shot_idle = 8.0 },
+    heavy =  { glyph = "U", color = "rgb(255,170,170)", score = 4, hp = 2, speed = 2, collide = 2, shooter = true, bullet = "u", base_dmg = 4, tracking = true, shot_active = 8.0, shot_idle = 12.0 },
 }
 
 local ATTACK_BUFF = {
-    ["@"] = { mode = "rapid", dur = 2 },
-    ["%"] = { mode = "laser", dur = 5 },
-    ["$"] = { mode = "double", dur = 5 },
-    ["#"] = { mode = "single", dur = 5 },
-    ["&"] = { mode = "missile", dur = 6 },
+    ["@"] = { mode = "rapid", dur = 4 },
+    ["%"] = { mode = "laser", dur = 10 },
+    ["$"] = { mode = "double", dur = 10 },
+    ["#"] = { mode = "single", dur = 10 },
+    ["&"] = { mode = "missile", dur = 12 },
 }
 
 local FUNC_BUFF = {
-    ["*"] = { mode = "shield", dur = 2 },
+    ["*"] = { mode = "shield", dur = 4 },
     ["~"] = { mode = "heal", dur = 0 },
     ["o"] = { mode = "coin", dur = 0 },
-    ["c"] = { mode = "magnet", dur = 10 },
-    ["+"] = { mode = "bullet_speed", dur = 10 },
+    ["c"] = { mode = "magnet", dur = 20 },
+    ["+"] = { mode = "bullet_speed", dur = 20 },
+    ["G"] = { mode = "nuke", dur = 0 },
 }
 
 local state = {
@@ -44,11 +52,12 @@ local state = {
 
     enemies = {}, enemy_bullets = {}, player_bullets = {}, items = {},
 
-    boss = { active = false, row = 1, center_c = 15, hp = 0, max_hp = 1, mode = "attack", mode_until = 0, next_move_at = 0, next_shot_at = 0, start_frame = 0 },
+    boss = { active = false, row = 1, center_c = 15, hp = 0, max_hp = 1, mode = "attack", mode_until = 0, next_move_at = 0, next_shot_at = 0, start_frame = 0, chase_cd_until = 0 },
 
     attack_symbol = nil, attack_until = 0, missile_shots = 0, missile_last = 0, last_player_fire = 0,
     buff_until = { ["*"] = 0, ["c"] = 0, ["+"] = 0 }, buff_order = {},
     hurt_invuln_until = 0,
+    nuke_stock = 0, fire_mode = "auto", enemy_spawn_block_until = 0, boom_until = 0,
 
     next_enemy_spawn_at = 0, next_item_spawn_at = 0,
     msg_text = "", msg_color = "dark_gray", msg_until = 0, msg_persistent = false,
@@ -193,26 +202,37 @@ local function choose_weighted(entries)
     return entries[#entries]
 end
 
+local function stage_level()
+    return math.max(0, state.stage - 1)
+end
+
 local function scale_player_dmg(base)
-    local mult = math.max(1, state.stage / 2)
+    local s = stage_level()
+    local mult = math.max(1, s / 2)
     return math.max(1, math.floor(base * mult))
 end
 
 local function scale_enemy_bullet_dmg(base)
-    local mult = math.max(1, state.stage / 2)
+    local s = stage_level()
+    local mult = math.max(1, s / 2)
     return clamp(math.floor(base * mult), 1, 10)
 end
 
 local function scale_enemy_hp(base)
-    return base + math.floor(math.max(1, (state.stage ^ 1.5) / 3))
+    local s = stage_level()
+    if s <= 0 then return base end
+    return base + math.floor(math.max(1, (s ^ 1.5) / 3))
 end
 
 local function scale_enemy_collide(base)
-    return clamp(base + math.floor(math.max(1, state.stage / 4)), 1, 10)
+    local s = stage_level()
+    if s <= 0 then return clamp(base, 1, 10) end
+    return clamp(base + math.floor(math.max(1, s / 4)), 1, 10)
 end
 
 local function scale_boss_hp(base)
-    return math.max(1, math.floor(base * math.max(1, state.stage / 2)))
+    local s = stage_level()
+    return math.max(1, math.floor(base * math.max(1, s / 2)))
 end
 
 local function has_magnet() return state.buff_until["c"] > state.frame end
@@ -320,6 +340,10 @@ local function make_snapshot()
         magnet_left = math.max(0, math.ceil((state.buff_until["c"] - state.frame) / FPS)),
         bullet_speed_left = math.max(0, math.ceil((state.buff_until["+"] - state.frame) / FPS)),
         hurt_invuln_left = math.max(0, math.ceil((state.hurt_invuln_until - state.frame) / FPS)),
+        nuke_stock = state.nuke_stock,
+        fire_mode = state.fire_mode,
+        enemy_spawn_block_left = math.max(0, math.ceil((state.enemy_spawn_block_until - state.frame) / FPS)),
+        boom_left = math.max(0, math.ceil((state.boom_until - state.frame) / FPS)),
 
         enemies = cp(state.enemies),
         enemy_bullets = cp(state.enemy_bullets),
@@ -337,6 +361,7 @@ local function make_snapshot()
             move_left = math.max(0, math.ceil((state.boss.next_move_at - state.frame) / FPS)),
             shot_left = math.max(0, math.ceil((state.boss.next_shot_at - state.frame) / FPS)),
             active_sec = math.max(0, math.floor((state.frame - state.boss.start_frame) / FPS)),
+            chase_cd_left = math.max(0, math.ceil((state.boss.chase_cd_until - state.frame) / FPS)),
         },
 
         enemy_spawn_left = math.max(0, math.ceil((state.next_enemy_spawn_at - state.frame) / FPS)),
@@ -388,6 +413,10 @@ local function restore_snapshot(snap)
     state.buff_until["c"] = state.frame + sec_to_frames(math.max(0, tonumber(snap.magnet_left) or 0))
     state.buff_until["+"] = state.frame + sec_to_frames(math.max(0, tonumber(snap.bullet_speed_left) or 0))
     state.hurt_invuln_until = state.frame + sec_to_frames(math.max(0, tonumber(snap.hurt_invuln_left) or 0))
+    state.nuke_stock = clamp(math.floor(tonumber(snap.nuke_stock) or 0), 0, 3)
+    state.fire_mode = (type(snap.fire_mode) == "string" and string.lower(snap.fire_mode) == "manual") and "manual" or "auto"
+    state.enemy_spawn_block_until = state.frame + sec_to_frames(math.max(0, tonumber(snap.enemy_spawn_block_left) or 0))
+    state.boom_until = state.frame + sec_to_frames(math.max(0, tonumber(snap.boom_left) or 0))
 
     state.enemies = type(snap.enemies) == "table" and snap.enemies or {}
     state.enemy_bullets = type(snap.enemy_bullets) == "table" and snap.enemy_bullets or {}
@@ -406,12 +435,17 @@ local function restore_snapshot(snap)
         state.boss.next_move_at = state.frame + sec_to_frames(math.max(0, tonumber(b.move_left) or 0))
         state.boss.next_shot_at = state.frame + sec_to_frames(math.max(0, tonumber(b.shot_left) or 0))
         state.boss.start_frame = state.frame - sec_to_frames(math.max(0, tonumber(b.active_sec) or 0))
+        state.boss.chase_cd_until = state.frame + sec_to_frames(math.max(0, tonumber(b.chase_cd_left) or 0))
     else
         state.boss.active = false
+        state.boss.chase_cd_until = state.frame
     end
 
     state.next_enemy_spawn_at = state.frame + sec_to_frames(math.max(1, tonumber(snap.enemy_spawn_left) or 1))
     state.next_item_spawn_at = state.frame + sec_to_frames(math.max(1, tonumber(snap.item_spawn_left) or 1))
+    if state.enemy_spawn_block_until > state.next_enemy_spawn_at then
+        state.next_enemy_spawn_at = state.enemy_spawn_block_until
+    end
 
     state.phase = "playing"
     state.confirm_mode = nil
@@ -450,6 +484,10 @@ local function reset_run()
 
     clear_world_entities(); clear_buffs()
     state.hurt_invuln_until = 0
+    state.nuke_stock = 0
+    state.fire_mode = "auto"
+    state.enemy_spawn_block_until = state.frame
+    state.boom_until = 0
 
     state.phase = "playing"; state.confirm_mode = nil
     state.run_start_frame = state.frame; state.end_frame = nil
@@ -464,6 +502,7 @@ local function reset_run()
     state.boss.next_move_at = state.frame
     state.boss.next_shot_at = state.frame
     state.boss.start_frame = state.frame
+    state.boss.chase_cd_until = state.frame
 
     state.last_player_fire = state.frame
     reset_spawn_timers()
@@ -529,10 +568,11 @@ local function spawn_enemy(kind, col)
         kind = kind, glyph = def.glyph, color = def.color, score = def.score,
         hp = scale_enemy_hp(def.hp), collide = scale_enemy_collide(def.collide),
         shooter = def.shooter, bullet = def.bullet, base_dmg = def.base_dmg, tracking = def.tracking,
+        shot_active = def.shot_active or 1.5, shot_idle = def.shot_idle or 3.0,
         r = 1, c = clamp(col, ENEMY_COL_MIN, ENEMY_COL_MAX),
         move_interval = speed_to_interval(def.speed / 4),
         next_move_at = state.frame + speed_to_interval(def.speed / 4),
-        next_shot_at = state.frame + sec_to_frames(1),
+        next_shot_at = state.frame + sec_to_frames(def.shot_active or 1.5),
     }
     state.enemies[#state.enemies + 1] = e
     state.dirty = true
@@ -540,12 +580,17 @@ end
 
 local function maybe_spawn_enemy()
     if state.boss.active or state.frame < state.next_enemy_spawn_at then return end
+    if state.frame < state.enemy_spawn_block_until then return end
 
-    local interval = math.max(1.0, 3.0 - state.stage * 0.12)
+    local s = stage_level()
+    local interval = math.max(1.0, 3.0 - s * 0.12)
     state.next_enemy_spawn_at = state.frame + sec_to_frames(interval)
 
+    local cap = math.min(12, 1 + state.stage * 2)
+    if #state.enemies >= cap then return end
+
     local pick = choose_weighted({
-        { id = "normal", w = 40 }, { id = "fast", w = 25 }, { id = "tank", w = 20 }, { id = "heavy", w = 15 },
+        { id = "normal", w = 60 }, { id = "fast", w = 20 }, { id = "tank", w = 10 }, { id = "heavy", w = 10 },
     })
     spawn_enemy(pick.id, rand_range(ENEMY_COL_MIN, ENEMY_COL_MAX))
 end
@@ -585,27 +630,43 @@ local function activate_function_item(symbol)
         if state.hp < 10 then state.hp = state.hp + 1 end
     elseif symbol == "o" then
         state.score = state.score + 10
+    elseif symbol == "G" then
+        if state.nuke_stock < 3 then state.nuke_stock = state.nuke_stock + 1 end
     end
 
     show_message(tr("game.shooter.item." .. symbol, symbol) .. " " .. tr("game.shooter.msg_item_get", "picked"), "light_cyan", 3, false)
+end
+
+local function nuke_spawn_permille()
+    if state.boss.active then return 0 end
+    if state.nuke_stock <= 0 then return 10 end
+    if state.nuke_stock == 1 then return 5 end
+    if state.nuke_stock == 2 then return 1 end
+    return 0
 end
 
 local function spawn_item()
     if state.frame < state.next_item_spawn_at then return end
     state.next_item_spawn_at = state.frame + sec_to_frames(rand_range(5, 10))
 
-    local group = choose_weighted({ { kind = "attack", w = 60 }, { kind = "function", w = 40 } })
+    local symbol, color, kind = "@", "rgb(170,255,170)", "attack"
 
-    local symbol, color = "@", "rgb(170,255,170)"
-    if group.kind == "attack" then
-        local pick = choose_weighted({ { sym = "@", w = 20 }, { sym = "%", w = 20 }, { sym = "$", w = 20 }, { sym = "#", w = 20 }, { sym = "&", w = 20 } })
-        symbol = pick.sym; color = "rgb(170,255,170)"
+    local nuke_p = nuke_spawn_permille()
+    if nuke_p > 0 and rand_int(1000) < nuke_p then
+        symbol, color, kind = "G", "magenta", "function"
     else
-        local pick = choose_weighted({ { sym = "*", w = 25 }, { sym = "~", w = 5 }, { sym = "o", w = 50 }, { sym = "c", w = 10 }, { sym = "+", w = 10 } })
-        symbol = pick.sym; color = "light_cyan"
+        local group = choose_weighted({ { kind = "attack", w = 60 }, { kind = "function", w = 40 } })
+        kind = group.kind
+        if group.kind == "attack" then
+            local pick = choose_weighted({ { sym = "@", w = 20 }, { sym = "%", w = 20 }, { sym = "$", w = 20 }, { sym = "#", w = 20 }, { sym = "&", w = 20 } })
+            symbol = pick.sym; color = "rgb(170,255,170)"
+        else
+            local pick = choose_weighted({ { sym = "*", w = 25 }, { sym = "~", w = 5 }, { sym = "o", w = 50 }, { sym = "c", w = 10 }, { sym = "+", w = 10 } })
+            symbol = pick.sym; color = "light_cyan"
+        end
     end
 
-    state.items[#state.items + 1] = { symbol = symbol, color = color, kind = group.kind, r = 1, c = rand_range(ENEMY_COL_MIN, ENEMY_COL_MAX), next_move_at = state.frame + sec_to_frames(1) }
+    state.items[#state.items + 1] = { symbol = symbol, color = color, kind = kind, r = 1, c = rand_range(ENEMY_COL_MIN, ENEMY_COL_MAX), next_move_at = state.frame + sec_to_frames(1) }
     state.dirty = true
 end
 
@@ -622,6 +683,7 @@ local function create_player_bullet(c, mode)
         owner = "player", r = PLAYER_ROW - 1, c = c,
         ch = "^", color = "green", damage = scale_player_dmg(1),
         kind = "normal", pierce = false, tracking = false,
+        is_missile = false, missile_hp = 0,
         move_interval = speed_to_interval(2 * speed_mul),
         next_move_at = state.frame,
     }
@@ -629,11 +691,11 @@ local function create_player_bullet(c, mode)
     if mode == "laser" then
         b.ch = "|"; b.kind = "laser"; b.pierce = true; b.damage = scale_player_dmg(1)
     elseif mode == "double" then
-        b.ch = ":"; b.kind = "double"; b.damage = scale_player_dmg(1)
+        b.ch = ":"; b.kind = "double"; b.damage = scale_player_dmg(2)
     elseif mode == "single" then
-        b.ch = "·"; b.kind = "single"; b.damage = scale_player_dmg(3)
+        b.ch = "."; b.kind = "single"; b.damage = scale_player_dmg(3)
     elseif mode == "missile" then
-        b.ch = "!"; b.kind = "missile"; b.damage = scale_player_dmg(4); b.tracking = true; b.move_interval = speed_to_interval(1 * speed_mul)
+        b.ch = "!"; b.kind = "missile"; b.damage = scale_player_dmg(4); b.tracking = true; b.move_interval = speed_to_interval(1 * speed_mul); b.is_missile = true; b.missile_hp = 2
     end
     return b
 end
@@ -652,8 +714,9 @@ local function nearest_enemy_col(c)
     return best_c
 end
 
-local function fire_player_if_needed()
+local function fire_player_if_needed(force_once)
     if state.phase ~= "playing" or state.confirm_mode ~= nil then return end
+    if state.fire_mode == "manual" and force_once ~= true then return end
 
     local mode = attack_mode_name()
     local rapid = (mode == "rapid")
@@ -662,9 +725,8 @@ local function fire_player_if_needed()
     if state.last_player_fire == nil then state.last_player_fire = state.frame - interval end
 
     if mode == "missile" then
-        if state.missile_shots > 0 and state.frame - state.missile_last >= sec_to_frames(2) then
+        if state.frame - state.missile_last >= sec_to_frames(2) then
             state.player_bullets[#state.player_bullets + 1] = create_player_bullet(state.player_c, "missile")
-            state.missile_shots = state.missile_shots - 1
             state.missile_last = state.frame
             state.dirty = true
         end
@@ -674,11 +736,10 @@ local function fire_player_if_needed()
     if state.frame - state.last_player_fire < interval then return end
     state.last_player_fire = state.frame
 
-    local fire_mode = rapid and "normal" or mode
-    state.player_bullets[#state.player_bullets + 1] = create_player_bullet(state.player_c, fire_mode)
+    local fire_kind = rapid and "normal" or mode
+    state.player_bullets[#state.player_bullets + 1] = create_player_bullet(state.player_c, fire_kind)
     state.dirty = true
 end
-
 local function kill_enemy(idx)
     local e = state.enemies[idx]
     if e ~= nil then state.score = state.score + (e.score or 0) end
@@ -713,6 +774,7 @@ local function update_player_bullets()
     while i <= #state.player_bullets do
         local b = state.player_bullets[i]
         local remove = false
+        local can_hit = false
 
         if state.frame >= b.next_move_at then
             b.next_move_at = state.frame + b.move_interval
@@ -721,29 +783,52 @@ local function update_player_bullets()
                 if target ~= nil then if target > b.c then b.c = b.c + 1 elseif target < b.c then b.c = b.c - 1 end end
             end
             b.r = b.r - 1
+            can_hit = true
             state.dirty = true
         end
 
         if b.r < 1 or b.c < 1 or b.c > INNER_W then remove = true end
 
-        if (not remove) and state.boss.active and boss_contains(b.r, b.c) then
+        if (not remove) and can_hit and state.boss.active and boss_contains(b.r, b.c) then
             local dmg = b.damage or 1
             if b.kind == "double" then
-                if state.boss.hp <= dmg then boss_take_damage(dmg); b.kind = "normal"; b.ch = "^"; b.damage = scale_player_dmg(1)
-                else boss_take_damage(dmg); boss_take_damage(dmg); remove = true end
+                local hp_before = state.boss.hp
+                boss_take_damage(dmg)
+                if hp_before == 1 then
+                    b.kind = "double_remain"
+                    b.ch = "·"
+                    b.damage = scale_player_dmg(2)
+                else
+                    remove = true
+                end
+            elseif b.kind == "double_remain" then
+                boss_take_damage(dmg)
+                remove = true
             else
                 boss_take_damage(dmg)
                 if not b.pierce then remove = true end
             end
         end
 
-        if not remove then
+        if (not remove) and can_hit then
             local ei, e = find_enemy_at(b.r, b.c)
             if ei ~= nil and e ~= nil then
                 local dmg = b.damage or 1
                 if b.kind == "double" then
-                    if e.hp <= dmg then e.hp = e.hp - dmg; if e.hp <= 0 then kill_enemy(ei) end; b.kind = "normal"; b.ch = "^"; b.damage = scale_player_dmg(1)
-                    else e.hp = e.hp - dmg; if e.hp <= 0 then kill_enemy(ei) else e.hp = e.hp - dmg; if e.hp <= 0 then kill_enemy(ei) end end; remove = true end
+                    local hp_before = e.hp
+                    e.hp = e.hp - dmg
+                    if e.hp <= 0 then kill_enemy(ei) end
+                    if hp_before == 1 then
+                        b.kind = "double_remain"
+                        b.ch = "·"
+                        b.damage = scale_player_dmg(2)
+                    else
+                        remove = true
+                    end
+                elseif b.kind == "double_remain" then
+                    e.hp = e.hp - dmg
+                    if e.hp <= 0 then kill_enemy(ei) end
+                    remove = true
                 else
                     e.hp = e.hp - dmg
                     if e.hp <= 0 then kill_enemy(ei) end
@@ -757,10 +842,14 @@ local function update_player_bullets()
 end
 
 local function spawn_enemy_bullet(c, ch, base_dmg, tracking, row)
+    local is_missile = ch == "u"
     state.enemy_bullets[#state.enemy_bullets + 1] = {
         owner = "enemy", r = row or 2, c = clamp(c, ENEMY_COL_MIN, ENEMY_COL_MAX),
         ch = ch, color = "magenta", damage = scale_enemy_bullet_dmg(base_dmg),
         tracking = tracking == true,
+        target_c = state.player_c,
+        is_missile = is_missile,
+        missile_hp = is_missile and 4 or 0,
         move_interval = speed_to_interval(1),
         next_move_at = state.frame,
     }
@@ -774,7 +863,8 @@ local function update_enemy_bullets()
         if state.frame >= b.next_move_at then
             b.next_move_at = state.frame + b.move_interval
             if b.tracking then
-                if state.player_c > b.c then b.c = b.c + 1 elseif state.player_c < b.c then b.c = b.c - 1 end
+                local tc = b.target_c or b.c
+                if tc > b.c then b.c = b.c + 1 elseif tc < b.c then b.c = b.c - 1 end
                 b.c = clamp(b.c, ENEMY_COL_MIN, ENEMY_COL_MAX)
             end
             b.r = b.r + 1
@@ -790,6 +880,27 @@ local function update_enemy_bullets()
 
         if remove then remove_idx(state.enemy_bullets, i) else i = i + 1 end
     end
+end
+
+local function has_enemy_bullet_too_close(col, spawn_row)
+    for i = 1, #state.enemy_bullets do
+        local b = state.enemy_bullets[i]
+        if b.c == col and math.abs(b.r - spawn_row) <= 1 then
+            return true
+        end
+    end
+    return false
+end
+
+local function boss_muzzle_blocked(col)
+    local muzzle_row = state.boss.row + 2
+    for i = 1, #state.enemy_bullets do
+        local b = state.enemy_bullets[i]
+        if b.c == col and b.r >= muzzle_row and b.r <= (muzzle_row + 2) then
+            return true
+        end
+    end
+    return false
 end
 
 local function update_enemies()
@@ -813,12 +924,16 @@ local function update_enemies()
 
         if not removed then
             if e.shooter and state.frame >= e.next_shot_at then
-                if e.c == state.player_c then
-                    spawn_enemy_bullet(e.c, e.bullet, e.base_dmg, e.tracking, e.r + 1)
-                    e.next_shot_at = state.frame + sec_to_frames(1)
+                local spawn_row = e.r + 1
+                local active_interval = sec_to_frames(e.shot_active or 1.5)
+                local idle_interval = sec_to_frames(e.shot_idle or 3.0)
+                local next_interval = (e.c == state.player_c) and active_interval or idle_interval
+
+                if has_enemy_bullet_too_close(e.c, spawn_row) then
+                    e.next_shot_at = state.frame + math.max(1, math.floor(next_interval / 2))
                 else
-                    if rand_int(100) < 50 then spawn_enemy_bullet(e.c, e.bullet, e.base_dmg, e.tracking, e.r + 1) end
-                    e.next_shot_at = state.frame + sec_to_frames(2)
+                    spawn_enemy_bullet(e.c, e.bullet, e.base_dmg, e.tracking, spawn_row)
+                    e.next_shot_at = state.frame + next_interval
                 end
             end
             i = i + 1
@@ -845,24 +960,32 @@ local function boss_summon_wave()
 end
 
 local function choose_boss_mode()
+    local chase_w = (state.frame >= (state.boss.chase_cd_until or 0)) and 10 or 0
     return choose_weighted({
-        { mode = "attack", w = 40 }, { mode = "predict", w = 35 }, { mode = "dodge", w = 15 }, { mode = "summon", w = 10 },
+        { mode = "attack", w = 35 },
+        { mode = "predict", w = 30 },
+        { mode = "dodge", w = 15 },
+        { mode = "summon", w = 10 },
+        { mode = "chase", w = chase_w },
     }).mode
 end
 
 local function boss_fire(mode)
     local w = mode == "predict"
-        and { { ch = "v", base = 1, tr = false, p = 60 }, { ch = "·", base = 2, tr = false, p = 20 }, { ch = "u", base = 4, tr = true, p = 20 } }
-        or  { { ch = "v", base = 1, tr = false, p = 70 }, { ch = "·", base = 2, tr = false, p = 20 }, { ch = "u", base = 4, tr = true, p = 10 } }
+        and { { ch = "v", base = 1, tr = false, p = 60 }, { ch = ".", base = 2, tr = false, p = 20 }, { ch = "u", base = 4, tr = true, p = 20 } }
+        or  { { ch = "v", base = 1, tr = false, p = 70 }, { ch = ".", base = 2, tr = false, p = 20 }, { ch = "u", base = 4, tr = true, p = 10 } }
 
     local pick = choose_weighted({ { idx = 1, w = w[1].p }, { idx = 2, w = w[2].p }, { idx = 3, w = w[3].p } })
     local spec = w[pick.idx]
 
     local c = state.boss.center_c
     if mode == "predict" then c = clamp(state.player_c + state.player_last_dir * 2, ENEMY_COL_MIN, ENEMY_COL_MAX)
-    elseif mode == "attack" then c = state.player_c end
+    elseif mode == "attack" then c = state.player_c
+    elseif mode == "chase" then c = state.player_c end
 
+    if boss_muzzle_blocked(c) then return false end
     spawn_enemy_bullet(c, spec.ch, spec.base, spec.tr, state.boss.row + 2)
+    return true
 end
 
 local function enter_boss_battle()
@@ -877,6 +1000,7 @@ local function enter_boss_battle()
     state.boss.next_move_at = state.frame + sec_to_frames(2)
     state.boss.next_shot_at = state.frame + sec_to_frames(1)
     state.boss.start_frame = state.frame
+    state.boss.chase_cd_until = state.frame
     show_message(tr("game.shooter.msg_boss_incoming", "BOSS incoming!"), "yellow", 3, false)
 end
 
@@ -894,13 +1018,26 @@ local function update_boss()
     end
 
     if state.frame >= state.boss.mode_until then
+        if state.boss.mode == "chase" then
+            state.boss.chase_cd_until = state.frame + sec_to_frames(10)
+        end
+
         state.boss.mode = choose_boss_mode()
-        state.boss.mode_until = state.frame + sec_to_frames(rand_range(3, 6))
-        if state.boss.mode == "summon" then boss_summon_wave() end
+        if state.boss.mode == "chase" then
+            state.boss.mode_until = state.frame + sec_to_frames(2)
+            state.boss.next_move_at = state.frame
+            state.boss.next_shot_at = state.frame
+        else
+            state.boss.mode_until = state.frame + sec_to_frames(rand_range(3, 6))
+            if state.boss.mode == "summon" then boss_summon_wave() end
+        end
     end
 
     if state.frame >= state.boss.next_move_at then
-        state.boss.next_move_at = state.frame + sec_to_frames(2)
+        local move_interval = sec_to_frames(2)
+        if state.boss.mode == "chase" then move_interval = sec_to_frames(0.35) end
+        state.boss.next_move_at = state.frame + move_interval
+
         local target = state.boss.center_c
         if state.boss.mode == "attack" then target = state.player_c
         elseif state.boss.mode == "predict" then target = clamp(state.player_c + state.player_last_dir * 3, 3, 28)
@@ -910,6 +1047,8 @@ local function update_boss()
             else target = clamp(state.player_c - state.player_last_dir * 3, 3, 28) end
         elseif state.boss.mode == "summon" then
             if state.player_c < state.boss.center_c then target = 27 else target = 4 end
+        elseif state.boss.mode == "chase" then
+            target = state.player_c
         end
 
         target = clamp(target, 3, 28)
@@ -920,8 +1059,14 @@ local function update_boss()
     end
 
     if state.frame >= state.boss.next_shot_at then
-        if state.boss.mode ~= "summon" and state.boss.mode ~= "dodge" then boss_fire(state.boss.mode) end
-        state.boss.next_shot_at = state.frame + sec_to_frames(1)
+        local shot_interval = sec_to_frames(1)
+        if state.boss.mode == "chase" then shot_interval = sec_to_frames(0.5) end
+
+        if state.boss.mode ~= "summon" and state.boss.mode ~= "dodge" then
+            boss_fire(state.boss.mode)
+        end
+
+        state.boss.next_shot_at = state.frame + shot_interval
     end
 end
 
@@ -939,38 +1084,46 @@ local function resolve_bullet_vs_bullet_collisions()
         return
     end
 
-    local remove_player = {}
-    local remove_enemy = {}
+    local changed = false
 
     for pi = 1, #state.player_bullets do
         local pb = state.player_bullets[pi]
         for ei = 1, #state.enemy_bullets do
             local eb = state.enemy_bullets[ei]
             if pb.r == eb.r and pb.c == eb.c then
-                remove_player[pi] = true
-                remove_enemy[ei] = true
+                if pb.is_missile then
+                    pb.missile_hp = (pb.missile_hp or 2) - 1
+                    changed = true
+                end
+                if eb.is_missile then
+                    eb.missile_hp = (eb.missile_hp or 4) - 1
+                    changed = true
+                end
             end
         end
     end
 
-    if next(remove_player) == nil and next(remove_enemy) == nil then
+    if not changed then
         return
     end
 
     for i = #state.player_bullets, 1, -1 do
-        if remove_player[i] then
+        local b = state.player_bullets[i]
+        if b.is_missile and (b.missile_hp or 0) <= 0 then
             table.remove(state.player_bullets, i)
         end
     end
 
     for i = #state.enemy_bullets, 1, -1 do
-        if remove_enemy[i] then
+        local b = state.enemy_bullets[i]
+        if b.is_missile and (b.missile_hp or 0) <= 0 then
             table.remove(state.enemy_bullets, i)
         end
     end
 
     state.dirty = true
 end
+
 
 local function update_items()
     local i = 1
@@ -1002,6 +1155,27 @@ local function update_items()
     end
 end
 
+local function use_nuke()
+    if state.nuke_stock <= 0 then
+        show_message(tr("game.shooter.msg_nuke_empty", "No nuke in magazine."), "dark_gray", 2, false)
+        return
+    end
+
+    state.nuke_stock = state.nuke_stock - 1
+    clear_world_entities()
+    if state.boss.active then
+        boss_take_damage(50)
+    end
+    apply_player_damage(2, true)
+
+    state.enemy_spawn_block_until = state.frame + sec_to_frames(3)
+    if state.enemy_spawn_block_until > state.next_enemy_spawn_at then
+        state.next_enemy_spawn_at = state.enemy_spawn_block_until
+    end
+    state.boom_until = state.frame + sec_to_frames(3)
+    state.dirty = true
+end
+
 local function gameplay_update()
     if state.phase ~= "playing" or state.confirm_mode ~= nil then return end
 
@@ -1009,7 +1183,7 @@ local function gameplay_update()
     maybe_trigger_boss()
     maybe_spawn_enemy()
     spawn_item()
-    fire_player_if_needed()
+    fire_player_if_needed(false)
 
     update_player_bullets()
     update_enemy_bullets()
@@ -1018,8 +1192,14 @@ local function gameplay_update()
     update_boss()
     update_items()
 
+    if state.boom_until > 0 and state.frame >= state.boom_until then
+        state.boom_until = 0
+        state.dirty = true
+    end
+
     if state.hp <= 0 and state.phase ~= "lost" then set_lost_state() end
 end
+
 
 local function board_to_term(layout, c, r)
     return layout.board_x + c, layout.board_y + r
@@ -1027,12 +1207,12 @@ end
 
 local function draw_board_frame(layout)
     local x, y = layout.board_x, layout.board_y
-    draw_text(x, y, "╔" .. string.rep("═", BOARD_W - 2) .. "╗", "white", "black")
+    draw_text(x, y, CH_DBL_TL .. string.rep(CH_DBL_H, BOARD_W - 2) .. CH_DBL_TR, "white", "black")
     for r = 1, BOARD_H - 2 do
-        draw_text(x, y + r, "║", "white", "black")
-        draw_text(x + BOARD_W - 1, y + r, "║", "white", "black")
+        draw_text(x, y + r, CH_DBL_V, "white", "black")
+        draw_text(x + BOARD_W - 1, y + r, CH_DBL_V, "white", "black")
     end
-    draw_text(x, y + BOARD_H - 1, "╚" .. string.rep("═", BOARD_W - 2) .. "╝", "white", "black")
+    draw_text(x, y + BOARD_H - 1, CH_DBL_BL .. string.rep(CH_DBL_H, BOARD_W - 2) .. CH_DBL_BR, "white", "black")
 end
 
 local function build_board_buffer()
@@ -1044,8 +1224,8 @@ local function build_board_buffer()
         end
     end
 
-    buf[PLAYER_ROW][1] = { ch = "█", fg = "white", bg = "black" }
-    buf[PLAYER_ROW][INNER_W] = { ch = "█", fg = "white", bg = "black" }
+    buf[PLAYER_ROW][1] = { ch = CH_BLOCK, fg = "white", bg = "black" }
+    buf[PLAYER_ROW][INNER_W] = { ch = CH_BLOCK, fg = "white", bg = "black" }
 
     for i = 1, #state.items do
         local it = state.items[i]
@@ -1080,7 +1260,7 @@ local function build_board_buffer()
         for i = 1, #cells do
             local cell = cells[i]
             if cell.r >= 1 and cell.r <= INNER_H and cell.c >= 1 and cell.c <= INNER_W then
-                buf[cell.r][cell.c] = { ch = "█", fg = "rgb(255,170,170)", bg = "black" }
+                buf[cell.r][cell.c] = { ch = CH_BLOCK, fg = "rgb(255,170,170)", bg = "black" }
             end
         end
     end
@@ -1098,6 +1278,13 @@ local function draw_board_content(layout)
             draw_text(tx, ty, cell.ch, cell.fg, cell.bg)
         end
     end
+
+    if state.boom_until > state.frame then
+        local boom = "BOOM!!!"
+        local bx = centered_x(boom, layout.board_x + 1, INNER_W)
+        local by = layout.board_y + math.floor(INNER_H / 2)
+        draw_text(bx, by, boom, "rgb(255,165,0)", "black")
+    end
 end
 
 local function draw_boss_bar(layout)
@@ -1108,9 +1295,9 @@ local function draw_boss_bar(layout)
     local pct = clamp(math.floor((state.boss.hp / state.boss.max_hp) * 100 + 0.5), 0, 100)
     local filled = clamp(math.floor((state.boss.hp / state.boss.max_hp) * BOSS_HP_BAR_W + 0.5), 0, BOSS_HP_BAR_W)
 
-    local x = centered_x(string.rep("█", BOSS_HP_BAR_W) .. " 100%", layout.x, layout.total_w)
-    if filled > 0 then draw_text(x, layout.boss_bar_y, string.rep("█", filled), "green", "black") end
-    if filled < BOSS_HP_BAR_W then draw_text(x + filled, layout.boss_bar_y, string.rep("█", BOSS_HP_BAR_W - filled), "red", "black") end
+    local x = centered_x(string.rep(CH_BLOCK, BOSS_HP_BAR_W) .. " 100%", layout.x, layout.total_w)
+    if filled > 0 then draw_text(x, layout.boss_bar_y, string.rep(CH_BLOCK, filled), "green", "black") end
+    if filled < BOSS_HP_BAR_W then draw_text(x + filled, layout.boss_bar_y, string.rep(CH_BLOCK, BOSS_HP_BAR_W - filled), "red", "black") end
     draw_text(x + BOSS_HP_BAR_W, layout.boss_bar_y, string.format(" %d%%", pct), "white", "black")
 end
 
@@ -1131,8 +1318,8 @@ local function draw_buff_line(x, y, sym, remain, total)
     filled = clamp(filled, 0, blocks)
 
     draw_text(x, y, sym, "white", "black")
-    if filled > 0 then draw_text(x + 2, y, string.rep("█", filled), "green", "black") end
-    if filled < blocks then draw_text(x + 2 + filled, y, string.rep("█", blocks - filled), "dark_gray", "black") end
+    if filled > 0 then draw_text(x + 2, y, string.rep(CH_BLOCK, filled), "green", "black") end
+    if filled < blocks then draw_text(x + 2 + filled, y, string.rep(CH_BLOCK, blocks - filled), "dark_gray", "black") end
     draw_text(x + 2 + blocks + 1, y, tostring(remain) .. tr("game.shooter.seconds", "s"), "white", "black")
 end
 
@@ -1145,10 +1332,14 @@ local function draw_info(layout)
     draw_text(x, y + 2, tr("game.shooter.score", "Score") .. ": " .. tostring(state.score), "white", "black")
     draw_text(x, y + 3, tr("game.shooter.time", "Time") .. ": " .. format_duration(elapsed_seconds()), "light_cyan", "black")
 
+    draw_text(x, y + 4, tr("game.shooter.fire_mode", "Fire") .. ": " .. tr(state.fire_mode == "manual" and "game.shooter.fire_mode_manual" or "game.shooter.fire_mode_auto", state.fire_mode), "white", "black")
     draw_text(x, y + 5, tr("game.shooter.stage", "Stage") .. ": " .. tostring(state.stage), "white", "black")
     draw_life_block(x, y + 6)
 
-    local line_y = y + 10
+    local slot = string.rep("G", state.nuke_stock) .. string.rep("-", 3 - state.nuke_stock)
+    draw_text(x, y + 10, tr("game.shooter.magazine", "Magazine") .. ": " .. slot, "white", "black")
+
+    local line_y = y + 12
     if state.attack_symbol ~= nil and state.attack_until > state.frame then
         local remain = math.max(0, math.ceil((state.attack_until - state.frame) / FPS))
         local total = ATTACK_BUFF[state.attack_symbol] and ATTACK_BUFF[state.attack_symbol].dur or 1
@@ -1174,6 +1365,10 @@ local function current_msg()
     return state.msg_text, state.msg_color
 end
 
+local function shooter_controls_text()
+    return tr("game.shooter.controls", "[LEFT]/[RIGHT] Move  [Z] Fire Mode  [Space] Fire  [X] Nuke  [S] Save  [R] Restart  [Q]/[ESC] Exit")
+end
+
 local function draw_message_controls(layout)
     local term_w, _ = terminal_size()
     draw_text(1, layout.message_y, string.rep(" ", term_w), "white", "black")
@@ -1181,7 +1376,7 @@ local function draw_message_controls(layout)
     local m, c = current_msg()
     if m ~= nil and m ~= "" then draw_text(centered_x(m, 1, term_w), layout.message_y, m, c or "dark_gray", "black") end
 
-    local txt = tr("game.shooter.controls", "[←]/[→] Move  [S] Save  [R] Restart  [Q]/[ESC] Exit")
+    local txt = shooter_controls_text()
     local lines = wrap_words(txt, math.max(12, term_w - 2))
     if #lines > 3 then lines = { lines[1], lines[2], lines[3] } end
 
@@ -1195,7 +1390,7 @@ local function build_layout()
     local info_w, gap = 28, 4
 
     local content_w = BOARD_W + gap + info_w
-    local controls_w = min_width_for_lines(tr("game.shooter.controls", "[←]/[→] Move  [S] Save  [R] Restart  [Q]/[ESC] Exit"), 3, 28)
+    local controls_w = min_width_for_lines(shooter_controls_text(), 3, 28)
     local msg_w = math.max(
         key_width(tr("game.shooter.lose_banner", "Plane destroyed!") .. " " .. tr("game.shooter.result_controls", "[R] Restart  [Q]/[ESC] Exit")),
         key_width(tr("game.shooter.confirm_restart", "Confirm restart? [Y] Yes / [N] No")),
@@ -1254,7 +1449,7 @@ end
 
 local function minimum_required_size()
     local content_w = BOARD_W + 4 + 28
-    local controls_w = min_width_for_lines(tr("game.shooter.controls", "[←]/[→] Move  [S] Save  [R] Restart  [Q]/[ESC] Exit"), 3, 28)
+    local controls_w = min_width_for_lines(shooter_controls_text(), 3, 28)
     local msg_w = math.max(
         key_width(tr("game.shooter.confirm_restart", "Confirm restart? [Y] Yes / [N] No")),
         key_width(tr("game.shooter.confirm_exit", "Confirm exit? [Y] Yes / [N] No")),
@@ -1350,6 +1545,23 @@ local function handle_input(key)
 
     if key == "left" then state.player_c = clamp(state.player_c - 1, PLAYER_MIN_C, PLAYER_MAX_C); state.player_last_dir = -1; state.dirty = true; return end
     if key == "right" then state.player_c = clamp(state.player_c + 1, PLAYER_MIN_C, PLAYER_MAX_C); state.player_last_dir = 1; state.dirty = true; return end
+
+    if key == "z" then
+        if state.fire_mode == "auto" then
+            state.fire_mode = "manual"
+            show_message(tr("game.shooter.msg_fire_mode_manual", "Manual fire"), "yellow", 2, false)
+        else
+            state.fire_mode = "auto"
+            show_message(tr("game.shooter.msg_fire_mode_auto", "Auto fire"), "yellow", 2, false)
+        end
+        state.dirty = true
+        return
+    end
+    if key == "space" then
+        if state.fire_mode == "manual" then fire_player_if_needed(true) end
+        return
+    end
+    if key == "x" then use_nuke(); return end
 
     if key == "s" then save_game_state(true); return end
     if key == "r" then state.confirm_mode = "restart"; state.dirty = true; return end

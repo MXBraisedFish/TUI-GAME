@@ -262,7 +262,7 @@
   "game.shooter.time": "Time",
   "game.shooter.stage": "Stage",
   "game.shooter.hp": "Life",
-  "game.shooter.controls": "[LEFT]/[RIGHT] Move  [S] Save  [R] Restart  [Q]/[ESC] Exit",
+  "game.shooter.controls": "[LEFT]/[RIGHT] Move  [Z] Fire Mode  [Space] Fire  [X] Nuke  [S] Save  [R] Restart  [Q]/[ESC] Exit",
   "game.shooter.confirm_restart": "Confirm restart? [Y] Yes / [N] No",
   "game.shooter.confirm_exit": "Confirm exit? [Y] Yes / [N] No",
   "game.shooter.lose_banner": "Plane destroyed!",
@@ -283,5 +283,13 @@
   "game.shooter.item.~": "Heal",
   "game.shooter.item.o": "Coin",
   "game.shooter.item.c": "Magnet",
-  "game.shooter.item.+": "Bullet Booster"
+  "game.shooter.item.+": "Bullet Booster",
+  "game.shooter.item.G": "Nuke",
+  "game.shooter.magazine": "Magazine",
+  "game.shooter.fire_mode": "Fire Mode",
+  "game.shooter.fire_mode_auto": "Auto",
+  "game.shooter.fire_mode_manual": "Manual",
+  "game.shooter.msg_fire_mode_auto": "Auto fire",
+  "game.shooter.msg_fire_mode_manual": "Manual fire",
+  "game.shooter.msg_nuke_empty": "No nuke in magazine."
 }
