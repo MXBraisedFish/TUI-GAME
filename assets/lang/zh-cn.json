@@ -1,4 +1,4 @@
-{
+﻿{
   "language_name": "简体中文",
   "language": "语言",
   "confirm_language": "[Enter] 确认语言 [ESC] / [Q] 返回主菜单",
@@ -262,7 +262,7 @@
   "game.shooter.time": "游戏时间",
   "game.shooter.stage": "当前关卡",
   "game.shooter.hp": "生命",
-  "game.shooter.controls": "[\u2190]/[\u2192] \u79fb\u52a8  [Z] \u5f00\u706b\u6a21\u5f0f  [Space] \u5f00\u706b  [X] \u6838\u5f39  [S] \u4fdd\u5b58  [R] \u91cd\u5f00  [Q]/[ESC] \u9000\u51fa",
+  "game.shooter.controls": "[←]/[→] 移动  [Z] 开火模式  [Space] 开火  [X] 核弹  [S] 保存  [R] 重开  [Q]/[ESC] 退出",
   "game.shooter.confirm_restart": "确认重开？ [Y] 确认 / [N] 取消",
   "game.shooter.confirm_exit": "确认退出？ [Y] 确认 / [N] 取消",
   "game.shooter.lose_banner": "飞机爆炸了！",
@@ -284,12 +284,12 @@
   "game.shooter.item.o": "金币",
   "game.shooter.item.c": "磁铁",
   "game.shooter.item.+": "子弹加速器",
-  "game.shooter.item.G": "\u6838\u5f39",
-  "game.shooter.magazine": "\u5f39\u8231",
-  "game.shooter.fire_mode": "\u53d1\u5c04\u6a21\u5f0f",
-  "game.shooter.fire_mode_auto": "\u81ea\u52a8",
-  "game.shooter.fire_mode_manual": "\u624b\u52a8",
-  "game.shooter.msg_fire_mode_auto": "\u81ea\u52a8\u5f00\u706b",
-  "game.shooter.msg_fire_mode_manual": "\u624b\u52a8\u5f00\u706b",
-  "game.shooter.msg_nuke_empty": "\u5f39\u8231\u4e2d\u6ca1\u6709\u6838\u5f39\u3002"
+  "game.shooter.item.G": "核弹",
+  "game.shooter.magazine": "弹舱",
+  "game.shooter.fire_mode": "发射模式",
+  "game.shooter.fire_mode_auto": "自动",
+  "game.shooter.fire_mode_manual": "手动",
+  "game.shooter.msg_fire_mode_auto": "自动开火",
+  "game.shooter.msg_fire_mode_manual": "手动开火",
+  "game.shooter.msg_nuke_empty": "弹舱中没有核弹。"
 }
