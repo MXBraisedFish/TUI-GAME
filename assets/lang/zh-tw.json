@@ -307,5 +307,18 @@
     "game.sliding_puzzle.controls": "[↑]/[↓]/[←]/[→] 移動 [X] 切換模式 [R] 重開 [S] 儲存 [Q]/[ESC] 退出",
     "game.sliding_puzzle.save_success": "儲存成功！",
     "game.sliding_puzzle.time": "用時",
-    "game.sliding_puzzle.win_banner": "所有數字已按順序排列！"
+    "game.sliding_puzzle.win_banner": "所有數字已按順序排列！",
+    "game.snake.best_score": "最高分",
+    "game.snake.best_time": "最長遊玩時間",
+    "game.snake.time": "時間",
+    "game.snake.score": "分數",
+    "game.snake.controls": "[↑]/[↓]/[←]/[→] 移動 [S] 儲存 [R] 重開 [Q]/[ESC] 退出",
+    "game.snake.win_banner": "蟒蛇霸佔世界！",
+    "game.snake.lose_banner": "蛇咬死了自己。",
+    "game.snake.result_controls": "[R] 重開 [Q]/[ESC] 退出",
+    "game.snake.boosting": "加速生效",
+    "game.snake.confirm_restart": "確認重新開始？ [Y] 是 / [N] 否",
+    "game.snake.confirm_exit": "確認退出？ [Y] 是 / [N] 否",
+    "game.snake.save_success": "儲存成功！",
+    "game.snake.save_unavailable": "儲存功能無法使用。"
 }
