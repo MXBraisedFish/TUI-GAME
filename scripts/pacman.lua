@@ -316,6 +316,59 @@ local function find_nearest_walkable(start_r, start_c)
     return 2, 2
 end
 
+
+local function build_player_reachable_mask()
+    local reachable = blank_matrix(state.rows, state.cols, false)
+    local sr, sc = state.player_start.r, state.player_start.c
+    if not in_bounds(sr, sc) then return reachable end
+
+    local q_r, q_c, head = { sr }, { sc }, 1
+    reachable[sr][sc] = true
+
+    while head <= #q_r do
+        local r, c = q_r[head], q_c[head]
+        head = head + 1
+        for i = 1, #DIRS do
+            local d = DIRS[i]
+            local ok, nr, nc = can_move_player(r + d.dr, c + d.dc)
+            if ok and (not reachable[nr][nc]) then
+                reachable[nr][nc] = true
+                q_r[#q_r + 1], q_c[#q_c + 1] = nr, nc
+            end
+        end
+    end
+
+    return reachable
+end
+
+local function build_ghost_house_mask()
+    local house = blank_matrix(state.rows, state.cols, false)
+    local sr, sc = state.ghost_spawn.r, state.ghost_spawn.c
+    if not in_bounds(sr, sc) or is_wall(sr, sc) then return house end
+
+    local q_r, q_c, head = { sr }, { sc }, 1
+    house[sr][sc] = true
+
+    while head <= #q_r do
+        local r, c = q_r[head], q_c[head]
+        head = head + 1
+        for i = 1, #DIRS do
+            local d = DIRS[i]
+            local nr, nc = apply_tunnel(r + d.dr, c + d.dc)
+            if in_bounds(nr, nc)
+                and (not house[nr][nc])
+                and (not is_wall(nr, nc))
+                and (not is_door(nr, nc))
+            then
+                house[nr][nc] = true
+                q_r[#q_r + 1], q_c[#q_c + 1] = nr, nc
+            end
+        end
+    end
+
+    return house
+end
+
 local function init_positions_from_map()
     local center_r, center_c = math.floor(state.rows * 0.75), math.floor(state.cols / 2)
     local pr, pc = find_nearest_walkable(center_r, center_c)
@@ -334,11 +387,15 @@ end
 
 local function randomize_fruit_spawn_for_level()
     local candidates = {}
-    for r = 2, state.rows - 1 do
-        for c = 2, state.cols - 1 do
+    local reachable = build_player_reachable_mask()
+    local ghost_house = build_ghost_house_mask()
+
+    for r = 1, state.rows do
+        for c = 1, state.cols do
             local ch = state.base_map[r][c]
             local walkable = (not is_wall(r, c)) and (not is_door(r, c))
-            if walkable and ch ~= "<" and ch ~= ">" then
+            local on_pellet_track = (ch == PELLET_CHAR or ch == POWER_CHAR)
+            if walkable and on_pellet_track and reachable[r][c] and (not ghost_house[r][c]) and ch ~= "<" and ch ~= ">" then
                 local is_player_spawn = (r == state.player_start.r and c == state.player_start.c)
                 local is_ghost_spawn = (r == state.ghost_spawn.r and c == state.ghost_spawn.c)
                 local no_pellet = state.pellets[r][c] == " "
