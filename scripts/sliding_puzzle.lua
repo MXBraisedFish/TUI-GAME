@@ -396,7 +396,7 @@ end
 
 local function draw_controls(y_bottom)
     local term_w = terminal_size()
-    local controls = tr("game.sliding_puzzle.controls", "[Up]/[Down]/[Left]/[Right] Move  [X] Switch Mode  [R] Restart  [S] Save  [Q]/[ESC] Exit")
+    local controls = tr("game.sliding_puzzle.controls", "[↑]/[↓]/[←]/[→] Move  [X] Switch Mode  [R] Restart  [S] Save  [Q]/[ESC] Exit")
     local max_w = math.max(10, term_w - 2)
     local lines = wrap_words(controls, max_w)
     if #lines > 3 then
@@ -792,7 +792,7 @@ local function minimum_required_size()
     local frame_h = SIZE * CELL_H + 2
 
     local controls_w = min_width_for_lines(
-        tr("game.sliding_puzzle.controls", "[Up]/[Down]/[Left]/[Right] Move  [X] Switch Mode  [R] Restart  [S] Save  [Q]/[ESC] Exit"),
+        tr("game.sliding_puzzle.controls", "[↑]/[↓]/[←]/[→] Move  [X] Switch Mode  [R] Restart  [S] Save  [Q]/[ESC] Exit"),
         3,
         26
     )

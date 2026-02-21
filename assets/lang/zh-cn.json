@@ -1,4 +1,4 @@
-﻿{
+{
   "language_name": "简体中文",
   "language": "语言",
   "confirm_language": "[Enter] 确认语言 [ESC] / [Q] 返回主菜单",
@@ -55,7 +55,7 @@
   "game.sliding_puzzle.name": "数字华容道",
   "game.sliding_puzzle.description": "滑动数字方块，使其按升序排列。",
   "game.snake.name": "贪吃蛇",
-  "game.snake.description": "控制蛇移动，吃掉食物，避免撞到自己或墙壁。",
+  "game.snake.description": "控制贪吃蛇吃掉食物，地图边界连通，避免咬到自己。",
   "game.minesweeper.name": "扫雷",
   "game.minesweeper.description": "揭开所有安全的单元格，并标记出所有隐藏的地雷。",
   "game.minesweeper.controls": "[↑]/[↓]/[←]/[→] 移动  [空格] 翻开  [Z] 标记旗子  [X] 标记疑问  [P] 配置  [D] 跳转  [R] 重开  [S] 保存  [Q]/[ESC] 退出",
@@ -307,5 +307,18 @@
   "game.sliding_puzzle.confirm_restart": "确认重新开始？ [Y] 是 / [N] 否",
   "game.sliding_puzzle.mode_label": "当前操作模式",
   "game.sliding_puzzle.mode_blank": "空格移动",
-  "game.sliding_puzzle.mode_number": "数字移动"
+  "game.sliding_puzzle.mode_number": "数字移动",
+  "game.snake.best_score": "最高分",
+  "game.snake.best_time": "最长游玩时间",
+  "game.snake.time": "时间",
+  "game.snake.score": "分数",
+  "game.snake.controls": "[↑]/[↓]/[←]/[→] 移动  [S] 保存  [R] 重开  [Q]/[ESC] 退出",
+  "game.snake.win_banner": "蟒蛇霸占世界！",
+  "game.snake.lose_banner": "蛇咬死了自己，",
+  "game.snake.result_controls": "[R] 重开  [Q]/[ESC] 退出",
+  "game.snake.boosting": "加速生效",
+  "game.snake.confirm_restart": "确认重新开始？ [Y] 是 / [N] 否",
+  "game.snake.confirm_exit": "确认退出？ [Y] 是 / [N] 否",
+  "game.snake.save_success": "保存成功！",
+  "game.snake.save_unavailable": "保存功能不可用。"
 }

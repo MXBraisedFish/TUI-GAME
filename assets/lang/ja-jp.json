@@ -1,4 +1,4 @@
-﻿{
+{
   "language_name": "日本語",
   "language": "言語",
   "confirm_language": "[Enter] 言語を確定 [ESC] / [Q] でメインメニューに戻る",
@@ -55,7 +55,7 @@
   "game.sliding_puzzle.name": "スライディングパズル",
   "game.sliding_puzzle.description": "数字の書かれたタイルをスライドさせて、昇順に並べ替えよう。",
   "game.snake.name": "スネークゲーム",
-  "game.snake.description": "ヘビを操作してエサを食べ、壁や自分自身にぶつからないようにしよう。",
+  "game.snake.description": "ヘビを操作してエサを食べ、境界はワープしながら自分に衝突しないようにしよう。",
   "game.minesweeper.name": "マインスイーパ",
   "game.minesweeper.description": "安全なセルを開き、隠されたすべての地雷にマークしよう。",
   "game.minesweeper.controls": "[↑]/[↓]/[←]/[→] 移動 [スペース] 開く [Z] フラグ [X] 不明 [P] 設定 [D] ジャンプ [R] リスタート [S] セーブ [Q]/[ESC] 終了",
@@ -307,5 +307,18 @@
   "game.sliding_puzzle.confirm_restart": "リスタートしますか？ [Y] はい / [N] いいえ",
   "game.sliding_puzzle.mode_label": "現在の操作モード",
   "game.sliding_puzzle.mode_blank": "空白移動",
-  "game.sliding_puzzle.mode_number": "数字移動"
+  "game.sliding_puzzle.mode_number": "数字移動",
+  "game.snake.best_score": "最高スコア",
+  "game.snake.best_time": "最長プレイ時間",
+  "game.snake.time": "時間",
+  "game.snake.score": "スコア",
+  "game.snake.controls": "[↑]/[↓]/[←]/[→] 移動  [S] セーブ  [R] リスタート  [Q]/[ESC] 終了",
+  "game.snake.win_banner": "パイソンが世界を支配した！",
+  "game.snake.lose_banner": "ヘビが自分を噛んだ。",
+  "game.snake.result_controls": "[R] リスタート  [Q]/[ESC] 終了",
+  "game.snake.boosting": "加速中",
+  "game.snake.confirm_restart": "リスタートしますか？ [Y] はい / [N] いいえ",
+  "game.snake.confirm_exit": "終了しますか？ [Y] はい / [N] いいえ",
+  "game.snake.save_success": "セーブ成功！",
+  "game.snake.save_unavailable": "セーブ機能は利用できません。"
 }
