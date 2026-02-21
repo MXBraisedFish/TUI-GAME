@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -52,7 +53,7 @@ impl Updater {
             if let Ok(result) = fetch_latest_release() {
                 if let Some(latest) = result {
                     let _ = tx.send(UpdaterEvent::LatestVersion(latest.clone()));
-                    if latest.latest_version != current {
+                    if is_version_newer(&latest.latest_version, &current) {
                         let _ = tx.send(UpdaterEvent::NewVersion(latest));
                     } else {
                         let _ = tx.send(UpdaterEvent::NoUpdate);
@@ -125,6 +126,52 @@ fn normalize_tag(raw: &str) -> String {
     }
 }
 
+
+fn parse_version_segments(version: &str) -> Option<Vec<u64>> {
+    let clean = version.trim().trim_start_matches(['v', 'V']);
+    if clean.is_empty() {
+        return None;
+    }
+
+    let mut out = Vec::new();
+    for part in clean.split('.') {
+        if part.is_empty() || !part.chars().all(|c| c.is_ascii_digit()) {
+            return None;
+        }
+        let Ok(num) = part.parse::<u64>() else {
+            return None;
+        };
+        out.push(num);
+    }
+
+    if out.is_empty() {
+        None
+    } else {
+        Some(out)
+    }
+}
+
+fn compare_versions(remote: &str, current: &str) -> Option<Ordering> {
+    let a = parse_version_segments(remote)?;
+    let b = parse_version_segments(current)?;
+    let max_len = a.len().max(b.len());
+
+    for i in 0..max_len {
+        let av = *a.get(i).unwrap_or(&0);
+        let bv = *b.get(i).unwrap_or(&0);
+        match av.cmp(&bv) {
+            Ordering::Equal => {}
+            non_eq => return Some(non_eq),
+        }
+    }
+
+    Some(Ordering::Equal)
+}
+
+fn is_version_newer(remote: &str, current: &str) -> bool {
+    matches!(compare_versions(remote, current), Some(Ordering::Greater))
+}
+
 /// Runs external updater script (version.bat/version.sh) and returns whether it was started.
 pub fn run_external_update_script(notification: &UpdateNotification) -> Result<bool> {
     let runtime = path_utils::runtime_dir()?;
@@ -184,7 +231,7 @@ fn select_version_script(bat: &Path, sh: &Path) -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_tag, select_version_script};
+    use super::{compare_versions, is_version_newer, normalize_tag, select_version_script};
 
     #[test]
     fn normalize_tag_adds_prefix() {
@@ -215,5 +262,19 @@ mod tests {
         let _ = std::fs::remove_file(&bat);
         let _ = std::fs::remove_file(&sh);
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn version_compare_is_semantic() {
+        use std::cmp::Ordering;
+
+        assert_eq!(compare_versions("v0.3.2", "v0.3.1"), Some(Ordering::Greater));
+        assert_eq!(compare_versions("v0.3.1", "v0.3.2"), Some(Ordering::Less));
+        assert_eq!(compare_versions("v0.3.2", "v0.3.2"), Some(Ordering::Equal));
+        assert_eq!(compare_versions("v0.3.10", "v0.3.2"), Some(Ordering::Greater));
+
+        assert!(is_version_newer("v1.0.0", "v0.9.9"));
+        assert!(!is_version_newer("v0.9.9", "v1.0.0"));
+        assert!(!is_version_newer("v1.0.0", "v1.0.0"));
     }
 }
