@@ -37,6 +37,7 @@ Windows、Linux、MacOS
 - [パックマン](#パックマン)
 - [じゃんけん](#じゃんけん)
 - [エアシューター](#エアシューター)
+- [スライディングパズル](#スライディングパズル)
 
 ## 対応言語
 
@@ -255,6 +256,10 @@ cargo build --release
 ### エアシューター
 
 ![エアシューター](./image/airshooter-ja-jp.png)
+
+### スライディングパズル
+
+![スライディングパズル](./image/numberslidingpuzzle-ja-jp.png)
 
 ## 本プロジェクトを応援する
 

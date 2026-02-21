@@ -37,6 +37,7 @@ Windows，Linux，MacOS
 - [吃豆人](#吃豆人)
 - [石头剪刀布](#石头剪刀布)
 - [空中射击](#空中射击)
+- [数字华容道](#数字华容道)
 
 ## 语言支持
 
@@ -255,6 +256,10 @@ cargo build --release
 ### 空中射击
 
 ![空中射击](./image/airshooter-zh-cn.png)
+
+### 数字华容道
+
+![数字华容道](./image/numberslidingpuzzle-zh-cn.png)
 
 ## 支持本项目
 

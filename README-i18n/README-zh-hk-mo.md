@@ -37,6 +37,7 @@ Windows，Linux，MacOS
 - [小精靈](#小精靈)
 - [石頭剪刀布](#石頭剪刀布)
 - [空中射擊](#空中射擊)
+- [數字華容道](#數字華容道)
 
 ## 語言支援
 
@@ -255,6 +256,14 @@ cargo build --release
 ### 空中射擊
 
 ![空中射擊](./image/airshooter-zh-hk-mo.png)
+
+### 空中射擊
+
+![空中射擊](./image/airshooter-zh-hk-mo.png)
+
+### 數字華容道
+
+![數字華容道](./image/numberslidingpuzzle-zh-hk-mo.png)
 
 ## 支援本項目
 

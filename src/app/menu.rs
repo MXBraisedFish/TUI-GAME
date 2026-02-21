@@ -176,6 +176,7 @@ pub fn render_main_menu(
     let logo = Paragraph::new(logo_lines).alignment(Alignment::Center);
     frame.render_widget(logo, areas.logo);
 
+    let enter_shortcut = t("menu.enter_shortcut");
     let content_width = menu
         .items()
         .iter()
@@ -185,15 +186,22 @@ pub fn render_main_menu(
                 KeyCode::Esc => "[ESC]".to_string(),
                 _ => "[?]".to_string(),
             };
-            let content = format!("▶ {} {}", shortcut, menu_item_label(menu, item));
+            let shortcut_width = UnicodeWidthStr::width(shortcut.as_str());
+            let enter_width = UnicodeWidthStr::width(enter_shortcut.as_str());
+            let effective_shortcut = if enter_width > shortcut_width {
+                enter_shortcut.to_string()
+            } else {
+                shortcut
+            };
+            let content = format!("\u{25B6} {} {}", effective_shortcut, menu_item_label(menu, item));
             UnicodeWidthStr::width(content.as_str()) as u16
         })
         .max()
         .unwrap_or(0);
     let max_menu_width = frame.area().width.saturating_sub(2).max(1);
-    let desired_menu_width = content_width.max(areas.menu.width).min(max_menu_width);
+    let desired_menu_width = max_menu_width;
     let menu_area = Rect {
-        x: frame.area().x + frame.area().width.saturating_sub(desired_menu_width) / 2,
+        x: frame.area().x + 1,
         y: areas.menu.y,
         width: desired_menu_width,
         height: areas.menu.height,

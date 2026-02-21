@@ -52,7 +52,7 @@
     "game.memory_flip.best_difficulty": "難度",
     "game.memory_flip.best_time": "最短用時",
     "game.memory_flip.best_steps": "最少步數",
-    "game.sliding_puzzle.name": "數字拼圖",
+    "game.sliding_puzzle.name": "數字華容道",
     "game.sliding_puzzle.description": "滑動數字方塊，使其依升冪排列。",
     "game.snake.name": "貪食蛇",
     "game.snake.description": "控制蛇移動，吃食物，避免撞到自己或牆壁。",
@@ -303,5 +303,9 @@
     "game.sliding_puzzle.confirm_restart": "確認重新開始？ [Y] 是 / [N] 否",
     "game.sliding_puzzle.mode_label": "目前操作模式",
     "game.sliding_puzzle.mode_blank": "空格移動",
-    "game.sliding_puzzle.mode_number": "數字移動"
+    "game.sliding_puzzle.mode_number": "數字移動",
+    "game.sliding_puzzle.controls": "[↑]/[↓]/[←]/[→] 移動 [X] 切換模式 [R] 重開 [S] 儲存 [Q]/[ESC] 退出",
+    "game.sliding_puzzle.save_success": "儲存成功！",
+    "game.sliding_puzzle.time": "用時",
+    "game.sliding_puzzle.win_banner": "所有數字已按順序排列！"
 }

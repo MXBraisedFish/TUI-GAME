@@ -37,6 +37,7 @@ Windows, Linux, MacOS
 - [Pac-Man](#pac-man)
 - [Rock Paper Scissors](#rock-paper-scissors)
 - [Air Shooter](#air-shooter)
+- [Number Sliding Puzzle](#number-sliding-puzzle)
 
 ## Language Support
 
@@ -252,9 +253,9 @@ cargo build --release
 
 ![Rock Paper Scissors](./README-i18n/image/rockpaperscissors.png)
 
-### Air Shooter
+### Number Sliding Puzzle
 
-![Air Shooter](./README-i18n/image/airshooter.png)
+![Air Shooter](./README-i18n/image/numberslidingpuzzle.png)
 
 ## Support This Project
 

@@ -52,7 +52,7 @@
   "game.memory_flip.best_difficulty": "难度",
   "game.memory_flip.best_time": "最短用时",
   "game.memory_flip.best_steps": "最少步数",
-  "game.sliding_puzzle.name": "数字拼图",
+  "game.sliding_puzzle.name": "数字华容道",
   "game.sliding_puzzle.description": "滑动数字方块，使其按升序排列。",
   "game.snake.name": "贪吃蛇",
   "game.snake.description": "控制蛇移动，吃掉食物，避免撞到自己或墙壁。",
