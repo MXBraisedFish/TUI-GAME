@@ -291,5 +291,21 @@
   "game.shooter.fire_mode_manual": "Manual",
   "game.shooter.msg_fire_mode_auto": "Auto fire",
   "game.shooter.msg_fire_mode_manual": "Manual fire",
-  "game.shooter.msg_nuke_empty": "No nuke in magazine."
+  "game.shooter.msg_nuke_empty": "No nuke in magazine.",
+  "game.sliding_puzzle.save_unavailable": "Save API unavailable.",
+  "game.sliding_puzzle.best_time": "Time",
+  "game.sliding_puzzle.win_controls": " [R] Restart  [Q]/[ESC] Exit",
+  "game.sliding_puzzle.win_banner": "All numbers are in order!",
+  "game.sliding_puzzle.best_none": "Best: none",
+  "game.sliding_puzzle.confirm_exit": "Confirm exit? [Y] Yes / [N] No",
+  "game.sliding_puzzle.time": "Time",
+  "game.sliding_puzzle.steps": "Steps",
+  "game.sliding_puzzle.controls": "[Up]/[Down]/[Left]/[Right] Move  [X] Switch Mode  [R] Restart  [S] Save  [Q]/[ESC] Exit",
+  "game.sliding_puzzle.best_steps": "Steps",
+  "game.sliding_puzzle.save_success": "Save successful!",
+  "game.sliding_puzzle.best_title": "Best",
+  "game.sliding_puzzle.confirm_restart": "Confirm restart? [Y] Yes / [N] No",
+  "game.sliding_puzzle.mode_label": "Move Mode",
+  "game.sliding_puzzle.mode_blank": "Blank Move",
+  "game.sliding_puzzle.mode_number": "Number Move"
 }

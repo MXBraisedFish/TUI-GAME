@@ -291,5 +291,17 @@
     "game.shooter.fire_mode_manual": "手動",
     "game.shooter.msg_fire_mode_auto": "自動開火",
     "game.shooter.msg_fire_mode_manual": "手動開火",
-    "game.shooter.msg_nuke_empty": "彈艙中沒有核彈。"
+    "game.shooter.msg_nuke_empty": "彈艙中沒有核彈。",
+    "game.sliding_puzzle.save_unavailable": "儲存功能無法使用。",
+    "game.sliding_puzzle.best_time": "最短時間",
+    "game.sliding_puzzle.win_controls": "[R] 重新開始 [Q]/[ESC] 退出",
+    "game.sliding_puzzle.best_none": "最佳紀錄：無",
+    "game.sliding_puzzle.confirm_exit": "確認退出？ [Y] 是 / [N] 否",
+    "game.sliding_puzzle.steps": "步數",
+    "game.sliding_puzzle.best_steps": "最少步數",
+    "game.sliding_puzzle.best_title": "最佳紀錄",
+    "game.sliding_puzzle.confirm_restart": "確認重新開始？ [Y] 是 / [N] 否",
+    "game.sliding_puzzle.mode_label": "目前操作模式",
+    "game.sliding_puzzle.mode_blank": "空格移動",
+    "game.sliding_puzzle.mode_number": "數字移動"
 }

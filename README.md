@@ -264,3 +264,4 @@ If you have better ideas or suggestions, feel free to open an Issue.
 TheMacOS versions have not been fully tested due to lack of corresponding devices. If you encounter any bugs, please report them. Thank you very much!
 
 GitHub Repo: [MXBraisedFish/TUI-GAME](https://github.com/MXBraisedFish/TUI-GAME)
+

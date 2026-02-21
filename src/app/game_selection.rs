@@ -1,4 +1,4 @@
-﻿use std::collections::HashMap;
+use std::collections::HashMap;
 
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
@@ -99,6 +99,7 @@ impl GameSelection {
                     if game.id == "2048"
                         || game.id == "lights_out"
                         || game.id == "memory_flip"
+                        || game.id == "sliding_puzzle"
                         || game.id == "color_memory"
                         || game.id == "minesweeper"
                         || game.id == "rock_paper_scissors"

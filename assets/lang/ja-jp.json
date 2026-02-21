@@ -291,5 +291,21 @@
   "game.shooter.fire_mode_manual": "手動",
   "game.shooter.msg_fire_mode_auto": "自動射撃",
   "game.shooter.msg_fire_mode_manual": "手動射撃",
-  "game.shooter.msg_nuke_empty": "弾倉に核弾がありません。"
+  "game.shooter.msg_nuke_empty": "弾倉に核弾がありません。",
+  "game.sliding_puzzle.save_unavailable": "セーブ機能は利用できません。",
+  "game.sliding_puzzle.best_time": "最短時間",
+  "game.sliding_puzzle.win_controls": " [R] リスタート  [Q]/[ESC] 終了",
+  "game.sliding_puzzle.win_banner": "すべての数字が順番に並びました！",
+  "game.sliding_puzzle.best_none": "ベスト記録: なし",
+  "game.sliding_puzzle.confirm_exit": "終了しますか？ [Y] はい / [N] いいえ",
+  "game.sliding_puzzle.time": "時間",
+  "game.sliding_puzzle.steps": "手数",
+  "game.sliding_puzzle.controls": "[↑]/[↓]/[←]/[→] 移動  [X] モード切替  [R] リスタート  [S] セーブ  [Q]/[ESC] 終了",
+  "game.sliding_puzzle.best_steps": "最少手数",
+  "game.sliding_puzzle.save_success": "セーブ成功！",
+  "game.sliding_puzzle.best_title": "ベスト記録",
+  "game.sliding_puzzle.confirm_restart": "リスタートしますか？ [Y] はい / [N] いいえ",
+  "game.sliding_puzzle.mode_label": "現在の操作モード",
+  "game.sliding_puzzle.mode_blank": "空白移動",
+  "game.sliding_puzzle.mode_number": "数字移動"
 }

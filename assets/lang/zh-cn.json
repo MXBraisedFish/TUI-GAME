@@ -291,5 +291,21 @@
   "game.shooter.fire_mode_manual": "手动",
   "game.shooter.msg_fire_mode_auto": "自动开火",
   "game.shooter.msg_fire_mode_manual": "手动开火",
-  "game.shooter.msg_nuke_empty": "弹舱中没有核弹。"
+  "game.shooter.msg_nuke_empty": "弹舱中没有核弹。",
+  "game.sliding_puzzle.save_unavailable": "保存功能不可用。",
+  "game.sliding_puzzle.best_time": "最短用时",
+  "game.sliding_puzzle.win_controls": " [R] 重开  [Q]/[ESC] 退出",
+  "game.sliding_puzzle.win_banner": "所有数字已按顺序排列！",
+  "game.sliding_puzzle.best_none": "最佳记录: 无",
+  "game.sliding_puzzle.confirm_exit": "确认退出？ [Y] 是 / [N] 否",
+  "game.sliding_puzzle.time": "用时",
+  "game.sliding_puzzle.steps": "步数",
+  "game.sliding_puzzle.controls": "[↑]/[↓]/[←]/[→] 移动  [X] 切换模式  [R] 重开  [S] 保存  [Q]/[ESC] 退出",
+  "game.sliding_puzzle.best_steps": "最少步数",
+  "game.sliding_puzzle.save_success": "保存成功！",
+  "game.sliding_puzzle.best_title": "最佳记录",
+  "game.sliding_puzzle.confirm_restart": "确认重新开始？ [Y] 是 / [N] 否",
+  "game.sliding_puzzle.mode_label": "当前操作模式",
+  "game.sliding_puzzle.mode_blank": "空格移动",
+  "game.sliding_puzzle.mode_number": "数字移动"
 }
