@@ -1,7 +1,7 @@
 {
     "language_name": "繁體中文（港澳）",
     "language": "語言",
-    "confirm_language": "[Enter] 確認語言 [ESC] 或 [Q] 返回主選單",
+    "confirm_language": "[Enter] 確認語言 [ESC] / [Q] 返回主選單",
     "menu.play": "開始遊戲",
     "menu.continue": "繼續遊戲",
     "menu.settings": "設定",
@@ -20,7 +20,7 @@
     "warning.required": "需要尺寸",
     "warning.current": "目前尺寸",
     "warning.enlarge_hint": "請放大終端機視窗以繼續。",
-    "common.back_hint": "按 ESC 或 Q 返回主選單",
+    "common.back_hint": "按 ESC / Q 返回主選單",
     "games.empty": "在 scripts/ 目錄下找不到 Lua 遊戲",
     "games.run_pending": "按 Enter 執行選中的遊戲（執行框架待實作）",
     "game_selection.panel.games": "遊戲列表",

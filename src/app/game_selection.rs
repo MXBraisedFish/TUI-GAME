@@ -100,6 +100,7 @@ impl GameSelection {
                         || game.id == "lights_out"
                         || game.id == "memory_flip"
                         || game.id == "sliding_puzzle"
+                        || game.id == "solitaire"
                         || game.id == "color_memory"
                         || game.id == "minesweeper"
                         || game.id == "rock_paper_scissors"
