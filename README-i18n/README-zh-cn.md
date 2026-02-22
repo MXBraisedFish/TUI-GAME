@@ -38,6 +38,7 @@ Windows，Linux，MacOS
 - [石头剪刀布](#石头剪刀布)
 - [空中射击](#空中射击)
 - [数字华容道](#数字华容道)
+- [贪吃蛇](#贪吃蛇)
 
 ## 语言支持
 
@@ -260,6 +261,10 @@ cargo build --release
 ### 数字华容道
 
 ![数字华容道](./image/numberslidingpuzzle-zh-cn.png)
+
+### 贪吃蛇
+
+![贪吃蛇](./image/snake-zh-cn.png)
 
 ## 支持本项目
 

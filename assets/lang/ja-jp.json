@@ -320,5 +320,8 @@
   "game.snake.confirm_restart": "リスタートしますか？ [Y] はい / [N] いいえ",
   "game.snake.confirm_exit": "終了しますか？ [Y] はい / [N] いいえ",
   "game.snake.save_success": "セーブ成功！",
-  "game.snake.save_unavailable": "セーブ機能は利用できません。"
+  "game.snake.save_unavailable": "セーブ機能は利用できません。",
+  "game.blackjack.msg_insurance_skip_round": "プレイヤー保険：このラウンドをスキップ。",
+  "game.blackjack.msg_forced_double_next": "次ラウンド：強制ダブル。",
+  "game.blackjack.msg_forced_double_applied": "保険効果：このラウンドは強制ダブル。"
 }

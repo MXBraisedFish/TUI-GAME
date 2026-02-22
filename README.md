@@ -38,6 +38,7 @@ Windows, Linux, MacOS
 - [Rock Paper Scissors](#rock-paper-scissors)
 - [Air Shooter](#air-shooter)
 - [Number Sliding Puzzle](#number-sliding-puzzle)
+- [Snake](#snake)
 
 ## Language Support
 
@@ -253,9 +254,17 @@ cargo build --release
 
 ![Rock Paper Scissors](./README-i18n/image/rockpaperscissors.png)
 
+### Air Shooter
+
+![Air Shooter](./README-i18n/image/airshooter.png)
+
 ### Number Sliding Puzzle
 
-![Air Shooter](./README-i18n/image/numberslidingpuzzle.png)
+![Number Sliding Puzzle](./README-i18n/image/numberslidingpuzzle.png)
+
+### Snake
+
+![Snake](./README-i18n/image/snake.png)
 
 ## Support This Project
 

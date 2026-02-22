@@ -320,5 +320,8 @@
   "game.snake.confirm_restart": "Confirm restart? [Y] Yes / [N] No",
   "game.snake.confirm_exit": "Confirm exit? [Y] Yes / [N] No",
   "game.snake.save_success": "Save successful!",
-  "game.snake.save_unavailable": "Save API unavailable."
+  "game.snake.save_unavailable": "Save API unavailable.",
+  "game.blackjack.msg_insurance_skip_round": "Player insurance: round skipped.",
+  "game.blackjack.msg_forced_double_next": "Next round: forced double.",
+  "game.blackjack.msg_forced_double_applied": "Insurance effect: forced double this round."
 }

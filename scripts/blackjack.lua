@@ -1,4 +1,4 @@
-GAME_META = {
+﻿GAME_META = {
     name = "Blackjack",
     description = "Play against the dealer and manage your bets to win with 21."
 }
@@ -28,6 +28,8 @@ local state = {
     split_mode = false,
     active_hand = 1,
     insurance = false,
+    force_double_next_round = false,
+    first_action_done = false,
 
     phase = "player",
     center_lines = {},
@@ -222,6 +224,7 @@ local function make_hand(cards, bet, adj_mult)
         payout_mult = 0,
         result_text = "",
         result_color = "white",
+        insured_skip = false,
     }
     local total = hand_total(h.cards)
     h.bust = total > 21
@@ -351,13 +354,14 @@ end
 
 local function can_insurance()
     if state.insurance then return false end
-    if state.dealer_cards[1] ~= "A" then return false end
-    for i = 1, #state.hands do
-        if state.hands[i].blackjack then
-            return true
-        end
-    end
-    return false
+    if state.phase ~= "player" then return false end
+    if state.split_mode then return false end
+    if state.first_action_done then return false end
+
+    local h = state.hands[1]
+    if h == nil or h.resolved or h.stood or h.bust then return false end
+    if #h.cards ~= 2 or h.has_hit or h.doubled or h.blackjack then return false end
+    return hand_total(h.cards) < 17
 end
 
 local update_player_prompt
@@ -438,6 +442,7 @@ local function adjust_bet_multiplier(delta)
     if not state.split_mode then
         state.bet_multiplier = next_mult
     end
+    state.first_action_done = true
     update_player_prompt()
     state.dirty = true
 end
@@ -488,7 +493,9 @@ local function begin_round()
         return
     end
 
-    state.bet_multiplier = 1.0
+    local forced_double = state.force_double_next_round == true
+    state.bet_multiplier = forced_double and 2.0 or 1.0
+
     local bet = math.floor(BASE_BET * state.bet_multiplier + 0.5)
     if bet < 1 then bet = 1 end
     if state.funds < bet then
@@ -505,6 +512,18 @@ local function begin_round()
     state.bankrupt = false
     state.confirm_mode = nil
     state.await_next_round = false
+    state.first_action_done = false
+
+    if forced_double then
+        local h = state.hands[1]
+        if h ~= nil then
+            h.doubled = true
+            h.adj_locked = true
+        end
+        state.force_double_next_round = false
+        add_toast(tr("game.blackjack.msg_forced_double_applied", "Insurance effect: forced double this round."), "yellow")
+    end
+
     update_player_prompt()
     state.dirty = true
     flush_input_buffer()
@@ -513,15 +532,15 @@ end
 local function draw_card(x, y, rank, hidden, border_fg, text_fg)
     local bfg = border_fg or "white"
     local tfg = text_fg or border_fg or "white"
-    draw_text(x, y, "┌───┐", bfg, "black")
+    draw_text(x, y, "\u{250C}\u{2500}\u{2500}\u{2500}\u{2510}", bfg, "black")
     if hidden then
-        draw_text(x, y + 1, "│XXX│", bfg, "black")
+        draw_text(x, y + 1, "\u{2502}XXX\u{2502}", bfg, "black")
     else
-        draw_text(x, y + 1, "│", bfg, "black")
+        draw_text(x, y + 1, "\u{2502}", bfg, "black")
         draw_text(x + 1, y + 1, card_inner(rank), tfg, "black")
-        draw_text(x + CARD_W - 1, y + 1, "│", bfg, "black")
+        draw_text(x + CARD_W - 1, y + 1, "\u{2502}", bfg, "black")
     end
-    draw_text(x, y + 2, "└───┘", bfg, "black")
+    draw_text(x, y + 2, "\u{2514}\u{2500}\u{2500}\u{2500}\u{2518}", bfg, "black")
 end
 
 local function resolve_hand(h, outcome, payout_mult, text_key, fallback, color)
@@ -537,7 +556,7 @@ local function render_once()
     local w, h = terminal_size()
     local controls = tr(
         "game.blackjack.controls",
-        "[←][→] Switch Hand  [Z] Double  [X] Split  [C] Insurance  [Space] Hit  [Enter] Stand  [R] Restart  [Q]/[ESC] Exit"
+        "[\u{2190}][\u{2192}] Switch Hand  [Z] Double  [X] Split  [C] Insurance  [Space] Hit  [Enter] Stand  [R] Restart  [Q]/[ESC] Exit"
     )
     local ctrl_lines = wrap_words(controls, math.max(10, w - 2))
     if #ctrl_lines > 3 then
@@ -614,12 +633,12 @@ local function render_once()
         draw_text(ax, alert_y, alert_text, alert_color, "black")
     end
 
-    draw_text(table_x, table_y, "╔" .. string.rep("═", TABLE_W - 2) .. "╗", "white", "black")
+    draw_text(table_x, table_y, "\u{2554}" .. string.rep("\u{2550}", TABLE_W - 2) .. "\u{2557}", "white", "black")
     for i = 1, TABLE_H - 2 do
-        draw_text(table_x, table_y + i, "║", "white", "black")
-        draw_text(table_x + TABLE_W - 1, table_y + i, "║", "white", "black")
+        draw_text(table_x, table_y + i, "\u{2551}", "white", "black")
+        draw_text(table_x + TABLE_W - 1, table_y + i, "\u{2551}", "white", "black")
     end
-    draw_text(table_x, table_y + TABLE_H - 1, "╚" .. string.rep("═", TABLE_W - 2) .. "╝", "white", "black")
+    draw_text(table_x, table_y + TABLE_H - 1, "\u{255A}" .. string.rep("\u{2550}", TABLE_W - 2) .. "\u{255D}", "white", "black")
 
     local dealer_label = " " .. tr("game.blackjack.dealer_cards", "Dealer") .. " "
     local player_label = " " .. tr("game.blackjack.player_cards", "Player") .. " "
@@ -664,9 +683,9 @@ local function render_once()
 
     local deck_x = table_x + TABLE_W - 16
     local deck_y = table_y + math.floor(TABLE_H / 2) - 2
-    draw_text(deck_x, deck_y + 1, "┌─┌┌┌┌┌┌┌┌", "white", "black")
-    draw_text(deck_x, deck_y + 2, "│X││││││││", "white", "black")
-    draw_text(deck_x, deck_y + 3, "└─└└└└└└└└", "white", "black")
+    draw_text(deck_x, deck_y + 1, "\u{250C}\u{2500}\u{250C}\u{250C}\u{250C}\u{250C}\u{250C}\u{250C}\u{250C}\u{250C}", "white", "black")
+    draw_text(deck_x, deck_y + 2, "\u{2502}X\u{2502}\u{2502}\u{2502}\u{2502}\u{2502}\u{2502}\u{2502}\u{2502}", "white", "black")
+    draw_text(deck_x, deck_y + 3, "\u{2514}\u{2500}\u{2514}\u{2514}\u{2514}\u{2514}\u{2514}\u{2514}\u{2514}\u{2514}", "white", "black")
 
     local info_x = table_x + 3
     local info_y = table_y + math.floor(TABLE_H / 2) - 1
@@ -768,9 +787,9 @@ local function render_once()
         )
         local indicator_y = player_cards_y + CARD_H
         if state.active_hand == 1 then
-            draw_text(left_x, indicator_y, string.rep("─", math.max(5, left_w)), "green", "black")
+            draw_text(left_x, indicator_y, string.rep("\u{2500}", math.max(5, left_w)), "green", "black")
         else
-            draw_text(right_x, indicator_y, string.rep("─", math.max(5, right_w)), "green", "black")
+            draw_text(right_x, indicator_y, string.rep("\u{2500}", math.max(5, right_w)), "green", "black")
         end
     else
         local group_w = card_group_width(#state.hands[1].cards)
@@ -850,6 +869,8 @@ local function dealer_phase_and_settle()
         local player_bj = h.blackjack
         if h.bust then
             resolve_hand(h, "lose", 0, "game.blackjack.msg_player_bust", "Player bust! Lose bet.", "red")
+        elseif h.insured_skip and (not dealer_bj) then
+            resolve_hand(h, "push", 0, "game.blackjack.msg_insurance_skip_round", "Player insurance: round skipped.", "light_cyan")
         elseif player_bj and not dealer_bj then
             if state.insurance then
                 resolve_hand(h, "win", 2.0, "game.blackjack.msg_player_blackjack_insured", "Player blackjack with insurance! Win bet.", "green")
@@ -959,6 +980,7 @@ local function hit_current()
         return
     end
     h.adj_locked = true
+    state.first_action_done = true
     h.cards[#h.cards + 1] = random_rank()
     h.has_hit = true
     update_hand_state(h)
@@ -976,6 +998,7 @@ local function stand_current()
         return
     end
     h.adj_locked = true
+    state.first_action_done = true
     h.stood = true
     ensure_active_hand()
     update_player_prompt()
@@ -992,6 +1015,7 @@ local function double_current()
         return
     end
     h.adj_locked = true
+    state.first_action_done = true
     h.bet = h.bet * 2
     h.mult = 2.0
     h.doubled = true
@@ -1009,6 +1033,7 @@ local function split_current()
     local left = make_hand({ h.cards[1] }, h.bet, adj)
     local right = make_hand({ h.cards[2] }, h.bet, adj)
     state.hands = { left, right }
+    state.first_action_done = true
     state.split_mode = true
     state.active_hand = 1
     update_player_prompt()
@@ -1023,14 +1048,20 @@ local function insurance_current()
         add_toast(tr("game.blackjack.action_unavailable", "Action unavailable."), "red")
         return
     end
+
     local h = state.hands[state.active_hand]
     if h ~= nil then
         h.adj_locked = true
+        h.stood = true
+        h.insured_skip = true
     end
+
+    state.first_action_done = true
     state.insurance = true
-    add_toast(tr("game.blackjack.ops_insurance", "Insurance") .. " +", "green")
-    update_player_prompt()
-    state.dirty = true
+    state.force_double_next_round = true
+    state.confirm_mode = nil
+
+    dealer_phase_and_settle()
 end
 
 local function restart_session()
@@ -1040,6 +1071,9 @@ local function restart_session()
     state.confirm_mode = nil
     state.await_next_round = false
     state.bet_multiplier = 1.0
+    state.first_action_done = false
+    state.insurance = false
+    state.force_double_next_round = false
     state.toast_text = nil
     state.toast_until = 0
     begin_round()
@@ -1166,7 +1200,7 @@ local function minimum_required_size()
     local controls_w = min_width_for_lines(
         tr(
             "game.blackjack.controls",
-            "[←][→] Switch Hand  [Z] Double  [X] Split  [C] Insurance  [Space] Hit  [Enter] Stand  [R] Restart  [Q]/[ESC] Exit"
+            "[\u{2190}][\u{2192}] Switch Hand  [Z] Double  [X] Split  [C] Insurance  [Space] Hit  [Enter] Stand  [R] Restart  [Q]/[ESC] Exit"
         ),
         3,
         40
@@ -1262,3 +1296,4 @@ end
 
 init_game()
 game_loop()
+

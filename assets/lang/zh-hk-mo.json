@@ -320,5 +320,8 @@
     "game.snake.confirm_restart": "確認重新開始？ [Y] 是 / [N] 否",
     "game.snake.confirm_exit": "確認退出？ [Y] 是 / [N] 否",
     "game.snake.save_success": "儲存成功！",
-    "game.snake.save_unavailable": "儲存功能無法使用。"
+    "game.snake.save_unavailable": "儲存功能無法使用。",
+    "game.blackjack.msg_insurance_skip_round": "玩家保險，本輪跳過。",
+    "game.blackjack.msg_forced_double_next": "下一輪：強制加倍。",
+    "game.blackjack.msg_forced_double_applied": "保險效果：本輪已強制加倍。"
 }
