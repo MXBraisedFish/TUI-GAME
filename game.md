@@ -390,7 +390,6 @@
 - 俄罗斯方块 `tetris.lua`
 - 24点 `twenty_four.lua`
 - Wordle `wordle.lua`
-- 单人纸牌 `solitaire.lua`
 - 数独 `sudoku.lua`
 
 ---
@@ -399,5 +398,3 @@
 
 - 本文以当前代码实现为准（`scripts/*.lua`）。
 - 若后续你继续调参数/规则，建议同步更新本文件对应章节，确保玩家文档与实际玩法一致。
-
-

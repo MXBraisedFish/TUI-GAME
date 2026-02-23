@@ -1,47 +1,66 @@
 ﻿
 GAME_META = {
     name = "Solitaire",
-    description = "Arrange cards in order and suit to clear the table."
+    description = "Play FreeCell, Klondike, or Spider Solitaire in one game."
 }
 
 local FPS = 60
 local FRAME_MS = 16
+local MAX_UNDO = 100
 
-local MODE_TABLEAU = "tableau"
-local MODE_FOUNDATION = "foundation"
+local MODE_FREECELL = "freecell"
+local MODE_KLONDIKE = "klondike"
+local MODE_SPIDER = "spider"
 
 local SUIT_HEART = 1
 local SUIT_SPADE = 2
 local SUIT_DIAMOND = 3
 local SUIT_CLUB = 4
 
-local MAX_UNDO = 100
-
 local state = {
-    mode = MODE_TABLEAU,
+    mode = MODE_FREECELL,
+    spider_diff = 1,
+
     tableau = {},
+    foundations = {},
+    cells = {},
     stock = {},
     waste = {},
-    foundation = {},
+
+    spider_removed = 0,
+
     cursor_col = 1,
     selected_col = nil,
+
     frame = 0,
     start_frame = 0,
     end_frame = nil,
     won = false,
-    launch_mode = "new",
-    last_auto_save_sec = 0,
-    best_tableau_sec = 0,
-    best_foundation_sec = 0,
+
     confirm_mode = nil,
     mode_input = false,
+    spider_diff_input = false,
+
     msg_text = "",
     msg_color = "dark_gray",
     msg_until = 0,
     msg_persistent = false,
+
     dirty = true,
     last_elapsed_sec = -1,
+    last_auto_save_sec = 0,
+
+    best = {
+        freecell = 0,
+        klondike = 0,
+        spider1 = 0,
+        spider2 = 0,
+        spider3 = 0,
+    },
+
+    launch_mode = "new",
     undo_stack = {},
+
     size_warning_active = false,
     last_warn_term_w = 0,
     last_warn_term_h = 0,
@@ -49,7 +68,6 @@ local state = {
     last_warn_min_h = 0,
     last_term_w = 0,
     last_term_h = 0,
-    top_dirty = false,
 }
 
 local function tr(key, fallback)
@@ -69,17 +87,22 @@ end
 
 local function wrap_words(text, max_width)
     if max_width <= 1 then return { text } end
-    local lines, current, had_token = {}, "", false
+    local lines, current, had = {}, "", false
     for token in string.gmatch(text, "%S+") do
-        had_token = true
+        had = true
         if current == "" then
             current = token
         else
             local candidate = current .. " " .. token
-            if key_width(candidate) <= max_width then current = candidate else lines[#lines + 1] = current; current = token end
+            if key_width(candidate) <= max_width then
+                current = candidate
+            else
+                lines[#lines + 1] = current
+                current = token
+            end
         end
     end
-    if not had_token then return { "" } end
+    if not had then return { "" } end
     if current ~= "" then lines[#lines + 1] = current end
     return lines
 end
@@ -142,11 +165,6 @@ local function rand_int(n)
     return random(n)
 end
 
-local function rand_range(lo, hi)
-    if hi <= lo then return lo end
-    return lo + rand_int(hi - lo + 1)
-end
-
 local function show_message(text, color, dur_sec, persistent)
     state.msg_text = text or ""
     state.msg_color = color or "dark_gray"
@@ -174,6 +192,19 @@ local function update_message_timer()
     if state.msg_until > 0 and state.frame >= state.msg_until then clear_message() end
 end
 
+local function mode_key()
+    if state.mode == MODE_SPIDER then
+        return "spider" .. tostring(state.spider_diff)
+    end
+    return state.mode
+end
+
+local function mode_label(mode)
+    if mode == MODE_FREECELL then return tr("game.solitaire.mode.freecell", "FreeCell") end
+    if mode == MODE_KLONDIKE then return tr("game.solitaire.mode.klondike", "Klondike") end
+    return tr("game.solitaire.mode.spider", "Spider")
+end
+
 local function rank_text(rank)
     if rank == 1 then return "A" end
     if rank == 11 then return "J" end
@@ -187,45 +218,184 @@ local function is_red(card)
 end
 
 local function card_color(card)
-    if state.mode == MODE_FOUNDATION then
-        if card.suit == SUIT_HEART then return "red" end
-        if card.suit == SUIT_SPADE then return "white" end
-        if card.suit == SUIT_DIAMOND then return "rgb(255,165,0)" end
-        return "cyan"
-    end
-    if is_red(card) then return "red" end
+    if card.suit == SUIT_HEART then return "red" end
+    if card.suit == SUIT_DIAMOND then return "rgb(255,165,0)" end
+    if card.suit == SUIT_CLUB then return "cyan" end
     return "white"
+end
+
+local function color_group(card)
+    return is_red(card) and 1 or 0
 end
 
 local function clone_card(card)
     return { rank = card.rank, suit = card.suit, face_up = card.face_up == true }
 end
 
-local function deep_copy_cards(cards)
+local function copy_cards(cards)
     local out = {}
     for i = 1, #cards do out[i] = clone_card(cards[i]) end
     return out
 end
 
-local function deep_copy_tableau(tableau)
+local function copy_tableau(tableau)
     local out = {}
-    for i = 1, 7 do out[i] = deep_copy_cards(tableau[i] or {}) end
+    for i = 1, #tableau do out[i] = copy_cards(tableau[i] or {}) end
     return out
 end
 
-local function deep_copy_foundation(foundation)
+local function copy_foundations(fd)
     local out = {}
-    for i = 1, 4 do out[i] = deep_copy_cards(foundation[i] or {}) end
+    for i = 1, 4 do out[i] = copy_cards(fd[i] or {}) end
     return out
 end
 
+local function copy_cells(cells)
+    local out = {}
+    for i = 1, 4 do
+        if cells[i] ~= nil then out[i] = clone_card(cells[i]) else out[i] = nil end
+    end
+    return out
+end
+
+local function empty_mode_piles()
+    local cols = 8
+    if state.mode == MODE_KLONDIKE then cols = 7 end
+    if state.mode == MODE_SPIDER then cols = 10 end
+
+    state.tableau = {}
+    for i = 1, cols do state.tableau[i] = {} end
+
+    state.foundations = {}
+    for i = 1, 4 do state.foundations[i] = {} end
+
+    state.cells = { nil, nil, nil, nil }
+    state.stock = {}
+    state.waste = {}
+    state.spider_removed = 0
+end
+
+local function build_standard_deck()
+    local deck = {}
+    for suit = SUIT_HEART, SUIT_CLUB do
+        for rank = 1, 13 do
+            deck[#deck + 1] = { rank = rank, suit = suit, face_up = false }
+        end
+    end
+    return deck
+end
+
+local function shuffle_cards(cards)
+    for i = #cards, 2, -1 do
+        local j = rand_int(i) + 1
+        cards[i], cards[j] = cards[j], cards[i]
+    end
+end
+
+local function build_spider_deck(diff)
+    local suits, copies = {}, 2
+    if diff == 1 then
+        suits = { SUIT_SPADE }
+        copies = 8
+    elseif diff == 2 then
+        suits = { SUIT_SPADE, SUIT_HEART }
+        copies = 4
+    else
+        suits = { SUIT_HEART, SUIT_SPADE, SUIT_DIAMOND, SUIT_CLUB }
+        copies = 2
+    end
+
+    local deck = {}
+    for _, suit in ipairs(suits) do
+        for _ = 1, copies do
+            for rank = 1, 13 do
+                deck[#deck + 1] = { rank = rank, suit = suit, face_up = false }
+            end
+        end
+    end
+    return deck
+end
+
+local function deal_freecell()
+    state.mode = MODE_FREECELL
+    empty_mode_piles()
+
+    local deck = build_standard_deck()
+    shuffle_cards(deck)
+
+    local idx = 1
+    for col = 1, 8 do
+        local cnt = (col <= 4) and 7 or 6
+        for _ = 1, cnt do
+            local c = clone_card(deck[idx])
+            idx = idx + 1
+            c.face_up = true
+            state.tableau[col][#state.tableau[col] + 1] = c
+        end
+    end
+end
+
+local function deal_klondike()
+    state.mode = MODE_KLONDIKE
+    empty_mode_piles()
+
+    local deck = build_standard_deck()
+    shuffle_cards(deck)
+
+    local idx = 1
+    for col = 1, 7 do
+        for row = 1, col do
+            local c = clone_card(deck[idx])
+            idx = idx + 1
+            c.face_up = (row == col)
+            state.tableau[col][#state.tableau[col] + 1] = c
+        end
+    end
+
+    while idx <= #deck do
+        local c = clone_card(deck[idx])
+        idx = idx + 1
+        c.face_up = false
+        state.stock[#state.stock + 1] = c
+    end
+end
+
+local function deal_spider(diff)
+    state.mode = MODE_SPIDER
+    state.spider_diff = clamp(math.floor(diff or 1), 1, 3)
+    empty_mode_piles()
+
+    local deck = build_spider_deck(state.spider_diff)
+    shuffle_cards(deck)
+
+    local idx = 1
+    for col = 1, 10 do
+        local cnt = (col <= 4) and 6 or 5
+        for row = 1, cnt do
+            local c = clone_card(deck[idx])
+            idx = idx + 1
+            c.face_up = (row == cnt)
+            state.tableau[col][#state.tableau[col] + 1] = c
+        end
+    end
+
+    while idx <= #deck do
+        local c = clone_card(deck[idx])
+        idx = idx + 1
+        c.face_up = false
+        state.stock[#state.stock + 1] = c
+    end
+end
 local function snapshot_state()
     return {
         mode = state.mode,
-        tableau = deep_copy_tableau(state.tableau),
-        stock = deep_copy_cards(state.stock),
-        waste = deep_copy_cards(state.waste),
-        foundation = deep_copy_foundation(state.foundation),
+        spider_diff = state.spider_diff,
+        tableau = copy_tableau(state.tableau),
+        foundations = copy_foundations(state.foundations),
+        cells = copy_cells(state.cells),
+        stock = copy_cards(state.stock),
+        waste = copy_cards(state.waste),
+        spider_removed = state.spider_removed,
         cursor_col = state.cursor_col,
         selected_col = state.selected_col,
         frame = state.frame,
@@ -237,24 +407,33 @@ local function snapshot_state()
 end
 
 local function restore_snapshot(snap, clear_undo)
-    state.mode = snap.mode == MODE_FOUNDATION and MODE_FOUNDATION or MODE_TABLEAU
-    state.tableau = deep_copy_tableau(snap.tableau or {})
-    state.stock = deep_copy_cards(snap.stock or {})
-    state.waste = deep_copy_cards(snap.waste or {})
-    state.foundation = deep_copy_foundation(snap.foundation or {})
-    state.cursor_col = clamp(math.floor(tonumber(snap.cursor_col) or 1), 1, 7)
+    state.mode = (snap.mode == MODE_KLONDIKE or snap.mode == MODE_SPIDER) and snap.mode or MODE_FREECELL
+    state.spider_diff = clamp(math.floor(tonumber(snap.spider_diff) or 1), 1, 3)
+    state.tableau = copy_tableau(snap.tableau or {})
+    state.foundations = copy_foundations(snap.foundations or {})
+    state.cells = copy_cells(snap.cells or {})
+    state.stock = copy_cards(snap.stock or {})
+    state.waste = copy_cards(snap.waste or {})
+    state.spider_removed = math.max(0, math.floor(tonumber(snap.spider_removed) or 0))
+
+    local cols = #state.tableau
+    if cols < 1 then
+        if state.mode == MODE_SPIDER then cols = 10 elseif state.mode == MODE_KLONDIKE then cols = 7 else cols = 8 end
+    end
+    state.cursor_col = clamp(math.floor(tonumber(snap.cursor_col) or 1), 1, cols)
     local sel = tonumber(snap.selected_col)
-    if sel ~= nil then state.selected_col = clamp(math.floor(sel), 1, 7) else state.selected_col = nil end
+    if sel ~= nil then state.selected_col = clamp(math.floor(sel), 1, cols) else state.selected_col = nil end
+
     state.frame = math.max(0, math.floor(tonumber(snap.frame) or state.frame))
     state.start_frame = math.max(0, math.floor(tonumber(snap.start_frame) or state.start_frame))
     state.end_frame = snap.end_frame and math.max(0, math.floor(tonumber(snap.end_frame) or state.frame)) or nil
     state.won = snap.won == true
     state.last_auto_save_sec = math.max(0, math.floor(tonumber(snap.last_auto_save_sec) or 0))
+
     state.confirm_mode = nil
     state.mode_input = false
-    if clear_undo == nil or clear_undo then
-        state.undo_stack = {}
-    end
+    state.spider_diff_input = false
+    if clear_undo == nil or clear_undo then state.undo_stack = {} end
     clear_message()
     state.dirty = true
 end
@@ -271,427 +450,357 @@ local function pop_undo()
     end
     local snap = state.undo_stack[#state.undo_stack]
     table.remove(state.undo_stack)
-    -- Keep remaining undo history when reverting one step.
     restore_snapshot(snap, false)
     show_message(tr("game.solitaire.undo_done", "Undo successful."), "yellow", 2, false)
     return true
 end
-local fresh_empty_piles
-local can_place_on_tableau
 
-local function build_mode_ordered_sequences(mode)
-    local seqs = { {}, {}, {}, {} }
-    if mode == MODE_FOUNDATION then
-        for suit = SUIT_HEART, SUIT_CLUB do
-            for rank = 1, 13 do
-                seqs[suit][#seqs[suit] + 1] = { rank = rank, suit = suit, face_up = true }
-            end
-        end
-        return seqs
-    end
+local function load_best_record()
+    state.best.freecell = 0
+    state.best.klondike = 0
+    state.best.spider1 = 0
+    state.best.spider2 = 0
+    state.best.spider3 = 0
 
-    -- Tableau mode: 4 descending K..A sequences with strict red/black alternation.
-    for rank = 13, 1, -1 do
-        local idx = 14 - rank
-        if idx % 2 == 1 then
-            seqs[1][#seqs[1] + 1] = { rank = rank, suit = SUIT_HEART, face_up = true }   -- red
-            seqs[2][#seqs[2] + 1] = { rank = rank, suit = SUIT_SPADE, face_up = true }   -- black
-            seqs[3][#seqs[3] + 1] = { rank = rank, suit = SUIT_DIAMOND, face_up = true } -- red
-            seqs[4][#seqs[4] + 1] = { rank = rank, suit = SUIT_CLUB, face_up = true }    -- black
-        else
-            seqs[1][#seqs[1] + 1] = { rank = rank, suit = SUIT_SPADE, face_up = true }   -- black
-            seqs[2][#seqs[2] + 1] = { rank = rank, suit = SUIT_DIAMOND, face_up = true } -- red
-            seqs[3][#seqs[3] + 1] = { rank = rank, suit = SUIT_CLUB, face_up = true }    -- black
-            seqs[4][#seqs[4] + 1] = { rank = rank, suit = SUIT_HEART, face_up = true }   -- red
-        end
-    end
-    return seqs
+    if type(load_data) ~= "function" then return end
+    local ok, data = pcall(load_data, "solitaire_best_v2")
+    if not ok or type(data) ~= "table" then return end
+
+    state.best.freecell = math.max(0, math.floor(tonumber(data.freecell) or 0))
+    state.best.klondike = math.max(0, math.floor(tonumber(data.klondike) or 0))
+    state.best.spider1 = math.max(0, math.floor(tonumber(data.spider1) or 0))
+    state.best.spider2 = math.max(0, math.floor(tonumber(data.spider2) or 0))
+    state.best.spider3 = math.max(0, math.floor(tonumber(data.spider3) or 0))
 end
 
-local function random_four_columns()
-    local cols = { 1, 2, 3, 4, 5, 6, 7 }
-    for i = #cols, 2, -1 do
-        local j = rand_range(1, i)
-        cols[i], cols[j] = cols[j], cols[i]
-    end
-    return { cols[1], cols[2], cols[3], cols[4] }
+local function save_best_record()
+    if type(save_data) ~= "function" then return false end
+    local payload = {
+        freecell = state.best.freecell,
+        klondike = state.best.klondike,
+        spider1 = state.best.spider1,
+        spider2 = state.best.spider2,
+        spider3 = state.best.spider3,
+    }
+    local ok = pcall(save_data, "solitaire_best_v2", payload)
+    return ok
 end
 
-local function collect_deck_from_tableau()
-    local deck = {}
-    for col = 1, 7 do
-        local pile = state.tableau[col]
-        for i = 1, #pile do
-            local card = clone_card(pile[i])
-            card.face_up = false
-            deck[#deck + 1] = card
-        end
-    end
-    return deck
+local function best_time_for_current_mode()
+    local k = mode_key()
+    return state.best[k] or 0
 end
 
-local function generate_reverse_solved_layout(mode)
-    fresh_empty_piles()
-    state.mode = mode == MODE_FOUNDATION and MODE_FOUNDATION or MODE_TABLEAU
-
-    local target_steps = rand_range(300, 400)
-    local seqs = build_mode_ordered_sequences(state.mode)
-    local seed_cols = random_four_columns()
-
-    for i = 1, 4 do
-        local col = seed_cols[i]
-        for j = 1, #seqs[i] do
-            state.tableau[col][#state.tableau[col] + 1] = clone_card(seqs[i][j])
-        end
-    end
-
-    for _ = 1, target_steps do
-        local src_candidates = {}
-        for c = 1, 7 do
-            if #state.tableau[c] > 0 then src_candidates[#src_candidates + 1] = c end
-        end
-        if #src_candidates == 0 then break end
-
-        local src_col = src_candidates[rand_range(1, #src_candidates)]
-        local src = state.tableau[src_col]
-        local start_idx = rand_range(1, #src)
-        local moving_first = src[start_idx]
-
-        local dst_candidates = {}
-        for dst_col = 1, 7 do
-            if dst_col ~= src_col and can_place_on_tableau(moving_first, dst_col) then
-                dst_candidates[#dst_candidates + 1] = dst_col
-            end
-        end
-
-        if #dst_candidates > 0 then
-            local dst_col = dst_candidates[rand_range(1, #dst_candidates)]
-            local dst = state.tableau[dst_col]
-            for i = start_idx, #src do dst[#dst + 1] = src[i] end
-            for i = #src, start_idx, -1 do table.remove(src, i) end
-        end
-    end
-
-    local deck = collect_deck_from_tableau()
-    if #deck ~= 52 then
-        deck = {}
-        for suit = SUIT_HEART, SUIT_CLUB do
-            for rank = 1, 13 do
-                deck[#deck + 1] = { rank = rank, suit = suit, face_up = false }
-            end
-        end
-    end
-
-    fresh_empty_piles()
-    local p = 1
-    for col = 1, 7 do
-        for row = 1, col do
-            local card = clone_card(deck[p])
-            p = p + 1
-            card.face_up = (row == col)
-            state.tableau[col][#state.tableau[col] + 1] = card
-        end
-    end
-
-    while p <= #deck do
-        local card = clone_card(deck[p])
-        p = p + 1
-        card.face_up = false
-        state.stock[#state.stock + 1] = card
-    end
-end
-
-fresh_empty_piles = function()
-    state.tableau = {}
-    for i = 1, 7 do state.tableau[i] = {} end
-    state.stock = {}
-    state.waste = {}
-    state.foundation = {}
-    for i = 1, 4 do state.foundation[i] = {} end
+local function total_foundation_cards()
+    local total = 0
+    for i = 1, 4 do total = total + #state.foundations[i] end
+    return total
 end
 
 local function update_best_if_needed()
     if not state.won then return end
     local elapsed = elapsed_seconds()
-    if state.mode == MODE_TABLEAU then
-        if state.best_tableau_sec <= 0 or elapsed < state.best_tableau_sec then state.best_tableau_sec = elapsed end
-    else
-        if state.best_foundation_sec <= 0 or elapsed < state.best_foundation_sec then state.best_foundation_sec = elapsed end
-    end
-    if type(save_data) == "function" then
-        pcall(save_data, "solitaire_best", { tableau = state.best_tableau_sec, foundation = state.best_foundation_sec })
+    local k = mode_key()
+    local old = state.best[k] or 0
+    if old <= 0 or elapsed < old then
+        state.best[k] = elapsed
+        save_best_record()
     end
 end
 
-local function load_best_record()
-    state.best_tableau_sec = 0
-    state.best_foundation_sec = 0
-    if type(load_data) ~= "function" then return end
-    local ok, data = pcall(load_data, "solitaire_best")
-    if not ok or type(data) ~= "table" then return end
-    state.best_tableau_sec = math.max(0, math.floor(tonumber(data.tableau) or 0))
-    state.best_foundation_sec = math.max(0, math.floor(tonumber(data.foundation) or 0))
-end
-
-local function deal_new_game(mode)
-    state.mode = mode == MODE_FOUNDATION and MODE_FOUNDATION or MODE_TABLEAU
-    generate_reverse_solved_layout(state.mode)
-
-    state.cursor_col = 1
-    state.selected_col = nil
-    state.confirm_mode = nil
-    state.mode_input = false
-    state.start_frame = state.frame
-    state.end_frame = nil
-    state.won = false
-    state.last_auto_save_sec = 0
-    state.undo_stack = {}
-    clear_message()
-    state.dirty = true
-end
-
-local function total_foundation_cards()
-    local total = 0
-    for i = 1, 4 do total = total + #state.foundation[i] end
-    return total
+local function mode_score()
+    if state.mode == MODE_SPIDER then return state.spider_removed * 13 end
+    return total_foundation_cards()
 end
 
 local function check_win()
     if state.won then return end
-    if total_foundation_cards() >= 52 then
+    local won = false
+    if state.mode == MODE_SPIDER then
+        won = state.spider_removed >= 8
+    else
+        won = total_foundation_cards() >= 52
+    end
+
+    if won then
         state.won = true
         state.end_frame = state.frame
         update_best_if_needed()
-        if type(update_game_stats) == "function" then pcall(update_game_stats, "solitaire", 0, elapsed_seconds()) end
-        show_message(
-            tr("game.solitaire.win_banner", "All cards have been collected!") .. " " .. tr("game.solitaire.result_controls", "[R] Restart  [Q]/[ESC] Exit"),
-            "green",
-            0,
-            true
-        )
+        if type(update_game_stats) == "function" then
+            pcall(update_game_stats, "solitaire", mode_score(), elapsed_seconds())
+        end
+        show_message(tr("game.solitaire.win_banner", "All cards have been collected!") .. " " .. tr("game.solitaire.result_controls", "[R] Restart  [Q]/[ESC] Exit"), "green", 0, true)
     end
 end
 
-local function color_group(card)
-    return is_red(card) and 1 or 0
-end
-
-local function top_card(cards)
-    if #cards <= 0 then return nil end
-    return cards[#cards]
-end
-
-local function foundation_slot_color(slot)
-    if slot == 1 or slot == 3 then return 1 end
-    return 0
-end
-
-local function can_place_foundation(slot, card)
-    local pile = state.foundation[slot]
-    local top = top_card(pile)
-    if top == nil then return card.rank == 1 end
-
-    if state.mode == MODE_FOUNDATION then
-        if top.suit ~= card.suit then return false end
-    else
-        if foundation_slot_color(slot) ~= color_group(card) then return false end
-    end
-
-    return card.rank == top.rank + 1
-end
-
-local function choose_foundation_slot(card)
-    if state.mode == MODE_FOUNDATION then
-        local slot = card.suit
-        if can_place_foundation(slot, card) then return slot end
-        return nil
-    end
-
-    local candidates = color_group(card) == 1 and { 1, 3 } or { 2, 4 }
-    for i = 1, #candidates do
-        if can_place_foundation(candidates[i], card) then return candidates[i] end
+local function first_face_up_index(col)
+    local pile = state.tableau[col]
+    for i = 1, #pile do
+        if pile[i].face_up then return i end
     end
     return nil
 end
 
-can_place_on_tableau = function(card, dest_col)
-    local dest = state.tableau[dest_col]
-    local top = top_card(dest)
-    if top == nil then return true end
-    if not top.face_up then return false end
-    if state.mode == MODE_FOUNDATION then
-        if top.suit ~= card.suit then return false end
-        return card.rank == top.rank + 1
+local function reveal_new_top(col)
+    if state.mode ~= MODE_KLONDIKE and state.mode ~= MODE_SPIDER then return end
+    local pile = state.tableau[col]
+    if #pile == 0 then return end
+    local t = pile[#pile]
+    if not t.face_up then
+        t.face_up = true
+        state.dirty = true
     end
+end
+
+local function can_place_on_tableau(card, dest_col)
+    local dest = state.tableau[dest_col]
+    local top = dest[#dest]
+    if top == nil then
+        if state.mode == MODE_KLONDIKE then
+            return card.rank == 13
+        end
+        return true
+    end
+    if not top.face_up then return false end
+
+    if state.mode == MODE_SPIDER then
+        return top.rank == card.rank + 1
+    end
+
     if top.rank ~= card.rank + 1 then return false end
     return color_group(top) ~= color_group(card)
 end
 
-local function first_face_up_index(col)
-    local cards = state.tableau[col]
-    for i = 1, #cards do
-        if cards[i].face_up then return i end
-    end
-    return nil
-end
-
-local function column_satisfies_mode_sequence(cards)
-    if #cards ~= 13 then return false end
-    for i = 1, 13 do
-        if not cards[i].face_up then return false end
-    end
-
-    if state.mode == MODE_FOUNDATION then
-        local suit = cards[1].suit
-        for i = 1, 13 do
-            if cards[i].suit ~= suit then return false end
-            if cards[i].rank ~= i then return false end
-        end
-        return true
-    end
-
-    for i = 1, 13 do
-        if cards[i].rank ~= (14 - i) then return false end
-        if i > 1 and color_group(cards[i]) == color_group(cards[i - 1]) then return false end
-    end
-    return true
-end
-
-local function find_collect_slot_for_column(cards)
-    if state.mode == MODE_FOUNDATION then
-        local slot = cards[1].suit
-        if #state.foundation[slot] == 0 then return slot end
-        return nil
-    end
-
-    local group = color_group(cards[1])
-    local candidates = (group == 1) and { 1, 3 } or { 2, 4 }
-    for i = 1, #candidates do
-        local slot = candidates[i]
-        if #state.foundation[slot] == 0 then return slot end
-    end
-    return nil
-end
-
-local function try_collect_column(col)
-    if col < 1 or col > 7 then return false end
-    local pile = state.tableau[col]
-    if not column_satisfies_mode_sequence(pile) then return false end
-
-    local slot = find_collect_slot_for_column(pile)
-    if slot == nil then return false end
-
-    state.foundation[slot] = deep_copy_cards(pile)
-    state.tableau[col] = {}
-    if state.selected_col == col then state.selected_col = nil end
-    state.dirty = true
-    check_win()
-    return true
-end
-
-local function try_collect_after_move(col_a, col_b)
-    local changed = false
-    if try_collect_column(col_a) then changed = true end
-    if col_b ~= col_a and try_collect_column(col_b) then changed = true end
-    return changed
-end
-
-local function reveal_new_top(col)
-    local cards = state.tableau[col]
-    if #cards <= 0 then return end
-    local t = cards[#cards]
-    if not t.face_up then t.face_up = true; state.dirty = true end
-end
-
-local function stack_sequence_valid(cards, start_idx)
+local function run_valid_klondike_like(cards, start_idx)
     if start_idx < 1 or start_idx > #cards then return false end
     for i = start_idx, #cards - 1 do
         local a = cards[i]
         local b = cards[i + 1]
         if not a.face_up or not b.face_up then return false end
-        if state.mode == MODE_FOUNDATION then
-            if a.suit ~= b.suit then return false end
-            if b.rank ~= a.rank + 1 then return false end
-        else
-            if b.rank ~= a.rank - 1 then return false end
-            if color_group(a) == color_group(b) then return false end
-        end
+        if b.rank ~= a.rank - 1 then return false end
+        if color_group(a) == color_group(b) then return false end
     end
     return true
 end
 
+local function run_valid_spider_same(cards, start_idx)
+    if start_idx < 1 or start_idx > #cards then return false end
+    for i = start_idx, #cards - 1 do
+        local a = cards[i]
+        local b = cards[i + 1]
+        if not a.face_up or not b.face_up then return false end
+        if b.rank ~= a.rank - 1 then return false end
+        if b.suit ~= a.suit then return false end
+    end
+    return true
+end
+
+local function count_empty_cells()
+    local n = 0
+    for i = 1, 4 do if state.cells[i] == nil then n = n + 1 end end
+    return n
+end
+
+local function count_empty_columns(src_col, dst_col)
+    local n = 0
+    for c = 1, #state.tableau do
+        if c ~= src_col and c ~= dst_col and #state.tableau[c] == 0 then n = n + 1 end
+    end
+    return n
+end
+
+local function max_freecell_movable(src_col, dst_col)
+    local cells = count_empty_cells()
+    local empties = count_empty_columns(src_col, dst_col)
+    return (1 + cells) * (2 ^ empties)
+end
+
+local function find_move_start_index(src_col, dst_col)
+    local src = state.tableau[src_col]
+    if #src <= 0 then return nil end
+
+    if state.mode == MODE_FREECELL or state.mode == MODE_KLONDIKE then
+        local start = 1
+        if state.mode == MODE_KLONDIKE then
+            start = first_face_up_index(src_col)
+            if start == nil then return nil end
+        end
+
+        for i = start, #src do
+            if run_valid_klondike_like(src, i) then
+                local len = #src - i + 1
+                if state.mode ~= MODE_FREECELL or len <= max_freecell_movable(src_col, dst_col) then
+                    if can_place_on_tableau(src[i], dst_col) then
+                        return i
+                    end
+                end
+            end
+        end
+        return nil
+    end
+
+    local first = first_face_up_index(src_col)
+    if first == nil then return nil end
+
+    for i = first, #src do
+        local len = #src - i + 1
+        local ok_run = false
+        if len == 1 then ok_run = true else ok_run = run_valid_spider_same(src, i) end
+        if ok_run and can_place_on_tableau(src[i], dst_col) then return i end
+    end
+
+    return nil
+end
+
 local function move_tableau_stack(src_col, dst_col)
-    if src_col < 1 or src_col > 7 or dst_col < 1 or dst_col > 7 then return false end
+    if src_col < 1 or src_col > #state.tableau or dst_col < 1 or dst_col > #state.tableau then return false end
     if src_col == dst_col then return false end
 
     local src = state.tableau[src_col]
-    if #src <= 0 then return false end
     local dst = state.tableau[dst_col]
+    if #src == 0 then return false end
 
-    local start_idx = first_face_up_index(src_col)
+    local start_idx = find_move_start_index(src_col, dst_col)
     if start_idx == nil then return false end
-    if not stack_sequence_valid(src, start_idx) then return false end
-    local moving_first = src[start_idx]
-    if not can_place_on_tableau(moving_first, dst_col) then return false end
 
     push_undo()
     for i = start_idx, #src do dst[#dst + 1] = src[i] end
     for i = #src, start_idx, -1 do table.remove(src, i) end
     reveal_new_top(src_col)
     state.selected_col = nil
-    try_collect_after_move(src_col, dst_col)
     state.dirty = true
     return true
 end
 
-local function move_current_to_foundation(col)
-    if col < 1 or col > 7 then return false end
-    local pile = state.tableau[col]
-    local card = top_card(pile)
-    if card == nil or not card.face_up then return false end
+local function can_place_foundation(slot, card)
+    local pile = state.foundations[slot]
+    local top = pile[#pile]
+    if top == nil then
+        return card.rank == 1
+    end
+    return top.suit == card.suit and card.rank == top.rank + 1
+end
 
-    local slot = choose_foundation_slot(card)
-    if slot == nil then return false end
+local function move_card_to_foundation(card)
+    if state.mode == MODE_SPIDER then return false end
+    local slot = card.suit
+    if slot < 1 or slot > 4 then return false end
+    if not can_place_foundation(slot, card) then return false end
+    state.foundations[slot][#state.foundations[slot] + 1] = card
+    return true
+end
+
+local function move_column_top_to_foundation(col)
+    if state.mode == MODE_SPIDER then return false end
+    if col < 1 or col > #state.tableau then return false end
+    local pile = state.tableau[col]
+    local card = pile[#pile]
+    if card == nil or not card.face_up then return false end
 
     push_undo()
     table.remove(pile, #pile)
-    state.foundation[slot][#state.foundation[slot] + 1] = card
+    if not move_card_to_foundation(card) then
+        pile[#pile + 1] = card
+        table.remove(state.undo_stack)
+        return false
+    end
+
     reveal_new_top(col)
-    state.selected_col = nil
     state.dirty = true
     check_win()
     return true
 end
 
 local function move_waste_to_foundation()
-    local card = top_card(state.waste)
+    if state.mode ~= MODE_KLONDIKE then return false end
+    local card = state.waste[#state.waste]
     if card == nil then return false end
-    local slot = choose_foundation_slot(card)
-    if slot == nil then return false end
 
     push_undo()
     table.remove(state.waste, #state.waste)
-    state.foundation[slot][#state.foundation[slot] + 1] = card
+    if not move_card_to_foundation(card) then
+        state.waste[#state.waste + 1] = card
+        table.remove(state.undo_stack)
+        return false
+    end
+
     state.dirty = true
     check_win()
     return true
 end
 
 local function move_waste_to_column(col)
-    if col < 1 or col > 7 then return false end
-    local card = top_card(state.waste)
+    if state.mode ~= MODE_KLONDIKE then return false end
+    if col < 1 or col > #state.tableau then return false end
+    local card = state.waste[#state.waste]
     if card == nil then return false end
     if not can_place_on_tableau(card, col) then return false end
 
     push_undo()
     table.remove(state.waste, #state.waste)
     state.tableau[col][#state.tableau[col] + 1] = card
-    try_collect_column(col)
+    state.dirty = true
+    return true
+end
+local function move_column_to_cell(col)
+    if state.mode ~= MODE_FREECELL then return false end
+    if col < 1 or col > #state.tableau then return false end
+
+    local empty_slot = nil
+    for i = 1, 4 do
+        if state.cells[i] == nil then empty_slot = i; break end
+    end
+    if empty_slot == nil then return false end
+
+    local pile = state.tableau[col]
+    local card = pile[#pile]
+    if card == nil then return false end
+
+    push_undo()
+    table.remove(pile, #pile)
+    state.cells[empty_slot] = card
     state.dirty = true
     return true
 end
 
-local function draw_from_stock()
+local function move_cell_to_column(col)
+    if state.mode ~= MODE_FREECELL then return false end
+    if col < 1 or col > #state.tableau then return false end
+
+    for i = 1, 4 do
+        local card = state.cells[i]
+        if card ~= nil and can_place_on_tableau(card, col) then
+            push_undo()
+            state.cells[i] = nil
+            state.tableau[col][#state.tableau[col] + 1] = card
+            state.dirty = true
+            return true
+        end
+    end
+    return false
+end
+
+local function move_cell_to_foundation()
+    if state.mode ~= MODE_FREECELL then return false end
+    for i = 1, 4 do
+        local card = state.cells[i]
+        if card ~= nil then
+            if can_place_foundation(card.suit, card) then
+                push_undo()
+                state.cells[i] = nil
+                state.foundations[card.suit][#state.foundations[card.suit] + 1] = card
+                state.dirty = true
+                check_win()
+                return true
+            end
+        end
+    end
+    return false
+end
+
+local function draw_from_stock_klondike()
+    if state.mode ~= MODE_KLONDIKE then return false end
+
     if #state.stock == 0 then
         if #state.waste == 0 then
             show_message(tr("game.solitaire.stock_empty", "No cards in stock and waste."), "dark_gray", 2, false)
@@ -699,11 +808,13 @@ local function draw_from_stock()
         end
 
         push_undo()
+        local recycled = {}
         for i = #state.waste, 1, -1 do
             local card = state.waste[i]
             card.face_up = false
-            state.stock[#state.stock + 1] = card
+            recycled[#recycled + 1] = card
         end
+        state.stock = recycled
         state.waste = {}
         state.dirty = true
         show_message(tr("game.solitaire.recycle_done", "Waste recycled to stock."), "yellow", 2, false)
@@ -718,26 +829,161 @@ local function draw_from_stock()
     state.dirty = true
     return true
 end
-local function mode_label(mode)
-    if mode == MODE_FOUNDATION then return tr("game.solitaire.mode.foundation", "Foundation") end
-    return tr("game.solitaire.mode.tableau", "Tableau")
-end
 
-local function suit_color_for_foundation_slot(slot)
-    if state.mode == MODE_FOUNDATION then
-        if slot == 1 then return "red" end
-        if slot == 2 then return "white" end
-        if slot == 3 then return "rgb(255,165,0)" end
-        return "cyan"
+local function draw_spider_row()
+    if state.mode ~= MODE_SPIDER then return false end
+    if #state.stock < 10 then
+        show_message(tr("game.solitaire.spider_no_stock", "No more stock rows."), "dark_gray", 2, false)
+        return false
     end
-    if slot == 1 or slot == 3 then return "red" end
-    return "white"
+
+    for c = 1, 10 do
+        if #state.tableau[c] == 0 then
+            show_message(tr("game.solitaire.spider_need_full", "Cannot deal while any tableau column is empty."), "red", 2, false)
+            return false
+        end
+    end
+
+    push_undo()
+    for c = 1, 10 do
+        local card = state.stock[#state.stock]
+        table.remove(state.stock, #state.stock)
+        card.face_up = true
+        state.tableau[c][#state.tableau[c] + 1] = card
+    end
+    state.dirty = true
+    return true
 end
 
-local function foundation_label(slot)
-    local pile = state.foundation[slot]
-    if #pile <= 0 then return "[ ]" end
-    return "[" .. rank_text(pile[#pile].rank) .. "]"
+local function remove_spider_complete_runs()
+    if state.mode ~= MODE_SPIDER then return false end
+    local changed = false
+
+    for c = 1, 10 do
+        local pile = state.tableau[c]
+        while #pile >= 13 do
+            local start = #pile - 12
+            local suit = pile[start].suit
+            local ok = pile[start].face_up == true and pile[start].rank == 13
+            if ok then
+                for i = start, #pile - 1 do
+                    local a = pile[i]
+                    local b = pile[i + 1]
+                    if not a.face_up or not b.face_up then ok = false; break end
+                    if b.suit ~= suit then ok = false; break end
+                    if b.rank ~= a.rank - 1 then ok = false; break end
+                end
+            end
+
+            if not ok then break end
+
+            for i = #pile, start, -1 do table.remove(pile, i) end
+            state.spider_removed = state.spider_removed + 1
+            reveal_new_top(c)
+            changed = true
+            show_message(tr("game.solitaire.spider_removed", "Completed sequence removed."), "green", 2, false)
+        end
+    end
+
+    if changed then
+        state.dirty = true
+        check_win()
+    end
+    return changed
+end
+
+local function save_progress(manual)
+    local snap = snapshot_state()
+    local ok = false
+    if type(save_game_slot) == "function" then
+        ok = pcall(save_game_slot, "solitaire", snap)
+    elseif type(save_data) == "function" then
+        ok = pcall(save_data, "solitaire_v2", snap)
+    end
+
+    if manual then
+        if ok then
+            show_message(tr("game.solitaire.save_success", "Save successful!"), "green", 2, false)
+        else
+            show_message(tr("game.solitaire.save_unavailable", "Save unavailable."), "red", 2, false)
+        end
+    end
+
+    return ok
+end
+
+local function try_load_progress()
+    local data = nil
+    if type(load_game_slot) == "function" then
+        local ok, ret = pcall(load_game_slot, "solitaire")
+        if ok and type(ret) == "table" then data = ret end
+    end
+    if data == nil and type(load_data) == "function" then
+        local ok, ret = pcall(load_data, "solitaire_v2")
+        if ok and type(ret) == "table" then data = ret end
+    end
+    if data == nil then return false end
+
+    if type(data.tableau) ~= "table" or type(data.foundations) ~= "table" then return false end
+
+    restore_snapshot(data, true)
+    return true
+end
+
+local function deal_new_game(mode, diff)
+    if mode == MODE_SPIDER then
+        deal_spider(diff or state.spider_diff)
+    elseif mode == MODE_KLONDIKE then
+        deal_klondike()
+    else
+        deal_freecell()
+    end
+
+    state.cursor_col = 1
+    state.selected_col = nil
+    state.confirm_mode = nil
+    state.mode_input = false
+    state.spider_diff_input = false
+    state.start_frame = state.frame
+    state.end_frame = nil
+    state.won = false
+    state.last_auto_save_sec = 0
+    state.undo_stack = {}
+    clear_message()
+    flush_input_buffer()
+    state.dirty = true
+end
+
+local function minimum_size()
+    local cols = #state.tableau
+    if cols <= 0 then cols = 8 end
+
+    local row_label_w = 4
+    local col_cell_w = 4
+    local gap = 1
+    local grid_w = row_label_w + cols * col_cell_w + (cols - 1) * gap + 2
+
+    local controls = tr("game.solitaire.controls." .. state.mode, "")
+    local controls_w = min_width_for_lines(controls, 3, 32)
+
+    local min_w = math.max(70, grid_w + 6, controls_w + 4)
+    local min_h = 24
+    if state.mode == MODE_SPIDER then min_h = 26 end
+    return min_w, min_h
+end
+
+local function draw_size_warning(term_w, term_h, min_w, min_h)
+    clear()
+    local title = tr("warning.size_title", "Terminal Too Small")
+    local req = tr("warning.required", "Required") .. ": " .. tostring(min_w) .. "x" .. tostring(min_h)
+    local cur = tr("warning.current", "Current") .. ": " .. tostring(term_w) .. "x" .. tostring(term_h)
+    local hint = tr("warning.enlarge_hint", "Please enlarge the terminal window.")
+
+    local y = math.max(2, math.floor(term_h / 2) - 2)
+    draw_text(centered_x(title, 1, term_w), y, title, "yellow", "black")
+    draw_text(centered_x(req, 1, term_w), y + 1, req, "white", "black")
+    draw_text(centered_x(cur, 1, term_w), y + 2, cur, "white", "black")
+    draw_text(centered_x(hint, 1, term_w), y + 3, hint, "dark_gray", "black")
 end
 
 local function card_two_chars(card)
@@ -746,248 +992,119 @@ local function card_two_chars(card)
     return " " .. rt
 end
 
-local function fill_rect(x, y, w, h, bg)
-    if w <= 0 or h <= 0 then return end
-    local line = string.rep(" ", w)
+local function draw_column_frame(x, y, h, color)
+    if h < 1 then h = 1 end
+    draw_text(x, y - 1, "┌──┐", color, "black")
     for i = 0, h - 1 do
-        draw_text(x, y + i, line, "white", bg or "black")
+        draw_text(x, y + i, "│", color, "black")
+        draw_text(x + 3, y + i, "│", color, "black")
     end
+    draw_text(x, y + h, "└──┘", color, "black")
 end
 
-local function board_geometry()
-    local term_w, term_h = terminal_size()
-    local board_w, board_h = 44, 22
-    local top_h, controls_h = 5, 3
-    local total_h = top_h + board_h + controls_h
-
-    local x = math.floor((term_w - board_w) / 2) + 1
-    if x < 1 then x = 1 end
-    local y = math.floor((term_h - total_h) / 2) + 1
-    if y < 1 then y = 1 end
-
-    return {
-        term_w = term_w,
-        term_h = term_h,
-        top_y = y,
-        top_h = top_h,
-        board_x = x,
-        board_y = y + top_h,
-        board_w = board_w,
-        board_h = board_h,
-        controls_y = y + top_h + board_h,
-    }
-end
-
-local function minimum_required_size()
-    local mode_w = math.max(key_width(mode_label(MODE_TABLEAU)), key_width(mode_label(MODE_FOUNDATION)))
-    local top_line_w = key_width(tr("game.solitaire.collected", "Collected")) + 20
-        + key_width(tr("game.solitaire.stock", "Stock")) + 6
-        + key_width(tr("game.solitaire.waste", "Waste")) + 14
-
-    local status_w = key_width(tr("game.solitaire.time", "Time") .. " 00:00:00")
-        + 2 + key_width(tr("game.solitaire.mode", "Mode") .. " " .. mode_label(MODE_FOUNDATION))
-
-    local best_w = key_width(tr("game.solitaire.best.tableau", "Tableau Best") .. " 00:00:00")
-        + 2 + key_width(tr("game.solitaire.best.foundation", "Foundation Best") .. " 00:00:00")
-
-    local controls = tr(
-        "game.solitaire.controls",
-        "[←]/[→] Move  [Space] Select Column  [Enter] Confirm Move  [Z] Cancel Select  [X] Draw  [C] Waste->Column  [P] Mode  [A] Undo  [S] Save  [R] Restart  [Q]/[ESC] Exit"
-    )
-    local controls_w = min_width_for_lines(controls, 3, 36)
-
-    local msg_w = math.max(
-        key_width(tr("game.solitaire.confirm_restart", "Confirm restart? [Y] Yes / [N] No")),
-        key_width(tr("game.solitaire.confirm_exit", "Confirm exit? [Y] Yes / [N] No")),
-        key_width(tr("game.solitaire.mode_prompt", "Switch mode: [T] Tableau / [F] Foundation")),
-        key_width(tr("game.solitaire.win_banner", "All cards have been collected!")),
-        mode_w
-    )
-
-    local min_w = math.max(80, top_line_w + 2, status_w + 2, best_w + 2, controls_w + 2, msg_w + 2)
-    local min_h = 34
-    return min_w, min_h
-end
-
-local function draw_terminal_size_warning(term_w, term_h, min_w, min_h)
-    local lines = {
-        tr("warning.size_title", "Terminal Too Small"),
-        string.format("%s: %dx%d", tr("warning.required", "Required size"), min_w, min_h),
-        string.format("%s: %dx%d", tr("warning.current", "Current size"), term_w, term_h),
-        tr("warning.enlarge_hint", "Please enlarge terminal window to continue."),
-    }
-    local top = math.floor((term_h - #lines) / 2)
-    if top < 1 then top = 1 end
-    for i = 1, #lines do
-        local x = math.floor((term_w - key_width(lines[i])) / 2)
-        if x < 1 then x = 1 end
-        draw_text(x, top + i - 1, lines[i], "white", "black")
-    end
-end
-
-local function ensure_terminal_size_ok()
-    local term_w, term_h = terminal_size()
-    local min_w, min_h = minimum_required_size()
-
-    if term_w >= min_w and term_h >= min_h then
-        local resized = term_w ~= state.last_term_w or term_h ~= state.last_term_h
-        state.last_term_w = term_w
-        state.last_term_h = term_h
-        if state.size_warning_active or resized then clear(); state.dirty = true end
-        state.size_warning_active = false
-        return true
+local function draw_cards_grid(g, max_visible_rows)
+    local cols = #state.tableau
+    local max_rows = 1
+    for c = 1, cols do
+        if #state.tableau[c] > max_rows then max_rows = #state.tableau[c] end
     end
 
-    local changed = (not state.size_warning_active)
-        or state.last_warn_term_w ~= term_w
-        or state.last_warn_term_h ~= term_h
-        or state.last_warn_min_w ~= min_w
-        or state.last_warn_min_h ~= min_h
-
-    if changed then
-        clear()
-        draw_terminal_size_warning(term_w, term_h, min_w, min_h)
-        state.last_warn_term_w = term_w
-        state.last_warn_term_h = term_h
-        state.last_warn_min_w = min_w
-        state.last_warn_min_h = min_h
+    local rows_to_draw = math.max(max_rows, 19)
+    if max_visible_rows ~= nil then
+        rows_to_draw = math.min(rows_to_draw, math.max(1, max_visible_rows))
     end
 
-    state.size_warning_active = true
-    return false
-end
-
-local function draw_top_panel(g)
-    for i = 0, g.top_h - 1 do
-        draw_text(1, g.top_y + i, string.rep(" ", g.term_w), "white", "black")
+    for r = 1, rows_to_draw do
+        draw_text(g.x, g.y + r - 1, string.format("R%-2d", r), "dark_gray", "black")
     end
 
-    local best_tableau = state.best_tableau_sec > 0 and format_duration(state.best_tableau_sec) or "--:--:--"
-    local best_found = state.best_foundation_sec > 0 and format_duration(state.best_foundation_sec) or "--:--:--"
+    for c = 1, cols do
+        local cx = g.x + 5 + (c - 1) * 5
+        draw_text(cx, g.y - 1, string.format("C%-2d", c), "dark_gray", "black")
 
-    local best_line = tr("game.solitaire.best.tableau", "Tableau Best") .. " " .. best_tableau
-        .. "  " .. tr("game.solitaire.best.foundation", "Foundation Best") .. " " .. best_found
-
-    local status_line = tr("game.solitaire.time", "Time") .. " " .. format_duration(elapsed_seconds())
-        .. "  " .. tr("game.solitaire.mode", "Mode") .. " " .. mode_label(state.mode)
-
-    local f1, f2, f3, f4 = foundation_label(1), foundation_label(2), foundation_label(3), foundation_label(4)
-
-    local top_line = tr("game.solitaire.collected", "Collected") .. ": "
-        .. f1 .. " " .. f2 .. " " .. f3 .. " " .. f4
-        .. "    " .. tr("game.solitaire.stock", "Stock") .. " [##]"
-        .. "   " .. tr("game.solitaire.waste", "Waste") .. " ["
-
-    local w1, w2, w3 = "  ", "  ", "  "
-    if #state.waste >= 1 then w1 = card_two_chars(state.waste[#state.waste]) end
-    if #state.waste >= 2 then w2 = card_two_chars(state.waste[#state.waste - 1]) end
-    if #state.waste >= 3 then w3 = card_two_chars(state.waste[#state.waste - 2]) end
-    top_line = top_line .. w3 .. " " .. w2 .. " " .. w1 .. "]"
-
-    draw_text(centered_x(best_line, 1, g.term_w), g.top_y, best_line, "dark_gray", "black")
-    draw_text(centered_x(status_line, 1, g.term_w), g.top_y + 1, status_line, "light_cyan", "black")
-
-    local top_x = centered_x(top_line, 1, g.term_w)
-    draw_text(top_x, g.top_y + 2, top_line, "white", "black")
-
-    local base_x = top_x + key_width(tr("game.solitaire.collected", "Collected")) + 2
-    draw_text(base_x, g.top_y + 2, f1, suit_color_for_foundation_slot(1), "black")
-    base_x = base_x + key_width(f1) + 1
-    draw_text(base_x, g.top_y + 2, f2, suit_color_for_foundation_slot(2), "black")
-    base_x = base_x + key_width(f2) + 1
-    draw_text(base_x, g.top_y + 2, f3, suit_color_for_foundation_slot(3), "black")
-    base_x = base_x + key_width(f3) + 1
-    draw_text(base_x, g.top_y + 2, f4, suit_color_for_foundation_slot(4), "black")
-
-    local waste_block = "[" .. w3 .. " " .. w2 .. " " .. w1 .. "]"
-    local waste_start_x = top_x + key_width(top_line) - key_width(waste_block)
-    if #state.waste >= 3 then
-        draw_text(waste_start_x + 1, g.top_y + 2, w3, card_color(state.waste[#state.waste - 2]), "black")
-    end
-    if #state.waste >= 2 then
-        draw_text(waste_start_x + 4, g.top_y + 2, w2, card_color(state.waste[#state.waste - 1]), "black")
-    end
-    if #state.waste >= 1 then
-        draw_text(waste_start_x + 7, g.top_y + 2, w1, card_color(state.waste[#state.waste]), "black")
-    end
-
-    local pointer_x = top_x + key_width(top_line) - key_width(waste_block) + key_width(waste_block) - 3
-    draw_text(pointer_x, g.top_y + 3, "^^", "yellow", "black")
-end
-
-local function draw_top_status_line(g)
-    local status_line = tr("game.solitaire.time", "Time") .. " " .. format_duration(elapsed_seconds())
-        .. "  " .. tr("game.solitaire.mode", "Mode") .. " " .. mode_label(state.mode)
-    draw_text(1, g.top_y + 1, string.rep(" ", g.term_w), "white", "black")
-    draw_text(centered_x(status_line, 1, g.term_w), g.top_y + 1, status_line, "light_cyan", "black")
-end
-
-local function draw_board_panel(g)
-    fill_rect(g.board_x, g.board_y, g.board_w, g.board_h, "black")
-    local col_x0 = g.board_x + 8
-    local col_gap = 4
-    local header_y = g.board_y
-
-    for c = 1, 7 do
-        draw_text(col_x0 + (c - 1) * col_gap, header_y, "C" .. tostring(c), "dark_gray", "black")
-    end
-
-    local max_rows = 19
-    for c = 1, 7 do
-        if #state.tableau[c] + 1 > max_rows then max_rows = #state.tableau[c] + 1 end
-    end
-    if max_rows > 19 then max_rows = 19 end
-
-    for r = 1, max_rows do
-        local ry = header_y + r
-        draw_text(g.board_x + 1, ry, string.format("%-3s", "R" .. tostring(r)), "dark_gray", "black")
-        for c = 1, 7 do
-            local cx = col_x0 + (c - 1) * col_gap
-            local pile = state.tableau[c]
+        local pile = state.tableau[c]
+        for r = 1, rows_to_draw do
+            local text = "  "
+            local fg = "dark_gray"
             if r <= #pile then
                 local card = pile[r]
                 if card.face_up then
-                    draw_text(cx, ry, card_two_chars(card), card_color(card), "black")
+                    text = card_two_chars(card)
+                    fg = card_color(card)
                 else
-                    draw_text(cx, ry, "##", "rgb(160,160,160)", "black")
+                    text = "##"
+                    fg = "dark_gray"
                 end
+            end
+            draw_text(cx + 1, g.y + r - 1, text, fg, "black")
+        end
+    end
+
+    for c = 1, cols do
+        local pile_h = #state.tableau[c]
+        if pile_h < 1 then pile_h = 1 end
+        pile_h = math.min(pile_h, rows_to_draw)
+        local frame_x = g.x + 5 + (c - 1) * 5
+        if state.selected_col == c then
+            draw_column_frame(frame_x, g.y, pile_h, "green")
+        end
+        if state.cursor_col == c then
+            draw_column_frame(frame_x, g.y, pile_h, "yellow")
+        end
+    end
+end
+local function foundation_label(slot)
+    local pile = state.foundations[slot]
+    if #pile == 0 then return "[ ]" end
+    return "[" .. rank_text(pile[#pile].rank) .. "]"
+end
+local function draw_top_bar(term_w)
+    local best = best_time_for_current_mode()
+    local best_text = best > 0 and format_duration(best) or "--:--:--"
+    local mode_text = mode_label(state.mode)
+    if state.mode == MODE_SPIDER then
+        mode_text = mode_text .. " " .. tostring(state.spider_diff)
+    end
+
+    local line1 = tr("game.solitaire.time", "Time") .. " " .. format_duration(elapsed_seconds())
+        .. "   " .. tr("game.solitaire.mode", "Mode") .. " " .. mode_text
+        .. "   " .. tr("game.solitaire.mode_best", "Mode Best") .. " " .. best_text
+    draw_text(centered_x(line1, 1, term_w), 2, line1, "cyan", "black")
+
+    if state.mode == MODE_FREECELL then
+        local cells = ""
+        for i = 1, 4 do
+            if state.cells[i] == nil then
+                cells = cells .. "[  ] "
             else
-                draw_text(cx, ry, "  ", "white", "black")
+                cells = cells .. "[" .. card_two_chars(state.cells[i]) .. "] "
             end
         end
+        local f = foundation_label(1) .. " " .. foundation_label(2) .. " " .. foundation_label(3) .. " " .. foundation_label(4)
+        local line2 = tr("game.solitaire.cells", "Cells") .. " " .. cells .. "   " .. tr("game.solitaire.foundations", "Foundations") .. " " .. f
+        draw_text(centered_x(line2, 1, term_w), 4, line2, "white", "black")
+    elseif state.mode == MODE_KLONDIKE then
+        local w1, w2, w3 = "  ", "  ", "  "
+        if #state.waste >= 1 then w1 = card_two_chars(state.waste[#state.waste]) end
+        if #state.waste >= 2 then w2 = card_two_chars(state.waste[#state.waste - 1]) end
+        if #state.waste >= 3 then w3 = card_two_chars(state.waste[#state.waste - 2]) end
+        local f = foundation_label(1) .. " " .. foundation_label(2) .. " " .. foundation_label(3) .. " " .. foundation_label(4)
+        local line2 = tr("game.solitaire.stock", "Stock") .. " [##]   " .. tr("game.solitaire.waste", "Waste") .. " [" .. w3 .. " " .. w2 .. " " .. w1 .. "]"
+            .. "   " .. tr("game.solitaire.foundations", "Foundations") .. " " .. f
+        draw_text(centered_x(line2, 1, term_w), 4, line2, "white", "black")
+    else
+        local line2 = tr("game.solitaire.spider_stock", "Spider Stock") .. " " .. tostring(math.floor(#state.stock / 10))
+            .. "   " .. tr("game.solitaire.spider_removed", "Removed") .. " " .. tostring(state.spider_removed) .. "/8"
+        draw_text(centered_x(line2, 1, term_w), 4, line2, "white", "black")
     end
-
-    local function draw_column_frame(col, color)
-        local pile = state.tableau[col]
-        local cx = col_x0 + (col - 1) * col_gap
-        if #pile == 0 then
-            local ey = header_y + 1
-            draw_text(cx - 1, ey, "┌──┐", color, "black")
-            draw_text(cx - 1, ey + 1, "└──┘", color, "black")
-            return
-        end
-        local start_idx = first_face_up_index(col)
-        if start_idx == nil then return end
-
-        local top_y = header_y + start_idx
-        local bottom_y = header_y + #pile
-        draw_text(cx - 1, top_y, "┌", color, "black")
-        draw_text(cx + 2, top_y, "┐", color, "black")
-        for yy = top_y + 1, bottom_y do
-            draw_text(cx - 1, yy, "│", color, "black")
-            draw_text(cx + 2, yy, "│", color, "black")
-        end
-        if bottom_y + 1 <= g.board_y + g.board_h - 1 then
-            draw_text(cx - 1, bottom_y + 1, "└──┘", color, "black")
-        end
-    end
-
-    if state.selected_col ~= nil then draw_column_frame(state.selected_col, "green") end
-    draw_column_frame(state.cursor_col, "yellow")
 end
-local function current_message_line()
+
+local function current_message()
     if state.mode_input then
-        return tr("game.solitaire.mode_prompt", "Switch mode: [T] Tableau / [F] Foundation"), "yellow"
+        if state.spider_diff_input then
+            return tr("game.solitaire.mode_prompt_spider", "Spider difficulty: [1] Easy [2] Medium [3] Hard"), "yellow"
+        end
+        return tr("game.solitaire.mode_prompt", "Switch mode: [F] FreeCell / [K] Klondike / [S] Spider"), "yellow"
     end
     if state.confirm_mode == "restart" then
         return tr("game.solitaire.confirm_restart", "Confirm restart? [Y] Yes / [N] No"), "yellow"
@@ -1001,293 +1118,317 @@ local function current_message_line()
     return "", "dark_gray"
 end
 
-local function draw_bottom_panel(g)
-    local msg, msg_color = current_message_line()
-    draw_text(1, g.controls_y, string.rep(" ", g.term_w), "white", "black")
-    if msg ~= "" then
-        draw_text(centered_x(msg, 1, g.term_w), g.controls_y, msg, msg_color, "black")
+local function controls_text()
+    if state.mode == MODE_FREECELL then
+        return tr("game.solitaire.controls.freecell", "[←]/[→] Move  [Space] Select Column  [Enter] Move  [X] To Cell  [C] Cell->Column  [P] Switch Mode  [A] Undo  [S] Save  [R] Restart  [Q]/[ESC] Exit")
+    elseif state.mode == MODE_KLONDIKE then
+        return tr("game.solitaire.controls.klondike", "[←]/[→] Move  [Space] Select Column  [Enter] Move/Foundation  [X] Draw  [C] Waste->Column  [P] Switch Mode  [A] Undo  [S] Save  [R] Restart  [Q]/[ESC] Exit")
     end
-
-    local controls = tr(
-        "game.solitaire.controls",
-        "[←]/[→] Move  [Space] Select Column  [Enter] Confirm Move  [Z] Cancel Select  [X] Draw  [C] Waste->Column  [P] Mode  [A] Undo  [S] Save  [R] Restart  [Q]/[ESC] Exit"
-    )
-    local lines = wrap_words(controls, math.max(12, g.term_w - 2))
-    if #lines > 2 then lines = { lines[1], lines[2] } end
-
-    draw_text(1, g.controls_y + 1, string.rep(" ", g.term_w), "white", "black")
-    draw_text(1, g.controls_y + 2, string.rep(" ", g.term_w), "white", "black")
-
-    local off = (#lines == 1) and 1 or 0
-    for i = 1, #lines do
-        draw_text(centered_x(lines[i], 1, g.term_w), g.controls_y + off + i, lines[i], "white", "black")
-    end
+    return tr("game.solitaire.controls.spider", "[←]/[→] Move  [Space] Select Column  [Enter] Move  [X] Deal Row  [P] Switch Mode  [A] Undo  [S] Save  [R] Restart  [Q]/[ESC] Exit")
 end
 
 local function render()
-    local g = board_geometry()
-    draw_top_panel(g)
-    draw_board_panel(g)
-    draw_bottom_panel(g)
-end
+    local term_w, term_h = terminal_size()
+    local min_w, min_h = minimum_size()
+    state.last_term_w, state.last_term_h = term_w, term_h
 
-local function make_save_snapshot()
-    return {
-        mode = state.mode,
-        tableau = deep_copy_tableau(state.tableau),
-        stock = deep_copy_cards(state.stock),
-        waste = deep_copy_cards(state.waste),
-        foundation = deep_copy_foundation(state.foundation),
-        cursor_col = state.cursor_col,
-        selected_col = state.selected_col,
-        frame = state.frame,
-        start_frame = state.start_frame,
-        won = state.won,
-        end_frame = state.end_frame,
-        last_auto_save_sec = state.last_auto_save_sec,
-    }
-end
-
-local function save_game_state(show_toast)
-    local snapshot = make_save_snapshot()
-    local ok = false
-
-    if type(save_game_slot) == "function" then
-        ok = pcall(save_game_slot, "solitaire", snapshot)
-    elseif type(save_data) == "function" then
-        ok = pcall(save_data, "solitaire", snapshot)
+    if term_w < min_w or term_h < min_h then
+        state.size_warning_active = true
+        state.last_warn_term_w, state.last_warn_term_h = term_w, term_h
+        state.last_warn_min_w, state.last_warn_min_h = min_w, min_h
+        draw_size_warning(term_w, term_h, min_w, min_h)
+        state.dirty = false
+        return
     end
 
-    if show_toast then
-        if ok then
-            show_message(tr("game.solitaire.save_success", "Save successful!"), "green", 2, false)
-        else
-            show_message(tr("game.solitaire.save_unavailable", "Save unavailable."), "red", 2, false)
+    state.size_warning_active = false
+
+    clear()
+    draw_top_bar(term_w)
+
+    local cols = #state.tableau
+    local grid_w = 4 + cols * 5
+    local grid_x = math.max(2, math.floor((term_w - grid_w) / 2))
+    local grid_y = 8
+
+    local controls = controls_text()
+    local wrapped = wrap_words(controls, term_w - 2)
+    local controls_lines = #wrapped
+    if controls_lines < 1 then controls_lines = 1 end
+    if controls_lines > 3 then controls_lines = 3 end
+
+    local reserved_bottom = controls_lines + 2
+    local max_visible_rows = term_h - grid_y - reserved_bottom
+    if max_visible_rows < 1 then max_visible_rows = 1 end
+
+    local g = { x = grid_x, y = grid_y }
+    draw_cards_grid(g, max_visible_rows)
+
+    local msg, msg_color = current_message()
+    local controls_start_y = term_h - controls_lines + 1
+    if msg ~= "" then
+        local msg_y = controls_start_y - 2
+        if msg_y >= 1 then
+            draw_text(centered_x(msg, 1, term_w), msg_y, msg, msg_color, "black")
         end
     end
 
-    return ok
-end
-
-local function load_continue_state()
-    local data = nil
-    if type(load_game_slot) == "function" then
-        local ok, ret = pcall(load_game_slot, "solitaire")
-        if ok then data = ret end
-    elseif type(load_data) == "function" then
-        local ok, ret = pcall(load_data, "solitaire")
-        if ok then data = ret end
-    end
-
-    if type(data) ~= "table" then return false end
-    if type(data.tableau) ~= "table" or type(data.stock) ~= "table" or type(data.waste) ~= "table" or type(data.foundation) ~= "table" then
-        return false
-    end
-
-    restore_snapshot(data)
-    state.undo_stack = {}
-    return true
-end
-
-local function read_launch_mode()
-    if type(get_launch_mode) ~= "function" then return "new" end
-    local ok, mode = pcall(get_launch_mode)
-    if not ok or type(mode) ~= "string" then return "new" end
-    mode = string.lower(mode)
-    if mode == "continue" then return "continue" end
-    return "new"
-end
-
-local function on_restart_requested()
-    state.confirm_mode = "restart"
-    state.mode_input = false
-    show_message("", "dark_gray", 0, false)
-    state.dirty = true
-    flush_input_buffer()
-end
-
-local function on_exit_requested()
-    state.confirm_mode = "exit"
-    state.mode_input = false
-    show_message("", "dark_gray", 0, false)
-    state.dirty = true
-    flush_input_buffer()
-end
-
-local function handle_confirm_key(key)
-    if key == "y" or key == "enter" then
-        if state.confirm_mode == "restart" then
-            deal_new_game(state.mode)
-            return "changed"
+    if #wrapped > 3 then
+        draw_text(centered_x(tr("warning.size_title", "Terminal Too Small"), 1, term_w), controls_start_y, tr("warning.size_title", "Terminal Too Small"), "yellow", "black")
+    else
+        for i = 1, #wrapped do
+            draw_text(centered_x(wrapped[i], 1, term_w), controls_start_y + i - 1, wrapped[i], "white", "black")
         end
-        if state.confirm_mode == "exit" then
-            return "exit"
-        end
-    elseif key == "n" or key == "q" or key == "esc" then
-        state.confirm_mode = nil
-        state.dirty = true
-        return "changed"
     end
-    return "none"
+
+    state.dirty = false
+end
+local function auto_save_tick()
+    if state.won then return end
+    local sec = elapsed_seconds()
+    if sec > 0 and sec % 60 == 0 and sec ~= state.last_auto_save_sec then
+        save_progress(false)
+        state.last_auto_save_sec = sec
+    end
 end
 
 local function handle_mode_input_key(key)
-    if key == "esc" or key == "q" then
+    if key == "esc" or key == "q" or key == "z" then
         state.mode_input = false
+        state.spider_diff_input = false
         state.dirty = true
-        return "changed"
+        return
     end
-    if key == "t" then
-        state.mode_input = false
-        deal_new_game(MODE_TABLEAU)
-        return "changed"
+
+    if state.spider_diff_input then
+        if key == "1" or key == "2" or key == "3" then
+            state.mode_input = false
+            state.spider_diff_input = false
+            deal_new_game(MODE_SPIDER, tonumber(key))
+        end
+        return
     end
+
     if key == "f" then
         state.mode_input = false
-        deal_new_game(MODE_FOUNDATION)
-        return "changed"
+        deal_new_game(MODE_FREECELL)
+        return
+    elseif key == "k" then
+        state.mode_input = false
+        deal_new_game(MODE_KLONDIKE)
+        return
+    elseif key == "s" then
+        state.spider_diff_input = true
+        state.dirty = true
+        return
     end
-    return "none"
 end
 
-local function handle_gameplay_key(key)
-    if key == nil or key == "" then return "none" end
-
-    if state.confirm_mode ~= nil then return handle_confirm_key(key) end
-    if state.mode_input then return handle_mode_input_key(key) end
-
-    if state.won then
-        if key == "r" then deal_new_game(state.mode); return "changed" end
-        if key == "q" or key == "esc" then return "exit" end
-        if key == "s" then save_game_state(true); return "changed" end
-        return "none"
+local function handle_confirm_key(key)
+    if key == "y" then
+        if state.confirm_mode == "restart" then
+            deal_new_game(state.mode, state.spider_diff)
+        elseif state.confirm_mode == "exit" then
+            exit_game()
+        end
+        state.confirm_mode = nil
+    elseif key == "n" or key == "esc" or key == "q" then
+        state.confirm_mode = nil
+        state.dirty = true
     end
+end
 
-    if key == "r" then on_restart_requested(); return "changed" end
-    if key == "q" or key == "esc" then on_exit_requested(); return "changed" end
-    if key == "s" then save_game_state(true); return "changed" end
+local function handle_result_key(key)
+    if key == "r" then
+        deal_new_game(state.mode, state.spider_diff)
+    elseif key == "q" or key == "esc" then
+        exit_game()
+    end
+end
 
-    if key == "left" then state.cursor_col = clamp(state.cursor_col - 1, 1, 7); state.dirty = true; return "changed" end
-    if key == "right" then state.cursor_col = clamp(state.cursor_col + 1, 1, 7); state.dirty = true; return "changed" end
+local function selectable_column(col)
+    if col < 1 or col > #state.tableau then return false end
+    local pile = state.tableau[col]
+    if #pile == 0 then return false end
+    if state.mode == MODE_FREECELL then return true end
+    return first_face_up_index(col) ~= nil
+end
+
+local function handle_normal_key(key)
+    if key == "left" then
+        state.cursor_col = clamp(state.cursor_col - 1, 1, #state.tableau)
+        state.dirty = true
+        return
+    elseif key == "right" then
+        state.cursor_col = clamp(state.cursor_col + 1, 1, #state.tableau)
+        state.dirty = true
+        return
+    end
 
     if key == "space" then
-        if #state.tableau[state.cursor_col] > 0 and first_face_up_index(state.cursor_col) ~= nil then
+        if selectable_column(state.cursor_col) then
             state.selected_col = state.cursor_col
             state.dirty = true
-            return "changed"
+        else
+            show_message(tr("game.solitaire.select_empty", "Current column cannot be selected."), "dark_gray", 2, false)
         end
-        show_message(tr("game.solitaire.select_empty", "Current column cannot be selected."), "dark_gray", 2, false)
-        return "changed"
+        return
     end
-
-    if key == "z" then state.selected_col = nil; state.dirty = true; return "changed" end
 
     if key == "enter" then
         if state.selected_col ~= nil then
-            local src = state.selected_col
-            local dst = state.cursor_col
-            if src ~= dst and move_tableau_stack(src, dst) then check_win(); return "changed" end
-            show_message(tr("game.solitaire.move_invalid", "Invalid move."), "red", 2, false)
-            return "changed"
+            local src, dst = state.selected_col, state.cursor_col
+            if src ~= dst and move_tableau_stack(src, dst) then
+                if state.mode == MODE_SPIDER then remove_spider_complete_runs() else check_win() end
+            else
+                show_message(tr("game.solitaire.move_invalid", "Invalid move."), "red", 2, false)
+            end
         else
-            show_message(tr("game.solitaire.move_invalid", "Invalid move."), "red", 2, false)
-            return "changed"
+            if not move_column_top_to_foundation(state.cursor_col) then
+                if state.mode == MODE_KLONDIKE then move_waste_to_foundation() end
+                if state.mode == MODE_FREECELL then move_cell_to_foundation() end
+            end
         end
+        return
     end
 
-    if key == "x" then draw_from_stock(); check_win(); return "changed" end
+    if key == "z" then
+        state.selected_col = nil
+        state.dirty = true
+        return
+    end
+
+    if key == "x" then
+        if state.mode == MODE_KLONDIKE then
+            draw_from_stock_klondike()
+        elseif state.mode == MODE_SPIDER then
+            draw_spider_row()
+            remove_spider_complete_runs()
+        else
+            if not move_column_to_cell(state.cursor_col) then
+                show_message(tr("game.solitaire.cell_full", "No empty FreeCell."), "dark_gray", 2, false)
+            end
+        end
+        return
+    end
 
     if key == "c" then
-        if move_waste_to_column(state.cursor_col) then check_win(); return "changed" end
-        show_message(tr("game.solitaire.waste_invalid", "Waste card cannot be placed there."), "red", 2, false)
-        return "changed"
+        if state.mode == MODE_KLONDIKE then
+            if not move_waste_to_column(state.cursor_col) then
+                show_message(tr("game.solitaire.waste_invalid", "Waste card cannot be placed there."), "red", 2, false)
+            end
+        elseif state.mode == MODE_FREECELL then
+            if not move_cell_to_column(state.cursor_col) then
+                show_message(tr("game.solitaire.cell_empty", "No suitable card in FreeCells."), "dark_gray", 2, false)
+            end
+        end
+        return
     end
 
     if key == "p" then
         state.mode_input = true
-        state.confirm_mode = nil
+        state.spider_diff_input = false
         state.dirty = true
-        flush_input_buffer()
-        return "changed"
+        return
     end
 
     if key == "a" then
         pop_undo()
-        return "changed"
+        return
     end
 
-    return "none"
-end
-local function auto_save_if_needed()
-    if state.won then return end
-    local elapsed = elapsed_seconds()
-    if elapsed - state.last_auto_save_sec >= 60 then
-        save_game_state(false)
-        state.last_auto_save_sec = elapsed
+    if key == "s" then
+        save_progress(true)
+        return
     end
-end
 
-local function refresh_dirty_flags()
-    local elapsed = elapsed_seconds()
-    if elapsed ~= state.last_elapsed_sec then
-        state.last_elapsed_sec = elapsed
-        if state.dirty then
-            state.top_dirty = false
-        else
-            state.top_dirty = true
-        end
+    if key == "r" then
+        state.confirm_mode = "restart"
+        state.dirty = true
+        return
     end
-    update_message_timer()
+
+    if key == "q" or key == "esc" then
+        state.confirm_mode = "exit"
+        state.dirty = true
+        return
+    end
+end
+local function load_launch_mode()
+    if type(get_launch_mode) ~= "function" then return "new" end
+    local ok, mode = pcall(get_launch_mode)
+    if ok and mode == "continue" then return "continue" end
+    return "new"
 end
 
 local function init_game()
-    clear()
-    local w, h = terminal_size()
-    state.last_term_w = w
-    state.last_term_h = h
-
     load_best_record()
+    state.launch_mode = load_launch_mode()
 
-    state.launch_mode = read_launch_mode()
-    if state.launch_mode == "continue" then
-        if not load_continue_state() then
-            deal_new_game(MODE_TABLEAU)
-        end
+    if state.launch_mode == "continue" and try_load_progress() then
+        state.start_frame = state.frame - elapsed_seconds() * FPS
+        state.dirty = true
+        show_message(tr("game.solitaire.continue_loaded", "Loaded previous save."), "green", 2, false)
     else
-        deal_new_game(MODE_TABLEAU)
+        deal_new_game(MODE_FREECELL)
     end
-
-    flush_input_buffer()
 end
 
-local function game_loop()
-    while true do
-        local key = normalize_key(get_key(false))
+local function input_tick()
+    local key = normalize_key(get_key(false))
+    if key == "" then return end
 
-        if ensure_terminal_size_ok() then
-            local action = handle_gameplay_key(key)
-            if action == "exit" then return end
-
-            auto_save_if_needed()
-            refresh_dirty_flags()
-
-            if state.dirty then
-                render()
-                state.dirty = false
-                state.top_dirty = false
-            elseif state.top_dirty then
-                draw_top_status_line(board_geometry())
-                state.top_dirty = false
-            end
-
-            state.frame = state.frame + 1
-        else
-            if key == "q" or key == "esc" then return end
-        end
-
-        sleep(FRAME_MS)
+    if state.mode_input then
+        handle_mode_input_key(key)
+        return
     end
+
+    if state.confirm_mode ~= nil then
+        handle_confirm_key(key)
+        return
+    end
+
+    if state.won then
+        handle_result_key(key)
+        return
+    end
+
+    handle_normal_key(key)
 end
 
 init_game()
-game_loop()
+
+while true do
+    state.frame = state.frame + 1
+
+    local sec = elapsed_seconds()
+    if sec ~= state.last_elapsed_sec then
+        state.last_elapsed_sec = sec
+        state.dirty = true
+    end
+
+    auto_save_tick()
+    update_message_timer()
+    input_tick()
+
+    local tw, th = terminal_size()
+    if tw ~= state.last_term_w or th ~= state.last_term_h then
+        state.dirty = true
+    end
+
+    if state.size_warning_active then
+        local min_w, min_h = minimum_size()
+        if tw ~= state.last_warn_term_w or th ~= state.last_warn_term_h or min_w ~= state.last_warn_min_w or min_h ~= state.last_warn_min_h then
+            state.dirty = true
+        end
+    end
+
+    if state.dirty then
+        render()
+    end
+
+    sleep(FRAME_MS)
+end
+
+
+

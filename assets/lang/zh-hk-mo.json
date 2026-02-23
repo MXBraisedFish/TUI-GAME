@@ -171,8 +171,6 @@
     "game.maze_escape.best_fastest": "最快時間",
     "game.wordle.name": "Wordle",
     "game.wordle.description": "根據每次嘗試的顏色提示，猜出隱藏的單詞。",
-    "game.solitaire.name": "接龍",
-    "game.solitaire.description": "按順序和花色排列紙牌，清空桌面。",
     "game.color_memory.name": "顏色記憶",
     "game.color_memory.description": "準確重複系統展示的顏色順序。",
     "game.color_memory.best_score": "最高分",
