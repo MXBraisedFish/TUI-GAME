@@ -1,4 +1,4 @@
-﻿use std::collections::HashMap;
+use std::collections::HashMap;
 
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
@@ -9,7 +9,7 @@ use ratatui::{symbols, widgets::Wrap};
 use unicode_width::UnicodeWidthStr;
 
 use crate::app::i18n;
-use crate::app::stats::{self, GameStats, LightsOutBest, MazeEscapeBest, MemoryFlipBest, MinesweeperBest};
+use crate::app::stats::{self, GameStats, LightsOutBest, MazeEscapeBest, MemoryFlipBest, MinesweeperBest, SolitaireBest};
 use crate::lua_bridge::script_loader::GameMeta;
 use crate::terminal::renderer;
 
@@ -20,6 +20,7 @@ pub struct GameSelection {
     memory_flip_best: Option<MemoryFlipBest>,
     minesweeper_best: Option<MinesweeperBest>,
     maze_escape_best: Option<MazeEscapeBest>,
+    solitaire_best: Option<SolitaireBest>,
     list_state: ListState,
     page_state: PageState,
     launch_placeholder: bool,
@@ -45,6 +46,7 @@ impl GameSelection {
         let memory_flip_best = stats::load_memory_flip_best();
         let minesweeper_best = stats::load_minesweeper_best();
         let maze_escape_best = stats::load_maze_escape_best();
+        let solitaire_best = stats::load_solitaire_best();
         let initial_page_size = games.len().max(1);
 
         let mut list_state = ListState::default();
@@ -59,6 +61,7 @@ impl GameSelection {
             memory_flip_best,
             minesweeper_best,
             maze_escape_best,
+            solitaire_best,
             list_state,
             page_state: PageState {
                 current_page: 0,
@@ -384,6 +387,27 @@ impl GameSelection {
             } else {
                 lines.push(Line::from(i18n::t("game.maze_escape.best_none")));
             }
+        } else if game.id == "solitaire" {
+            let fmt = |v: Option<u64>| -> String {
+                v.map(stats::format_duration)
+                    .unwrap_or_else(|| "--:--:--".to_string())
+            };
+            let best = self.solitaire_best.unwrap_or_default();
+            lines.push(Line::from(format!(
+                "{} {}",
+                i18n::t("game.solitaire.best.freecell"),
+                fmt(best.freecell_min_time_sec)
+            )));
+            lines.push(Line::from(format!(
+                "{} {}",
+                i18n::t("game.solitaire.best.klondike"),
+                fmt(best.klondike_min_time_sec)
+            )));
+            lines.push(Line::from(format!(
+                "{} {}",
+                i18n::t("game.solitaire.best.spider"),
+                fmt(best.spider_min_time_sec)
+            )));
         } else if game.id == "pacman" {
             lines.push(Line::from(format!(
                 "{} {}",

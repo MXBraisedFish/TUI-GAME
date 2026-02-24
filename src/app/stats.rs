@@ -43,6 +43,13 @@ pub struct MazeEscapeBest {
     pub min_time_sec: Option<u64>,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct SolitaireBest {
+    pub freecell_min_time_sec: Option<u64>,
+    pub klondike_min_time_sec: Option<u64>,
+    pub spider_min_time_sec: Option<u64>,
+}
+
 #[derive(Debug, Default, Deserialize, Serialize)]
 struct StatsFile {
     #[serde(default)]
@@ -193,6 +200,58 @@ pub fn load_maze_escape_best() -> Option<MazeEscapeBest> {
     })
 }
 
+/// Loads solitaire best records (FreeCell/Klondike/Spider) from shared Lua save file.
+pub fn load_solitaire_best() -> Option<SolitaireBest> {
+    let path = lua_saves_file_path();
+    if !path.exists() {
+        return None;
+    }
+
+    let raw = fs::read_to_string(path).ok()?;
+    let root = serde_json::from_str::<JsonValue>(&raw).ok()?;
+    let object = root.as_object()?;
+
+    // New format: solitaire_best_v2
+    if let Some(best) = object.get("solitaire_best_v2").and_then(JsonValue::as_object) {
+        let freecell = best.get("freecell").and_then(JsonValue::as_u64);
+        let klondike = best.get("klondike").and_then(JsonValue::as_u64);
+        let spider1 = best.get("spider1").and_then(JsonValue::as_u64);
+        let spider2 = best.get("spider2").and_then(JsonValue::as_u64);
+        let spider3 = best.get("spider3").and_then(JsonValue::as_u64);
+        let spider = [spider1, spider2, spider3]
+            .into_iter()
+            .flatten()
+            .filter(|v| *v > 0)
+            .min();
+
+        return Some(SolitaireBest {
+            freecell_min_time_sec: freecell.filter(|v| *v > 0),
+            klondike_min_time_sec: klondike.filter(|v| *v > 0),
+            spider_min_time_sec: spider,
+        });
+    }
+
+    // Legacy format fallback: solitaire_best
+    if let Some(best) = object.get("solitaire_best").and_then(JsonValue::as_object) {
+        let freecell = best
+            .get("freecell")
+            .and_then(JsonValue::as_u64)
+            .or_else(|| best.get("foundation").and_then(JsonValue::as_u64));
+        let klondike = best
+            .get("klondike")
+            .and_then(JsonValue::as_u64)
+            .or_else(|| best.get("tableau").and_then(JsonValue::as_u64));
+        let spider = best.get("spider").and_then(JsonValue::as_u64);
+
+        return Some(SolitaireBest {
+            freecell_min_time_sec: freecell.filter(|v| *v > 0),
+            klondike_min_time_sec: klondike.filter(|v| *v > 0),
+            spider_min_time_sec: spider.filter(|v| *v > 0),
+        });
+    }
+
+    None
+}
 fn stats_file_path() -> PathBuf {
     match path_utils::stats_file() {
         Ok(path) => path,

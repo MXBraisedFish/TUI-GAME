@@ -1,4 +1,4 @@
-﻿
+
 GAME_META = {
     name = "Solitaire",
     description = "Play FreeCell, Klondike, or Spider Solitaire in one game."
@@ -31,6 +31,8 @@ local state = {
 
     cursor_col = 1,
     selected_col = nil,
+    cursor_pick_depth = 1,
+    selected_pick_depth = nil,
 
     frame = 0,
     start_frame = 0,
@@ -47,6 +49,9 @@ local state = {
     msg_persistent = false,
 
     dirty = true,
+    top_dirty = false,
+    grid_dirty = false,
+    bottom_dirty = false,
     last_elapsed_sec = -1,
     last_auto_save_sec = 0,
 
@@ -174,7 +179,7 @@ local function show_message(text, color, dur_sec, persistent)
     else
         state.msg_until = 0
     end
-    state.dirty = true
+    state.bottom_dirty = true
 end
 
 local function clear_message()
@@ -183,7 +188,7 @@ local function clear_message()
         state.msg_color = "dark_gray"
         state.msg_until = 0
         state.msg_persistent = false
-        state.dirty = true
+        state.bottom_dirty = true
     end
 end
 
@@ -398,6 +403,8 @@ local function snapshot_state()
         spider_removed = state.spider_removed,
         cursor_col = state.cursor_col,
         selected_col = state.selected_col,
+        cursor_pick_depth = state.cursor_pick_depth,
+        selected_pick_depth = state.selected_pick_depth,
         frame = state.frame,
         start_frame = state.start_frame,
         end_frame = state.end_frame,
@@ -405,7 +412,6 @@ local function snapshot_state()
         last_auto_save_sec = state.last_auto_save_sec,
     }
 end
-
 local function restore_snapshot(snap, clear_undo)
     state.mode = (snap.mode == MODE_KLONDIKE or snap.mode == MODE_SPIDER) and snap.mode or MODE_FREECELL
     state.spider_diff = clamp(math.floor(tonumber(snap.spider_diff) or 1), 1, 3)
@@ -424,6 +430,14 @@ local function restore_snapshot(snap, clear_undo)
     local sel = tonumber(snap.selected_col)
     if sel ~= nil then state.selected_col = clamp(math.floor(sel), 1, cols) else state.selected_col = nil end
 
+    state.cursor_pick_depth = math.max(1, math.floor(tonumber(snap.cursor_pick_depth) or 1))
+    local spd = tonumber(snap.selected_pick_depth)
+    if spd ~= nil then
+        state.selected_pick_depth = math.max(1, math.floor(spd))
+    else
+        state.selected_pick_depth = nil
+    end
+
     state.frame = math.max(0, math.floor(tonumber(snap.frame) or state.frame))
     state.start_frame = math.max(0, math.floor(tonumber(snap.start_frame) or state.start_frame))
     state.end_frame = snap.end_frame and math.max(0, math.floor(tonumber(snap.end_frame) or state.frame)) or nil
@@ -437,7 +451,6 @@ local function restore_snapshot(snap, clear_undo)
     clear_message()
     state.dirty = true
 end
-
 local function push_undo()
     state.undo_stack[#state.undo_stack + 1] = snapshot_state()
     while #state.undo_stack > MAX_UNDO do table.remove(state.undo_stack, 1) end
@@ -541,6 +554,40 @@ local function first_face_up_index(col)
     return nil
 end
 
+local function movable_start_index(col)
+    local pile = state.tableau[col]
+    if pile == nil or #pile == 0 then return nil end
+    if state.mode == MODE_FREECELL then return 1 end
+    return first_face_up_index(col)
+end
+
+local function max_pick_depth(col)
+    local pile = state.tableau[col]
+    if pile == nil then return 0 end
+    local start = movable_start_index(col)
+    if start == nil then return 0 end
+    return #pile - start + 1
+end
+
+local function pick_start_from_depth(col, depth)
+    local pile = state.tableau[col]
+    if pile == nil then return nil end
+    local start = movable_start_index(col)
+    if start == nil then return nil end
+    local maxd = #pile - start + 1
+    local d = clamp(math.floor(depth or 1), 1, maxd)
+    return #pile - d + 1
+end
+
+local function clamp_cursor_pick_depth()
+    local maxd = max_pick_depth(state.cursor_col)
+    if maxd <= 0 then
+        state.cursor_pick_depth = 1
+    else
+        state.cursor_pick_depth = clamp(math.floor(state.cursor_pick_depth or 1), 1, maxd)
+    end
+end
+
 local function reveal_new_top(col)
     if state.mode ~= MODE_KLONDIKE and state.mode ~= MODE_SPIDER then return end
     local pile = state.tableau[col]
@@ -548,7 +595,7 @@ local function reveal_new_top(col)
     local t = pile[#pile]
     if not t.face_up then
         t.face_up = true
-        state.dirty = true
+        state.grid_dirty = true
     end
 end
 
@@ -615,44 +662,52 @@ local function max_freecell_movable(src_col, dst_col)
     return (1 + cells) * (2 ^ empties)
 end
 
-local function find_move_start_index(src_col, dst_col)
+local function is_valid_run_start(src_col, dst_col, start_idx)
+    local src = state.tableau[src_col]
+    if src == nil or #src == 0 then return false end
+    if start_idx == nil or start_idx < 1 or start_idx > #src then return false end
+
+    if state.mode == MODE_FREECELL then
+        if not run_valid_klondike_like(src, start_idx) then return false end
+        local len = #src - start_idx + 1
+        if len > max_freecell_movable(src_col, dst_col) then return false end
+        return can_place_on_tableau(src[start_idx], dst_col)
+    elseif state.mode == MODE_KLONDIKE then
+        local first = first_face_up_index(src_col)
+        if first == nil or start_idx < first then return false end
+        if not run_valid_klondike_like(src, start_idx) then return false end
+        return can_place_on_tableau(src[start_idx], dst_col)
+    end
+
+    local first = first_face_up_index(src_col)
+    if first == nil or start_idx < first then return false end
+    local len = #src - start_idx + 1
+    if len > 1 and not run_valid_spider_same(src, start_idx) then return false end
+    return can_place_on_tableau(src[start_idx], dst_col)
+end
+
+local function find_move_start_index(src_col, dst_col, preferred_start)
     local src = state.tableau[src_col]
     if #src <= 0 then return nil end
 
-    if state.mode == MODE_FREECELL or state.mode == MODE_KLONDIKE then
-        local start = 1
-        if state.mode == MODE_KLONDIKE then
-            start = first_face_up_index(src_col)
-            if start == nil then return nil end
-        end
-
-        for i = start, #src do
-            if run_valid_klondike_like(src, i) then
-                local len = #src - i + 1
-                if state.mode ~= MODE_FREECELL or len <= max_freecell_movable(src_col, dst_col) then
-                    if can_place_on_tableau(src[i], dst_col) then
-                        return i
-                    end
-                end
-            end
+    if preferred_start ~= nil then
+        if is_valid_run_start(src_col, dst_col, preferred_start) then
+            return preferred_start
         end
         return nil
     end
 
-    local first = first_face_up_index(src_col)
-    if first == nil then return nil end
-
-    for i = first, #src do
-        local len = #src - i + 1
-        local ok_run = false
-        if len == 1 then ok_run = true else ok_run = run_valid_spider_same(src, i) end
-        if ok_run and can_place_on_tableau(src[i], dst_col) then return i end
+    local start = movable_start_index(src_col)
+    if start == nil then return nil end
+    for i = start, #src do
+        if is_valid_run_start(src_col, dst_col, i) then
+            return i
+        end
     end
-
     return nil
 end
 
-local function move_tableau_stack(src_col, dst_col)
+local function move_tableau_stack(src_col, dst_col, preferred_start)
     if src_col < 1 or src_col > #state.tableau or dst_col < 1 or dst_col > #state.tableau then return false end
     if src_col == dst_col then return false end
 
@@ -660,7 +715,7 @@ local function move_tableau_stack(src_col, dst_col)
     local dst = state.tableau[dst_col]
     if #src == 0 then return false end
 
-    local start_idx = find_move_start_index(src_col, dst_col)
+    local start_idx = find_move_start_index(src_col, dst_col, preferred_start)
     if start_idx == nil then return false end
 
     push_undo()
@@ -668,10 +723,11 @@ local function move_tableau_stack(src_col, dst_col)
     for i = #src, start_idx, -1 do table.remove(src, i) end
     reveal_new_top(src_col)
     state.selected_col = nil
+    state.selected_pick_depth = nil
+    clamp_cursor_pick_depth()
     state.dirty = true
     return true
 end
-
 local function can_place_foundation(slot, card)
     local pile = state.foundations[slot]
     local top = pile[#pile]
@@ -941,6 +997,8 @@ local function deal_new_game(mode, diff)
 
     state.cursor_col = 1
     state.selected_col = nil
+    state.cursor_pick_depth = 1
+    state.selected_pick_depth = nil
     state.confirm_mode = nil
     state.mode_input = false
     state.spider_diff_input = false
@@ -967,11 +1025,10 @@ local function minimum_size()
     local controls_w = min_width_for_lines(controls, 3, 32)
 
     local min_w = math.max(70, grid_w + 6, controls_w + 4)
-    local min_h = 24
-    if state.mode == MODE_SPIDER then min_h = 26 end
+    local min_h = 31
+    if state.mode == MODE_SPIDER then min_h = 32 end
     return min_w, min_h
 end
-
 local function draw_size_warning(term_w, term_h, min_w, min_h)
     clear()
     local title = tr("warning.size_title", "Terminal Too Small")
@@ -992,16 +1049,22 @@ local function card_two_chars(card)
     return " " .. rt
 end
 
-local function draw_column_frame(x, y, h, color)
-    if h < 1 then h = 1 end
-    draw_text(x, y - 1, "┌──┐", color, "black")
-    for i = 0, h - 1 do
-        draw_text(x, y + i, "│", color, "black")
-        draw_text(x + 3, y + i, "│", color, "black")
+local function draw_column_frame(x, y_top, card_count, color, empty_col)
+    if empty_col then
+        draw_text(x, y_top, "┌──┐", color, "black")
+        draw_text(x, y_top + 1, "└──┘", color, "black")
+        return
     end
-    draw_text(x, y + h, "└──┘", color, "black")
-end
 
+    if card_count < 1 then card_count = 1 end
+    draw_text(x, y_top, "┌", color, "black")
+    draw_text(x + 3, y_top, "┐", color, "black")
+    for i = 1, card_count - 1 do
+        draw_text(x, y_top + i, "│", color, "black")
+        draw_text(x + 3, y_top + i, "│", color, "black")
+    end
+    draw_text(x, y_top + card_count, "└──┘", color, "black")
+end
 local function draw_cards_grid(g, max_visible_rows)
     local cols = #state.tableau
     local max_rows = 1
@@ -1023,6 +1086,9 @@ local function draw_cards_grid(g, max_visible_rows)
         draw_text(cx, g.y - 1, string.format("C%-2d", c), "dark_gray", "black")
 
         local pile = state.tableau[c]
+        for line = 0, rows_to_draw do
+            draw_text(cx, g.y + line, "    ", "white", "black")
+        end
         for r = 1, rows_to_draw do
             local text = "  "
             local fg = "dark_gray"
@@ -1041,15 +1107,33 @@ local function draw_cards_grid(g, max_visible_rows)
     end
 
     for c = 1, cols do
-        local pile_h = #state.tableau[c]
-        if pile_h < 1 then pile_h = 1 end
-        pile_h = math.min(pile_h, rows_to_draw)
         local frame_x = g.x + 5 + (c - 1) * 5
-        if state.selected_col == c then
-            draw_column_frame(frame_x, g.y, pile_h, "green")
+        local pile = state.tableau[c]
+
+        if state.selected_col == c and #pile > 0 then
+            local start_idx = pick_start_from_depth(c, state.selected_pick_depth or 1)
+            if start_idx ~= nil and start_idx <= rows_to_draw then
+                local visible_end = math.min(#pile, rows_to_draw)
+                local count = visible_end - start_idx + 1
+                if count > 0 then
+                    draw_column_frame(frame_x, g.y + start_idx - 1, count, "green", false)
+                end
+            end
         end
+
         if state.cursor_col == c then
-            draw_column_frame(frame_x, g.y, pile_h, "yellow")
+            if #pile == 0 then
+                draw_column_frame(frame_x, g.y, 0, "yellow", true)
+            else
+                local start_idx = pick_start_from_depth(c, state.cursor_pick_depth or 1)
+                if start_idx ~= nil and start_idx <= rows_to_draw then
+                    local visible_end = math.min(#pile, rows_to_draw)
+                    local count = visible_end - start_idx + 1
+                    if count > 0 then
+                        draw_column_frame(frame_x, g.y + start_idx - 1, count, "yellow", false)
+                    end
+                end
+            end
         end
     end
 end
@@ -1057,6 +1141,35 @@ local function foundation_label(slot)
     local pile = state.foundations[slot]
     if #pile == 0 then return "[ ]" end
     return "[" .. rank_text(pile[#pile].rank) .. "]"
+end
+local function draw_color_hint(term_w, y)
+    local red_text = tr("game.solitaire.color_hint.red", "Red Cards")
+    local black_text = tr("game.solitaire.color_hint.black", "Black Cards")
+    local segments = {
+        {"[A]", "red"},
+        {" ", "white"},
+        {"[A]", "rgb(255,165,0)"},
+        {" -> ", "dark_gray"},
+        {red_text, "white"},
+        {"   ", "white"},
+        {"[A]", "cyan"},
+        {" ", "white"},
+        {"[A]", "white"},
+        {" -> ", "dark_gray"},
+        {black_text, "white"},
+    }
+
+    local total = 0
+    for i = 1, #segments do
+        total = total + key_width(segments[i][1])
+    end
+
+    local x = math.max(1, math.floor((term_w - total) / 2) + 1)
+    for i = 1, #segments do
+        local text_seg = segments[i][1]
+        draw_text(x, y, text_seg, segments[i][2], "black")
+        x = x + key_width(text_seg)
+    end
 end
 local function draw_top_bar(term_w)
     local best = best_time_for_current_mode()
@@ -1070,6 +1183,10 @@ local function draw_top_bar(term_w)
         .. "   " .. tr("game.solitaire.mode", "Mode") .. " " .. mode_text
         .. "   " .. tr("game.solitaire.mode_best", "Mode Best") .. " " .. best_text
     draw_text(centered_x(line1, 1, term_w), 2, line1, "cyan", "black")
+
+    if state.mode == MODE_FREECELL or state.mode == MODE_KLONDIKE then
+        draw_color_hint(term_w, 3)
+    end
 
     if state.mode == MODE_FREECELL then
         local cells = ""
@@ -1120,32 +1237,13 @@ end
 
 local function controls_text()
     if state.mode == MODE_FREECELL then
-        return tr("game.solitaire.controls.freecell", "[←]/[→] Move  [Space] Select Column  [Enter] Move  [X] To Cell  [C] Cell->Column  [P] Switch Mode  [A] Undo  [S] Save  [R] Restart  [Q]/[ESC] Exit")
+        return tr("game.solitaire.controls.freecell", "[←]/[→] Move [↑]/[↓] Height [Space] Select [Enter] Move [X] To Cell [C] Cell->Column [P] Switch Mode [A] Undo [S] Save [R] Restart [Q]/[ESC] Exit")
     elseif state.mode == MODE_KLONDIKE then
-        return tr("game.solitaire.controls.klondike", "[←]/[→] Move  [Space] Select Column  [Enter] Move/Foundation  [X] Draw  [C] Waste->Column  [P] Switch Mode  [A] Undo  [S] Save  [R] Restart  [Q]/[ESC] Exit")
+        return tr("game.solitaire.controls.klondike", "[←]/[→] Move [↑]/[↓] Height [Space] Select [Enter] Move/Foundation [X] Draw [C] Waste->Column [P] Switch Mode [A] Undo [S] Save [R] Restart [Q]/[ESC] Exit")
     end
-    return tr("game.solitaire.controls.spider", "[←]/[→] Move  [Space] Select Column  [Enter] Move  [X] Deal Row  [P] Switch Mode  [A] Undo  [S] Save  [R] Restart  [Q]/[ESC] Exit")
+    return tr("game.solitaire.controls.spider", "[←]/[→] Move [↑]/[↓] Height [Space] Select [Enter] Move [X] Deal Row [P] Switch Mode [A] Undo [S] Save [R] Restart [Q]/[ESC] Exit")
 end
-
-local function render()
-    local term_w, term_h = terminal_size()
-    local min_w, min_h = minimum_size()
-    state.last_term_w, state.last_term_h = term_w, term_h
-
-    if term_w < min_w or term_h < min_h then
-        state.size_warning_active = true
-        state.last_warn_term_w, state.last_warn_term_h = term_w, term_h
-        state.last_warn_min_w, state.last_warn_min_h = min_w, min_h
-        draw_size_warning(term_w, term_h, min_w, min_h)
-        state.dirty = false
-        return
-    end
-
-    state.size_warning_active = false
-
-    clear()
-    draw_top_bar(term_w)
-
+local function compute_layout(term_w, term_h)
     local cols = #state.tableau
     local grid_w = 4 + cols * 5
     local grid_x = math.max(2, math.floor((term_w - grid_w) / 2))
@@ -1161,28 +1259,86 @@ local function render()
     local max_visible_rows = term_h - grid_y - reserved_bottom
     if max_visible_rows < 1 then max_visible_rows = 1 end
 
-    local g = { x = grid_x, y = grid_y }
-    draw_cards_grid(g, max_visible_rows)
+    return {
+        g = { x = grid_x, y = grid_y },
+        wrapped = wrapped,
+        controls_lines = controls_lines,
+        controls_start_y = term_h - controls_lines + 1,
+        max_visible_rows = max_visible_rows,
+        controls_too_long = (#wrapped > 3),
+        term_w = term_w,
+        term_h = term_h,
+    }
+end
 
+local function draw_bottom_area(layout)
     local msg, msg_color = current_message()
-    local controls_start_y = term_h - controls_lines + 1
+    local clear_start = layout.controls_start_y - 2
+    if clear_start < 1 then clear_start = 1 end
+    for y = clear_start, layout.term_h do
+        draw_text(1, y, string.rep(" ", layout.term_w), "white", "black")
+    end
+
     if msg ~= "" then
-        local msg_y = controls_start_y - 2
+        local msg_y = layout.controls_start_y - 2
         if msg_y >= 1 then
-            draw_text(centered_x(msg, 1, term_w), msg_y, msg, msg_color, "black")
+            draw_text(centered_x(msg, 1, layout.term_w), msg_y, msg, msg_color, "black")
         end
     end
 
-    if #wrapped > 3 then
-        draw_text(centered_x(tr("warning.size_title", "Terminal Too Small"), 1, term_w), controls_start_y, tr("warning.size_title", "Terminal Too Small"), "yellow", "black")
+    if layout.controls_too_long then
+        draw_text(centered_x(tr("warning.size_title", "Terminal Too Small"), 1, layout.term_w), layout.controls_start_y, tr("warning.size_title", "Terminal Too Small"), "yellow", "black")
     else
-        for i = 1, #wrapped do
-            draw_text(centered_x(wrapped[i], 1, term_w), controls_start_y + i - 1, wrapped[i], "white", "black")
+        for i = 1, #layout.wrapped do
+            draw_text(centered_x(layout.wrapped[i], 1, layout.term_w), layout.controls_start_y + i - 1, layout.wrapped[i], "white", "black")
         end
     end
+end
 
+local function render_grid_partial(term_w, term_h)
+    local layout = compute_layout(term_w, term_h)
+    draw_cards_grid(layout.g, layout.max_visible_rows)
+    state.grid_dirty = false
+end
+
+local function render_bottom_partial(term_w, term_h)
+    local layout = compute_layout(term_w, term_h)
+    draw_bottom_area(layout)
+    state.bottom_dirty = false
+end
+
+local function render()
+    local term_w, term_h = terminal_size()
+    local min_w, min_h = minimum_size()
+    state.last_term_w, state.last_term_h = term_w, term_h
+
+    if term_w < min_w or term_h < min_h then
+        state.size_warning_active = true
+        state.last_warn_term_w, state.last_warn_term_h = term_w, term_h
+        state.last_warn_min_w, state.last_warn_min_h = min_w, min_h
+        draw_size_warning(term_w, term_h, min_w, min_h)
+        state.top_dirty = false
+        state.grid_dirty = false
+        state.bottom_dirty = false
+        state.dirty = false
+        return
+    end
+
+    state.size_warning_active = false
+
+    clear()
+    draw_top_bar(term_w)
+
+    local layout = compute_layout(term_w, term_h)
+    draw_cards_grid(layout.g, layout.max_visible_rows)
+    draw_bottom_area(layout)
+
+    state.top_dirty = false
+    state.grid_dirty = false
+    state.bottom_dirty = false
     state.dirty = false
 end
+
 local function auto_save_tick()
     if state.won then return end
     local sec = elapsed_seconds()
@@ -1196,7 +1352,7 @@ local function handle_mode_input_key(key)
     if key == "esc" or key == "q" or key == "z" then
         state.mode_input = false
         state.spider_diff_input = false
-        state.dirty = true
+        state.bottom_dirty = true
         return
     end
 
@@ -1219,7 +1375,7 @@ local function handle_mode_input_key(key)
         return
     elseif key == "s" then
         state.spider_diff_input = true
-        state.dirty = true
+        state.bottom_dirty = true
         return
     end
 end
@@ -1234,7 +1390,7 @@ local function handle_confirm_key(key)
         state.confirm_mode = nil
     elseif key == "n" or key == "esc" or key == "q" then
         state.confirm_mode = nil
-        state.dirty = true
+        state.bottom_dirty = true
     end
 end
 
@@ -1257,18 +1413,36 @@ end
 local function handle_normal_key(key)
     if key == "left" then
         state.cursor_col = clamp(state.cursor_col - 1, 1, #state.tableau)
-        state.dirty = true
+        clamp_cursor_pick_depth()
+        state.grid_dirty = true
         return
     elseif key == "right" then
         state.cursor_col = clamp(state.cursor_col + 1, 1, #state.tableau)
-        state.dirty = true
+        clamp_cursor_pick_depth()
+        state.grid_dirty = true
+        return
+    elseif key == "up" then
+        local maxd = max_pick_depth(state.cursor_col)
+        if maxd > 0 then
+            state.cursor_pick_depth = clamp((state.cursor_pick_depth or 1) + 1, 1, maxd)
+            state.grid_dirty = true
+        end
+        return
+    elseif key == "down" then
+        local maxd = max_pick_depth(state.cursor_col)
+        if maxd > 0 then
+            state.cursor_pick_depth = clamp((state.cursor_pick_depth or 1) - 1, 1, maxd)
+            state.grid_dirty = true
+        end
         return
     end
 
     if key == "space" then
         if selectable_column(state.cursor_col) then
             state.selected_col = state.cursor_col
-            state.dirty = true
+            local maxd = max_pick_depth(state.cursor_col)
+            state.selected_pick_depth = clamp(state.cursor_pick_depth or 1, 1, math.max(1, maxd))
+            state.grid_dirty = true
         else
             show_message(tr("game.solitaire.select_empty", "Current column cannot be selected."), "dark_gray", 2, false)
         end
@@ -1278,7 +1452,8 @@ local function handle_normal_key(key)
     if key == "enter" then
         if state.selected_col ~= nil then
             local src, dst = state.selected_col, state.cursor_col
-            if src ~= dst and move_tableau_stack(src, dst) then
+            local start_idx = pick_start_from_depth(src, state.selected_pick_depth or 1)
+            if src ~= dst and start_idx ~= nil and move_tableau_stack(src, dst, start_idx) then
                 if state.mode == MODE_SPIDER then remove_spider_complete_runs() else check_win() end
             else
                 show_message(tr("game.solitaire.move_invalid", "Invalid move."), "red", 2, false)
@@ -1294,7 +1469,8 @@ local function handle_normal_key(key)
 
     if key == "z" then
         state.selected_col = nil
-        state.dirty = true
+        state.selected_pick_depth = nil
+        state.grid_dirty = true
         return
     end
 
@@ -1309,6 +1485,7 @@ local function handle_normal_key(key)
                 show_message(tr("game.solitaire.cell_full", "No empty FreeCell."), "dark_gray", 2, false)
             end
         end
+        clamp_cursor_pick_depth()
         return
     end
 
@@ -1322,13 +1499,14 @@ local function handle_normal_key(key)
                 show_message(tr("game.solitaire.cell_empty", "No suitable card in FreeCells."), "dark_gray", 2, false)
             end
         end
+        clamp_cursor_pick_depth()
         return
     end
 
     if key == "p" then
         state.mode_input = true
         state.spider_diff_input = false
-        state.dirty = true
+        state.bottom_dirty = true
         return
     end
 
@@ -1344,13 +1522,13 @@ local function handle_normal_key(key)
 
     if key == "r" then
         state.confirm_mode = "restart"
-        state.dirty = true
+        state.bottom_dirty = true
         return
     end
 
     if key == "q" or key == "esc" then
         state.confirm_mode = "exit"
-        state.dirty = true
+        state.bottom_dirty = true
         return
     end
 end
@@ -1367,7 +1545,7 @@ local function init_game()
 
     if state.launch_mode == "continue" and try_load_progress() then
         state.start_frame = state.frame - elapsed_seconds() * FPS
-        state.dirty = true
+        state.bottom_dirty = true
         show_message(tr("game.solitaire.continue_loaded", "Loaded previous save."), "green", 2, false)
     else
         deal_new_game(MODE_FREECELL)
@@ -1404,7 +1582,11 @@ while true do
     local sec = elapsed_seconds()
     if sec ~= state.last_elapsed_sec then
         state.last_elapsed_sec = sec
-        state.dirty = true
+        if state.dirty then
+            state.top_dirty = false
+        else
+            state.top_dirty = true
+        end
     end
 
     auto_save_tick()
@@ -1425,10 +1607,37 @@ while true do
 
     if state.dirty then
         render()
+    else
+        if (not state.size_warning_active) and state.top_dirty then
+            draw_top_bar(tw)
+            state.top_dirty = false
+        end
+        if (not state.size_warning_active) and state.grid_dirty then
+            render_grid_partial(tw, th)
+        end
+        if (not state.size_warning_active) and state.bottom_dirty then
+            render_bottom_partial(tw, th)
+        end
     end
 
     sleep(FRAME_MS)
 end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
