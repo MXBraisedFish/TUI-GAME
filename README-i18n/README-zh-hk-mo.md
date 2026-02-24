@@ -39,6 +39,7 @@ Windows，Linux，MacOS
 - [空中射擊](#空中射擊)
 - [數字華容道](#數字華容道)
 - [貪食蛇](#貪食蛇)
+- [紙牌接龍](#紙牌接龍)
 
 ## 語言支援
 
@@ -269,6 +270,10 @@ cargo build --release
 ### 貪食蛇
 
 ![貪食蛇](./image/snake-zh-hk-mo.png)
+
+### 紙牌接龍
+
+![紙牌接龍](./image/solitaire-zh-hk-mo.png)
 
 ## 支援本項目
 

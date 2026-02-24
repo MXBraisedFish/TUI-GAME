@@ -39,6 +39,7 @@ Windows, Linux, MacOS
 - [Air Shooter](#air-shooter)
 - [Number Sliding Puzzle](#number-sliding-puzzle)
 - [Snake](#snake)
+- [Solitaire](#solitaire)
 
 ## Language Support
 
@@ -265,6 +266,10 @@ cargo build --release
 ### Snake
 
 ![Snake](./README-i18n/image/snake.png)
+
+### Solitaire
+
+![Solitaire](./README-i18n/image/solitaire.png)
 
 ## Support This Project
 
