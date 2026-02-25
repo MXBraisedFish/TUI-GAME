@@ -40,6 +40,7 @@ Windows, Linux, MacOS
 - [Number Sliding Puzzle](#number-sliding-puzzle)
 - [Snake](#snake)
 - [Solitaire](#solitaire)
+- [Sudoku](#sudoku)
 
 ## Language Support
 
@@ -270,6 +271,10 @@ cargo build --release
 ### Solitaire
 
 ![Solitaire](./README-i18n/image/solitaire.png)
+
+### Sudoku
+
+![Sudoku](./README-i18n/image/sudoku.png)
 
 ## Support This Project
 

@@ -7,7 +7,7 @@ local BT = "    ╔══════╤══════╤══════�
 local BM = "    ╟──────┼──────┼──────╢"
 local BB = "    ╚══════╧══════╧══════╝"
 local S = { d = 3, p = {}, sol = {}, b = {}, g = {}, cf = {}, r = 1, c = 1, undo = {}, f = 0, sf = 0, ef = nil, win = false, bc = false, im = nil, ib =
-"", toast = nil, tu = 0, as = 0, best = nil, dirty = true, le = -1, lt = false, launch = "new", area = nil, tw = 0, th = 0, hl = false }
+"", cm = nil, toast = nil, tu = 0, as = 0, best = nil, dirty = true, le = -1, lt = false, launch = "new", area = nil, tw = 0, th = 0, hl = false }
 local function tr(k, d)
   if type(translate) ~= "function" then return d end
   local ok, v = pcall(translate, k)
@@ -235,7 +235,7 @@ local function restore(x)
   while #S.undo > UL do table.remove(S.undo, 1) end
   local e = math.max(0, math.floor(tonumber(x.e) or tonumber(x.elapsed_sec) or 0)); S.sf = S.f - e * FPS; S.as = math
   .max(0, math.floor(tonumber(x.a) or tonumber(x.last_auto_save_sec) or e))
-  S.toast = tr("game.sudoku.continue_loaded", "Loaded previous save."); S.tu = S.f + 3 * FPS; S.im = nil; S.ib = ""; S.ef = nil; S.win = (x.w == true or x.won == true); S.bc = false
+  S.toast = tr("game.sudoku.continue_loaded", "Loaded previous save."); S.tu = S.f + 3 * FPS; S.im = nil; S.ib = ""; S.cm = nil; S.ef = nil; S.win = (x.w == true or x.won == true); S.bc = false
   recf(); chk(); S.area = nil; S.dirty = true; return true
 end
 local function save_state(show)
@@ -267,8 +267,8 @@ end
 local function reset(d)
   S.d = math.max(1, math.min(5, d or S.d)); local p, s = gen(S.d); S.p, S.sol, S.b = p, s, cp(p); S.g = mx(false)
   for r = 1, N do for c = 1, N do S.g[r][c] = S.p[r][c] ~= 0 end end
-  S.cf = mx(false); S.r, S.c = 1, 1; S.undo = {}; S.sf = S.f; S.ef = nil; S.win = false; S.bc = false; S.im = nil; S.ib =
-  ""; S.toast = nil; S.tu = 0; S.as = 0; S.area = nil; S.dirty = true; recf()
+  S.cf = mx(false); S.r, S.c = 1, 1; S.undo = {}; S.sf = S.f; S.ef = nil; S.win = false; S.bc = false; S.im = nil; S.ib = ""; S.cm =
+  nil; S.toast = nil; S.tu = 0; S.as = 0; S.area = nil; S.dirty = true; recf()
 end
 local function setv(r, c, n)
   if S.g[r][c] then return false end; local o = S.b[r][c]
@@ -314,6 +314,8 @@ local function geo()
   local nw = 0; local ns = { tr("game.sudoku.win_banner", "Sudoku completed!") ..
   " " .. tr("game.sudoku.win_controls", "[R] Restart  [Q]/[ESC] Exit"), tr("game.sudoku.input_jump_hint",
     "Input row col for jump."), tr("game.sudoku.input_difficulty_hint", "Input 1-5 to change difficulty."), tr(
+    "game.sudoku.confirm_exit", "Confirm exit? [Y] Yes / [N] No"), tr("game.sudoku.confirm_restart",
+    "Confirm restart? [Y] Yes / [N] No"), tr(
   "game.sudoku.save_success", "Save successful!"), tr("game.sudoku.save_unavailable", "Save API unavailable.") }
   for i = 1, #ns do nw = math.max(nw, wid(ns[i])) end
   local thh = 3 + bh + 1 + math.max(1, #cl); local sy = math.floor((th - thh) / 2); if sy < 1 then sy = 1 end; local bx =
@@ -358,7 +360,11 @@ end
 local function dnotice(g)
   draw_text(1, g.ny, string.rep(" ", g.tw), "white", "black")
   local l, col = "", "white"
-  if S.im == "difficulty" then
+  if S.cm == "exit" then
+    l = tr("game.sudoku.confirm_exit", "Confirm exit? [Y] Yes / [N] No"); col = "yellow"
+  elseif S.cm == "restart" then
+    l = tr("game.sudoku.confirm_restart", "Confirm restart? [Y] Yes / [N] No"); col = "yellow"
+  elseif S.im == "difficulty" then
     if S.ib == "" then
       l = tr("game.sudoku.input_difficulty_hint", "Input 1-5 to change difficulty."); col = "dark_gray"
     else l = S.ib end
@@ -467,12 +473,34 @@ local function hmode(k)
   end
   return "none"
 end
+local function hconfirm(k)
+  if k == "y" then
+    local m = S.cm; S.cm = nil
+    if m == "exit" then return "exit" end
+    if m == "restart" then
+      reset(S.d); return "changed"
+    end
+    S.dirty = true; return "changed"
+  end
+  if k == "n" or k == "q" or k == "esc" then
+    S.cm = nil; S.dirty = true; return "changed"
+  end
+  return "changed"
+end
 local function input(k)
   if k == nil or k == "" then return "none" end
+  if S.cm ~= nil then return hconfirm(k) end
   if S.im ~= nil then return hmode(k) end
-  if k == "q" or k == "esc" then return "exit" end
+  if k == "q" or k == "esc" then
+    if S.win then return "exit" end
+    S.cm = "exit"; S.dirty = true; return "changed"
+  end
   if k == "r" then
-    reset(S.d); return "changed"
+    if S.win then
+      reset(S.d)
+    else
+      S.cm = "restart"; S.dirty = true
+    end; return "changed"
   end
   if k == "s" then
     save_state(true); return "changed"

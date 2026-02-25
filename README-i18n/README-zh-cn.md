@@ -40,6 +40,7 @@ Windows，Linux，MacOS
 - [数字华容道](#数字华容道)
 - [贪吃蛇](#贪吃蛇)
 - [纸牌接龙](#纸牌接龙)
+- [数独](#数独)
 
 ## 语言支持
 
@@ -270,6 +271,10 @@ cargo build --release
 ### 纸牌接龙
 
 ![纸牌接龙](./image/solitaire-zh-cn.png)
+
+### 数独
+
+![数独](./image/sudoku-zh-cn.png)
 
 ## 支持本项目
 
