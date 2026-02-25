@@ -375,6 +375,9 @@ fn coord_to_terminal(v: i64) -> u16 {
 
 fn parse_color(name: Option<&str>) -> Option<CColor> {
     let raw = name.unwrap_or("").trim();
+    if let Some(hex) = parse_hex_color(raw) {
+        return Some(hex);
+    }
     if let Some(rgb) = parse_rgb_color(raw) {
         return Some(rgb);
     }
@@ -401,6 +404,16 @@ fn parse_color(name: Option<&str>) -> Option<CColor> {
         "dark_grey" | "dark_gray" => Some(CColor::DarkGrey),
         _ => None,
     }
+}
+
+fn parse_hex_color(raw: &str) -> Option<CColor> {
+    if raw.len() != 7 || !raw.starts_with('#') {
+        return None;
+    }
+    let r = u8::from_str_radix(&raw[1..3], 16).ok()?;
+    let g = u8::from_str_radix(&raw[3..5], 16).ok()?;
+    let b = u8::from_str_radix(&raw[5..7], 16).ok()?;
+    Some(CColor::Rgb { r, g, b })
 }
 
 fn parse_rgb_color(raw: &str) -> Option<CColor> {

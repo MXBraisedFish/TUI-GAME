@@ -9,7 +9,9 @@ use ratatui::{symbols, widgets::Wrap};
 use unicode_width::UnicodeWidthStr;
 
 use crate::app::i18n;
-use crate::app::stats::{self, GameStats, LightsOutBest, MazeEscapeBest, MemoryFlipBest, MinesweeperBest, SolitaireBest};
+use crate::app::stats::{
+    self, GameStats, LightsOutBest, MazeEscapeBest, MemoryFlipBest, MinesweeperBest, SolitaireBest, SudokuBest,
+};
 use crate::lua_bridge::script_loader::GameMeta;
 use crate::terminal::renderer;
 
@@ -21,6 +23,7 @@ pub struct GameSelection {
     minesweeper_best: Option<MinesweeperBest>,
     maze_escape_best: Option<MazeEscapeBest>,
     solitaire_best: Option<SolitaireBest>,
+    sudoku_best: Option<SudokuBest>,
     list_state: ListState,
     page_state: PageState,
     launch_placeholder: bool,
@@ -47,6 +50,7 @@ impl GameSelection {
         let minesweeper_best = stats::load_minesweeper_best();
         let maze_escape_best = stats::load_maze_escape_best();
         let solitaire_best = stats::load_solitaire_best();
+        let sudoku_best = stats::load_sudoku_best();
         let initial_page_size = games.len().max(1);
 
         let mut list_state = ListState::default();
@@ -62,6 +66,7 @@ impl GameSelection {
             minesweeper_best,
             maze_escape_best,
             solitaire_best,
+            sudoku_best,
             list_state,
             page_state: PageState {
                 current_page: 0,
@@ -112,6 +117,7 @@ impl GameSelection {
                         || game.id == "pacman"
                         || game.id == "snake"
                         || game.id == "shooter"
+                        || game.id == "sudoku"
                     {
                         return Some(GameSelectionAction::LaunchGame(game));
                     }
@@ -408,6 +414,21 @@ impl GameSelection {
                 i18n::t("game.solitaire.best.spider"),
                 fmt(best.spider_min_time_sec)
             )));
+        } else if game.id == "sudoku" {
+            if let Some(best) = self.sudoku_best {
+                lines.push(Line::from(format!(
+                    "{} {}",
+                    i18n::t("game.sudoku.best_difficulty"),
+                    i18n::t(&format!("game.sudoku.difficulty.{}", best.difficulty))
+                )));
+                lines.push(Line::from(format!(
+                    "{} {}",
+                    i18n::t("game.sudoku.best_time"),
+                    stats::format_duration(best.min_time_sec)
+                )));
+            } else {
+                lines.push(Line::from(i18n::t("game.sudoku.best_none")));
+            }
         } else if game.id == "pacman" {
             lines.push(Line::from(format!(
                 "{} {}",

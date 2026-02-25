@@ -50,6 +50,12 @@ pub struct SolitaireBest {
     pub spider_min_time_sec: Option<u64>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SudokuBest {
+    pub difficulty: usize,
+    pub min_time_sec: u64,
+}
+
 #[derive(Debug, Default, Deserialize, Serialize)]
 struct StatsFile {
     #[serde(default)]
@@ -251,6 +257,37 @@ pub fn load_solitaire_best() -> Option<SolitaireBest> {
     }
 
     None
+}
+
+/// Loads sudoku best record from shared Lua save file.
+pub fn load_sudoku_best() -> Option<SudokuBest> {
+    let path = lua_saves_file_path();
+    if !path.exists() {
+        return None;
+    }
+
+    let raw = fs::read_to_string(path).ok()?;
+    let root = serde_json::from_str::<JsonValue>(&raw).ok()?;
+    let object = root.as_object()?;
+    let best = object.get("sudoku_best")?.as_object()?;
+
+    let difficulty = best
+        .get("difficulty")
+        .and_then(JsonValue::as_u64)
+        .or_else(|| best.get("d").and_then(JsonValue::as_u64))? as usize;
+    let min_time_sec = best
+        .get("min_time_sec")
+        .and_then(JsonValue::as_u64)
+        .or_else(|| best.get("t").and_then(JsonValue::as_u64))?;
+
+    if !(1..=5).contains(&difficulty) || min_time_sec == 0 {
+        return None;
+    }
+
+    Some(SudokuBest {
+        difficulty,
+        min_time_sec,
+    })
 }
 fn stats_file_path() -> PathBuf {
     match path_utils::stats_file() {
