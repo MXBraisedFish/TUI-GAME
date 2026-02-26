@@ -119,6 +119,7 @@ impl GameSelection {
                         || game.id == "shooter"
                         || game.id == "sudoku"
                         || game.id == "tetris"
+                        || game.id == "tic_tac_toe"
                     {
                         return Some(GameSelectionAction::LaunchGame(game));
                     }
