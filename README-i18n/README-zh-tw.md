@@ -42,6 +42,7 @@ Windows，Linux，MacOS
 - [紙牌接龍](#紙牌接龍)
 - [數獨](#數獨)
 - [俄羅斯方塊](#俄羅斯方塊)
+- [圈圈叉叉](#圈圈叉叉)
 
 ## 語言支援
 
@@ -280,6 +281,10 @@ cargo build --release
 ### 俄羅斯方塊
 
 ![俄羅斯方塊](./image/tetris-zh-tw.png)
+
+### 圈圈叉叉
+
+![圈圈叉叉](./image/tic-tac-toe-zh-tw.png)
 
 ## 支援本專案
 

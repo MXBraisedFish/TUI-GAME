@@ -42,6 +42,7 @@ Windows，Linux，MacOS
 - [纸牌接龙](#纸牌接龙)
 - [数独](#数独)
 - [俄罗斯方块](#俄罗斯方块)
+- [井字棋](#井字棋)
 
 ## 语言支持
 
@@ -280,6 +281,10 @@ cargo build --release
 ### 俄罗斯方块
 
 ![俄罗斯方块](./image/tetris-zh-cn.png)
+
+### 井字棋
+
+![井字棋](./image/tic-tac-toe-zh-cn.png)
 
 ## 支持本项目
 

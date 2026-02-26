@@ -42,6 +42,7 @@ Windows, Linux, MacOS
 - [Solitaire](#solitaire)
 - [Sudoku](#sudoku)
 - [Tetris](#tetris)
+- [Tic-Tac-Toe](#tic-tac-toe)
 
 ## Language Support
 
@@ -280,6 +281,10 @@ cargo build --release
 ### Tetris
 
 ![Tetris](./README-i18n/image/tetris.png)
+
+### Tic-Tac-Toe
+
+![Tic-Tac-Toe](./README-i18n/image/tic-tac-toe.png)
 
 ## Support This Project
 

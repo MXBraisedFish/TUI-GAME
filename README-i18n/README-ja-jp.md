@@ -42,6 +42,7 @@ Windows、Linux、MacOS
 - [ソリティア](#ソリティア)
 - [数独](#数独)
 - [テトリス](#テトリス)
+- [三目並べ](#三目並べ)
 
 ## 対応言語
 
@@ -280,6 +281,10 @@ cargo build --release
 ### テトリス
 
 ![テトリス](./image/tetris-ja-jp.png)
+
+### 三目並べ
+
+![三目並べ](./image/tic-tac-toe-ja-jp.png)
 
 ## 本プロジェクトを応援する
 

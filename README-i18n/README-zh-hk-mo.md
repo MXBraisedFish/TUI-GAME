@@ -42,6 +42,7 @@ Windows，Linux，MacOS
 - [紙牌接龍](#紙牌接龍)
 - [數獨](#數獨)
 - [俄羅斯方塊](#俄羅斯方塊)
+- [井字過三關](#井字過三關)
 
 ## 語言支援
 
@@ -284,6 +285,10 @@ cargo build --release
 ### 俄羅斯方塊
 
 ![俄羅斯方塊](./image/tetris-zh-hk-mo.png)
+
+### 井字過三關
+
+![井字過三關](./image/tic-tac-toe-zh-hk-mo.png)
 
 ## 支援本項目
 
