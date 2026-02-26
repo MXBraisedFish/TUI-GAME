@@ -41,6 +41,7 @@ Windows, Linux, MacOS
 - [Snake](#snake)
 - [Solitaire](#solitaire)
 - [Sudoku](#sudoku)
+- [Tetris](#tetris)
 
 ## Language Support
 
@@ -275,6 +276,10 @@ cargo build --release
 ### Sudoku
 
 ![Sudoku](./README-i18n/image/sudoku.png)
+
+### Tetris
+
+![Tetris](./README-i18n/image/tetris.png)
 
 ## Support This Project
 

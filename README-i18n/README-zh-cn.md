@@ -41,6 +41,7 @@ Windows，Linux，MacOS
 - [贪吃蛇](#贪吃蛇)
 - [纸牌接龙](#纸牌接龙)
 - [数独](#数独)
+- [俄罗斯方块](#俄罗斯方块)
 
 ## 语言支持
 
@@ -275,6 +276,10 @@ cargo build --release
 ### 数独
 
 ![数独](./image/sudoku-zh-cn.png)
+
+### 俄罗斯方块
+
+![俄罗斯方块](./image/tetris-zh-cn.png)
 
 ## 支持本项目
 

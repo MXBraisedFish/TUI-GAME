@@ -118,6 +118,7 @@ impl GameSelection {
                         || game.id == "snake"
                         || game.id == "shooter"
                         || game.id == "sudoku"
+                        || game.id == "tetris"
                     {
                         return Some(GameSelectionAction::LaunchGame(game));
                     }
@@ -445,6 +446,12 @@ impl GameSelection {
             lines.push(Line::from(format!(
                 "{} {}",
                 i18n::t("game_selection.label.high_net_profit"),
+                s.high_score
+            )));
+        } else if game.id == "tetris" {
+            lines.push(Line::from(format!(
+                "{} {}",
+                i18n::t("game_selection.label.high_score"),
                 s.high_score
             )));
         } else {

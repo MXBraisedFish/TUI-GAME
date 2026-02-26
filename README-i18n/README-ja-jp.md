@@ -41,6 +41,7 @@ Windows、Linux、MacOS
 - [スネークゲーム](#スネークゲーム)
 - [ソリティア](#ソリティア)
 - [数独](#数独)
+- [テトリス](#テトリス)
 
 ## 対応言語
 
@@ -275,6 +276,10 @@ cargo build --release
 ### 数独
 
 ![数独](./image/sudoku-ja-jp.png)
+
+### テトリス
+
+![テトリス](./image/tetris-ja-jp.png)
 
 ## 本プロジェクトを応援する
 
