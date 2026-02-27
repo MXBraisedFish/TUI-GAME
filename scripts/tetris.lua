@@ -851,12 +851,12 @@ end
 
 local function draw_frame(layout)
     local x, y = layout.board_x, layout.board_y
-    draw_text(x, y, BORDER_TL .. string.rep(BORDER_H, FRAME_W - 2) .. BORDER_TR, "white", "black")
+    draw_text(x, y, BORDER_TL .. string.rep(BORDER_H, FRAME_W - 2) .. BORDER_TR, "blue", "black")
     for r = 1, FRAME_H - 2 do
-        draw_text(x, y + r, BORDER_V, "white", "black")
-        draw_text(x + FRAME_W - 1, y + r, BORDER_V, "white", "black")
+        draw_text(x, y + r, BORDER_V, "blue", "black")
+        draw_text(x + FRAME_W - 1, y + r, BORDER_V, "blue", "black")
     end
-    draw_text(x, y + FRAME_H - 1, BORDER_BL .. string.rep(BORDER_H, FRAME_W - 2) .. BORDER_BR, "white", "black")
+    draw_text(x, y + FRAME_H - 1, BORDER_BL .. string.rep(BORDER_H, FRAME_W - 2) .. BORDER_BR, "blue", "black")
 end
 
 local function build_active_map()

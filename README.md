@@ -2,7 +2,7 @@
 
 # Language
 
-**[简体中文](./README-i18n/README-zh-cn.md)** | **[繁體中文(港澳)](./README-i18n/README-zh-hk-mo.md)** | **[繁體中文(台)](./README-i18n/README-zh-tw.md)** | **[日本語](./README-i18n/README-ja-jp.md)**
+**[简体中文](./README-i18n/README-zh-cn.md)**
 
 # About This Project
 
@@ -48,9 +48,6 @@ Windows, Linux, MacOS
 
 - English  
 - 简体中文
-- 繁體中文(港澳)
-- 繁體中文(台)
-- 日本語
 
 ## Platform Support
 

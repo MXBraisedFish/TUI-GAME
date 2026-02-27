@@ -973,7 +973,7 @@ local function board_geometry()
     local content_w = map_w + gap + info_w
     local content_h = map_h
 
-    local controls = tr("game.pacman.controls", "[?]/[?]/[?]/[?] Move  [R] Restart  [Q]/[ESC] Exit")
+    local controls = tr("game.pacman.controls", "[↑]/[↓]/[←]/[→] Move  [R] Restart  [Q]/[ESC] Exit")
     local controls_w = min_width_for_lines(controls, 3, 24)
     local result_w = key_width(tr("game.pacman.lose_banner", "You lost all lives!") .. " " .. tr("game.pacman.result_controls", "[R] Restart  [Q]/[ESC] Exit"))
     local confirm_w = math.max(
@@ -1062,7 +1062,7 @@ local function draw_message(layout)
 end
 
 local function draw_controls(layout)
-    local controls = tr("game.pacman.controls", "[?]/[?]/[?]/[?] Move  [R] Restart  [Q]/[ESC] Exit")
+    local controls = tr("game.pacman.controls", "[↑]/[↓]/[←]/[→] Move  [R] Restart  [Q]/[ESC] Exit")
     local term_w, _ = terminal_size()
     local lines = wrap_words(controls, math.max(10, term_w - 2))
     if #lines > 3 then lines = { lines[1], lines[2], lines[3] } end
@@ -1097,7 +1097,7 @@ local function minimum_required_size()
     local info_w = build_info_width()
     local content_w = map_w + 4 + info_w
 
-    local controls_text = tr("game.pacman.controls", "[?]/[?]/[?]/[?] Move  [R] Restart  [Q]/[ESC] Exit")
+    local controls_text = tr("game.pacman.controls", "[↑]/[↓]/[←]/[→] Move  [R] Restart  [Q]/[ESC] Exit")
     local controls_w = min_width_for_lines(controls_text, 3, 24)
     local result_w = key_width(tr("game.pacman.lose_banner", "You lost all lives!") .. " " .. tr("game.pacman.result_controls", "[R] Restart  [Q]/[ESC] Exit"))
     local confirm_w = math.max(

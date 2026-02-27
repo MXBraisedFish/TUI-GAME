@@ -2,7 +2,7 @@
 
 # 语言
 
-**[English](../README.md)** | **[繁體中文(港澳)](./README-zh-hk-mo.md)** | **[繁體中文(台)](./README-tw.md)** | **[日本語](./README-ja-jp.md)**
+**[English](../README.md)**
 
 # 本项目是
 
@@ -48,9 +48,6 @@ Windows，Linux，MacOS
 
 - English  
 - 简体中文
-- 繁體中文(港澳)
-- 繁體中文(台)
-- 日本語
 
 ## 平台支持
 
