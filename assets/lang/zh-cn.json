@@ -1,4 +1,4 @@
-{
+﻿{
     "language": "语言",
     "language_name": "简体中文",
     "common.back_hint": "按 ESC / Q 返回主菜单",
@@ -389,6 +389,30 @@
     "game.tic_tac_toe.you": "玩家",
     "game.twenty_four.description": "使用 A/J/Q/K 和 + - * / () 组成一个等于 24 的表达式。",
     "game.twenty_four.name": "24点",
+    "game.twenty_four.best_time": "最短游戏时间",
+    "game.twenty_four.confirm_exit": "确认退出？ [Y] 是 / [N] 否",
+    "game.twenty_four.confirm_restart": "确认重新开始？ [Y] 是 / [N] 否",
+    "game.twenty_four.controls": "[←]/[→] 移动  [1/+][2/-][3/*][4//] 编辑  [Space] 清空  [Z] 添加括号  [X] 清理括号  [P] 难度  [R] 重开  [Q]/[ESC] 退出",
+    "game.twenty_four.err_input": "输入格式错误。",
+    "game.twenty_four.err_paren_cross": "不允许交叉括号。",
+    "game.twenty_four.err_paren_duplicate": "相同括号对已存在。",
+    "game.twenty_four.err_paren_full": "括号颜色最多 4 组。",
+    "game.twenty_four.err_paren_order": "请输入不同坐标，且左坐标小于右坐标。",
+    "game.twenty_four.err_paren_single": "括号至少覆盖两个数字和一个运算符。",
+    "game.twenty_four.err_remove_paren": "该颜色没有可清理的括号。",
+    "game.twenty_four.invalid": "错误",
+    "game.twenty_four.mode.classic": "经典模式",
+    "game.twenty_four.mode.fixed_negative": "定负数模式",
+    "game.twenty_four.mode.flex_negative": "不定负数模式",
+    "game.twenty_four.none": "--:--:--",
+    "game.twenty_four.prompt_add_paren": "添加括号：输入 X Y（1-9），回车确认",
+    "game.twenty_four.prompt_difficulty": "设置难度：1 经典 / 2 定负数 / 3 不定负数",
+    "game.twenty_four.prompt_remove_paren": "清理括号：输入颜色编号 1-4",
+    "game.twenty_four.ready": "填满四个符号后自动结算。",
+    "game.twenty_four.result_controls": "[R] 重开  [Q]/[ESC] 退出",
+    "game.twenty_four.steps": "步骤数",
+    "game.twenty_four.time": "游戏时间",
+    "game.twenty_four.win_banner": "你组出了最佳算式！",
     "game.wordle.description": "根据每次尝试的颜色提示，猜出隐藏的单词。",
     "game.wordle.name": "Wordle",
     "game_selection.empty": "暂无可用游戏",
@@ -428,3 +452,5 @@
     "warning.required": "需要尺寸",
     "warning.size_title": "终端窗口过小"
 }
+
+

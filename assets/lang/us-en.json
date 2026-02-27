@@ -1,4 +1,4 @@
-{
+﻿{
     "language": "Language",
     "language_name": "English",
     "common.back_hint": "Press ESC or Q to return to main menu",
@@ -389,6 +389,30 @@
     "game.tic_tac_toe.you": "You",
     "game.twenty_four.description": "Use A/J/Q/K and + - * / () to form an expression equal to 24.",
     "game.twenty_four.name": "24 Points",
+    "game.twenty_four.best_time": "Best Time",
+    "game.twenty_four.confirm_exit": "Confirm exit? [Y] Yes / [N] No",
+    "game.twenty_four.confirm_restart": "Confirm restart? [Y] Yes / [N] No",
+    "game.twenty_four.controls": "[Left]/[Right] Move  [1/+][2/-][3/*][4//] Edit  [Space] Clear  [Z] Add Brackets  [X] Remove Brackets  [P] Difficulty  [R] Restart  [Q]/[ESC] Exit",
+    "game.twenty_four.err_input": "Invalid input.",
+    "game.twenty_four.err_paren_cross": "Crossed brackets are not allowed.",
+    "game.twenty_four.err_paren_duplicate": "Same bracket pair already exists.",
+    "game.twenty_four.err_paren_full": "Only 4 bracket colors are available.",
+    "game.twenty_four.err_paren_order": "Use different coordinates: left < right.",
+    "game.twenty_four.err_paren_single": "Brackets must cover at least two numbers and one operator.",
+    "game.twenty_four.err_remove_paren": "No brackets for this color index.",
+    "game.twenty_four.invalid": "ERR",
+    "game.twenty_four.mode.classic": "Classic",
+    "game.twenty_four.mode.fixed_negative": "Fixed Negative",
+    "game.twenty_four.mode.flex_negative": "Flexible Negative",
+    "game.twenty_four.none": "--:--:--",
+    "game.twenty_four.prompt_add_paren": "Add brackets: input X Y (1-9), Enter confirm",
+    "game.twenty_four.prompt_difficulty": "Set difficulty: 1 Classic / 2 Fixed Negative / 3 Flexible Negative",
+    "game.twenty_four.prompt_remove_paren": "Remove brackets: input color index 1-4",
+    "game.twenty_four.ready": "Fill all operators to evaluate.",
+    "game.twenty_four.result_controls": "[R] Restart  [Q]/[ESC] Exit",
+    "game.twenty_four.steps": "Steps",
+    "game.twenty_four.time": "Time",
+    "game.twenty_four.win_banner": "You found the best expression!",
     "game.wordle.description": "Guess the hidden word using color hints from each attempt.",
     "game.wordle.name": "Wordle",
     "game_selection.empty": "No games available",
@@ -428,3 +452,5 @@
     "warning.required": "Required size",
     "warning.size_title": "Terminal Too Small"
 }
+
+
