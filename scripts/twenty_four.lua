@@ -7,15 +7,16 @@ GAME_META = {
 local FPS, FRAME_MS, EPS = 60, 16, 1e-6
 local M_CLASSIC, M_FIXED_NEG, M_FLEX_NEG = 1, 2, 3
 local OP_EMPTY = "_"
-local PAREN_COLORS = { "magenta", "#d8b4fe", "light_blue", "light_green" }
+local PAREN_COLORS = { "magenta", "light_cyan", "light_green", "orange" }
 
 local S = {
     mode = M_CLASSIC,
     base_nums = { 1, 2, 3, 4 },
     nums = { 1, 2, 3, 4 },
-    ops = { OP_EMPTY, OP_EMPTY, OP_EMPTY, OP_EMPTY },
+    ops = { OP_EMPTY, OP_EMPTY, OP_EMPTY },
     pairs = {},
     cursor = 1,
+    cursor_mode = "op",
     frame = 0,
     start_frame = 0,
     end_frame = nil,
@@ -34,6 +35,8 @@ local S = {
     dirty = true,
     last_elapsed = -1,
     last_toast = false,
+    time_dirty = false,
+    last_stat = "",
     tw = 0,
     th = 0,
     warn = false,
@@ -126,15 +129,20 @@ local function mode_name(m)
 end
 
 local function active_list()
-    if S.mode == M_FLEX_NEG then
+    if S.cursor_mode == "num" then
         return {
-            { k = "op", i = 1 }, { k = "num", i = 1 }, { k = "op", i = 2 }, { k = "num", i = 2 },
-            { k = "op", i = 3 }, { k = "num", i = 3 }, { k = "op", i = 4 }, { k = "num", i = 4 },
+            { k = "num", i = 1 },
+            { k = "num", i = 2 },
+            { k = "num", i = 3 },
+            { k = "num", i = 4 },
         }
     end
-    return { { k = "op", i = 1 }, { k = "op", i = 2 }, { k = "op", i = 3 }, { k = "op", i = 4 } }
+    return {
+        { k = "op", i = 1 },
+        { k = "op", i = 2 },
+        { k = "op", i = 3 },
+    }
 end
-
 local function focus()
     local ls = active_list()
     if S.cursor < 1 then S.cursor = 1 end
@@ -222,9 +230,10 @@ local function reset_round(mode)
             break
         end
     end
-    S.ops = { OP_EMPTY, OP_EMPTY, OP_EMPTY, OP_EMPTY }
+    S.ops = { OP_EMPTY, OP_EMPTY, OP_EMPTY }
     S.pairs = {}
     S.cursor = 1
+    S.cursor_mode = "op"
     S.steps = 0
     S.ready = false
     S.value = nil
@@ -243,7 +252,7 @@ end
 
 local function pair_map()
     local L, R = {}, {}
-    for i = 1, 9 do L[i], R[i] = {}, {} end
+    for i = 1, 8 do L[i], R[i] = {}, {} end
     for c = 1, 4 do
         local p = S.pairs[c]
         if p then
@@ -251,7 +260,7 @@ local function pair_map()
             R[p.r][#R[p.r] + 1] = { c = c, l = p.l, r = p.r }
         end
     end
-    for i = 1, 9 do
+    for i = 1, 8 do
         table.sort(L[i], function(a, b) if a.l ~= b.l then return a.l < b.l end return a.r > b.r end)
         table.sort(R[i], function(a, b) if a.r ~= b.r then return a.r < b.r end return a.l > b.l end)
     end
@@ -259,13 +268,18 @@ local function pair_map()
 end
 
 local function add_pair(l, r)
-    if l < 1 or r > 9 or l >= r then
+    if l < 1 or r > 8 or l >= r then
         S.toast, S.toast_color, S.toast_until = tr("game.twenty_four.err_paren_order", "Use different coordinates: left < right."), "red", S.frame + FPS * 2
         S.dirty = true; return false
     end
     local nums, ops = 0, 0
-    for p = l, r - 1 do if p % 2 == 0 then nums = nums + 1 else ops = ops + 1 end end
-    if nums < 2 or ops < 1 then
+    for p = l, r - 1 do
+        if p % 2 == 1 then nums = nums + 1 else ops = ops + 1 end
+    end
+
+    -- Valid sub-expression must be: number ... number, and numbers = operators + 1.
+    local valid_shape = (l % 2 == 1) and (r % 2 == 0) and (nums >= 2) and (ops >= 1) and (nums == ops + 1)
+    if not valid_shape then
         S.toast, S.toast_color, S.toast_until = tr("game.twenty_four.err_paren_single", "Brackets must cover at least two numbers and one operator."), "red", S.frame + FPS * 2
         S.dirty = true; return false
     end
@@ -295,15 +309,23 @@ end
 
 local function eval_expr()
     S.ready, S.value = false, nil
-    for i = 1, 4 do if S.ops[i] == OP_EMPTY then return end end
-    local toks = { S.ops[1], tostring(S.nums[1]), S.ops[2], tostring(S.nums[2]), S.ops[3], tostring(S.nums[3]), S.ops[4], tostring(S.nums[4]) }
+    for i = 1, 3 do if S.ops[i] == OP_EMPTY then return end end
+
+    local toks = {
+        tostring(S.nums[1]), S.ops[1],
+        tostring(S.nums[2]), S.ops[2],
+        tostring(S.nums[3]), S.ops[3],
+        tostring(S.nums[4]),
+    }
+
     local L, R = pair_map()
     local parts = {}
-    for b = 1, 9 do
+    for b = 1, 8 do
         for i = 1, #R[b] do parts[#parts + 1] = ")" end
         for i = 1, #L[b] do parts[#parts + 1] = "(" end
-        if b <= 8 then parts[#parts + 1] = toks[b] end
+        if b <= 7 then parts[#parts + 1] = toks[b] end
     end
+
     local expr = table.concat(parts, "")
     S.ready = true
     local fn = load("return " .. expr)
@@ -324,26 +346,30 @@ local function set_num_sign(i, sign)
     if S.nums[i] ~= t then S.nums[i] = t; S.steps = S.steps + 1; eval_expr(); S.dirty = true end
 end
 
+
+local function swap_nums(a, b)
+    if a < 1 or a > 4 or b < 1 or b > 4 or a == b then return end
+    local t = S.nums[a]
+    S.nums[a] = S.nums[b]
+    S.nums[b] = t
+    S.steps = S.steps + 1
+    eval_expr()
+    S.dirty = true
+end
 local function msg()
     if S.confirm == "restart" then return tr("game.twenty_four.confirm_restart", "Confirm restart? [Y] Yes / [N] No"), "yellow" end
     if S.confirm == "exit" then return tr("game.twenty_four.confirm_exit", "Confirm exit? [Y] Yes / [N] No"), "yellow" end
     if S.input_mode == "paren_add" then
-        local t = tr("game.twenty_four.prompt_add_paren", "Add brackets: input X Y (1-9), Enter confirm")
-        if S.input_buf ~= "" then t = t .. "  " .. S.input_buf end
-        return t, "yellow"
+        if S.input_buf == "" then
+            return tr("game.twenty_four.prompt_add_paren", "Add brackets: input X Y (1-8), Enter confirm"), "dark_gray"
+        end
+        return S.input_buf, "yellow"
     end
     if S.input_mode == "paren_remove" then
-        local d = {}
-        for i = 1, 4 do if S.pairs[i] then d[#d + 1] = tostring(i) .. "()" end end
-        local t = tr("game.twenty_four.prompt_remove_paren", "Remove brackets: input color index 1-4")
-        if #d > 0 then t = t .. "  " .. table.concat(d, " ") end
-        if S.input_buf ~= "" then t = t .. "  " .. S.input_buf end
-        return t, "yellow"
+        return "", "yellow"
     end
     if S.input_mode == "difficulty" then
-        local t = tr("game.twenty_four.prompt_difficulty", "Set difficulty: 1 Classic / 2 Fixed Negative / 3 Flexible Negative")
-        if S.input_buf ~= "" then t = t .. "  " .. S.input_buf end
-        return t, "yellow"
+        return tr("game.twenty_four.prompt_difficulty", "Set difficulty: 1 Classic / 2 Fixed Negative / 3 Flexible Negative"), "dark_gray"
     end
     if S.win then return tr("game.twenty_four.win_banner", "You found the best expression!") .. "  " .. tr("game.twenty_four.result_controls", "[R] Restart  [Q]/[ESC] Exit"), "green" end
     if S.toast and S.frame <= S.toast_until then return S.toast, S.toast_color end
@@ -352,7 +378,7 @@ end
 
 local function result_text()
     if not S.ready then return "?", "blue" end
-    if S.value == nil then return tr("game.twenty_four.invalid", "ERR"), "red" end
+    if S.value == nil then return "NaN", "red" end
     local iv = math.floor(S.value + 0.5)
     local t = (math.abs(S.value - iv) < 1e-9) and tostring(iv) or string.format("%.6g", S.value)
     return t, (math.abs(S.value - 24) < EPS) and "green" or "red"
@@ -360,50 +386,109 @@ end
 
 local function render_mid(y, tw)
     local f = focus()
-    local toks = { S.ops[1], tostring(S.nums[1]), S.ops[2], tostring(S.nums[2]), S.ops[3], tostring(S.nums[3]), S.ops[4], tostring(S.nums[4]) }
+    local toks = {
+        tostring(S.nums[1]), S.ops[1],
+        tostring(S.nums[2]), S.ops[2],
+        tostring(S.nums[3]), S.ops[3],
+        tostring(S.nums[4]),
+    }
+
     local L, R = pair_map()
-    local seg, tx, cur = {}, {}, 1
-    for b = 1, 9 do
-        for i = 1, #R[b] do seg[#seg + 1] = { t = ")", fg = PAREN_COLORS[R[b][i].c], bg = "black" }; cur = cur + 1 end
-        for i = 1, #L[b] do seg[#seg + 1] = { t = "(", fg = PAREN_COLORS[L[b][i].c], bg = "black" }; cur = cur + 1 end
-        if b <= 8 then
-            tx[b] = cur
-            local fg, bg = "white", "black"
-            local is_op = (b % 2 == 1)
-            local oi, ni = math.floor((b + 1) / 2), math.floor(b / 2)
-            local hit = (is_op and f.k == "op" and f.i == oi) or ((not is_op) and f.k == "num" and f.i == ni)
-            if is_op then
-                if toks[b] == OP_EMPTY then fg = "yellow" else fg = hit and "#3f48cc" or "cyan" end
-                if hit then bg = "light_yellow" end
-            else
-                fg = hit and "black" or "white"
-                if hit then bg = "light_yellow" end
-            end
-            seg[#seg + 1] = { t = toks[b], fg = fg, bg = bg }
-            cur = cur + wid(toks[b])
-            if b < 8 then seg[#seg + 1] = { t = "  ", fg = "white", bg = "black" }; cur = cur + 2 end
+    local seg, bx, cur = {}, {}, 1
+
+    local function boundary_chars(b)
+        local out = {}
+        for i = 1, #R[b] do out[#out + 1] = { t = ")", fg = PAREN_COLORS[R[b][i].c], bg = "black" } end
+        for i = 1, #L[b] do out[#out + 1] = { t = "(", fg = PAREN_COLORS[L[b][i].c], bg = "black" } end
+        return out
+    end
+
+    local function push_boundary_slot(b)
+        local bc = boundary_chars(b)
+        local used = math.min(#bc, 2)
+        local align_right = (b % 2 == 1) -- odd boundaries are before numbers
+
+        if align_right and used < 2 then
+            local sp = 2 - used
+            seg[#seg + 1] = { t = string.rep(" ", sp), fg = "white", bg = "black" }
+            cur = cur + sp
+        end
+
+        for i = 1, used do
+            seg[#seg + 1] = bc[i]
+            cur = cur + 1
+        end
+
+        if (not align_right) and used < 2 then
+            local sp = 2 - used
+            seg[#seg + 1] = { t = string.rep(" ", sp), fg = "white", bg = "black" }
+            cur = cur + sp
         end
     end
-    tx[9] = cur + 2
+
+    bx[1] = cur
+    push_boundary_slot(1)
+
+    for b = 1, 7 do
+        local is_num = (b % 2 == 1)
+        local fg, bg = "white", "black"
+
+        if is_num then
+            local ni = math.floor((b + 1) / 2)
+            local hit = (f.k == "num" and f.i == ni)
+            fg = hit and "black" or "white"
+            if hit then bg = "light_yellow" end
+        else
+            local oi = math.floor(b / 2)
+            local hit = (f.k == "op" and f.i == oi)
+            if toks[b] == OP_EMPTY then
+                fg = "yellow"
+            else
+                fg = hit and "#3f48cc" or "cyan"
+            end
+            if hit then bg = "light_yellow" end
+        end
+
+        seg[#seg + 1] = { t = toks[b], fg = fg, bg = bg }
+        cur = cur + wid(toks[b])
+
+        bx[b + 1] = cur
+        push_boundary_slot(b + 1)
+    end
+
     local rv, rc = result_text()
-    seg[#seg + 1] = { t = "  = ", fg = "white", bg = "black" }
+    seg[#seg + 1] = { t = "= ", fg = "white", bg = "black" }
     seg[#seg + 1] = { t = rv, fg = rc, bg = "black" }
-    local sw = 0; for i = 1, #seg do sw = sw + wid(seg[i].t) end
-    local sx = cx(string.rep(" ", sw), 1, tw)
+
+    local sw = 0
+    for i = 1, #seg do sw = sw + wid(seg[i].t) end
+
+    -- Axis rows stay at base position; expression row shifts right by 2 cells.
+    local sx_axis = cx(string.rep(" ", sw), 1, tw)
+    local max_sx = math.max(1, tw - sw + 1)
+    if sx_axis > max_sx then sx_axis = max_sx end
+    local sx_expr = sx_axis
+    if sx_expr > max_sx then sx_expr = max_sx end
 
     draw_text(1, y, string.rep(" ", tw), "white", "black")
     draw_text(1, y + 1, string.rep(" ", tw), "white", "black")
     draw_text(1, y + 2, string.rep(" ", tw), "white", "black")
-    for i = 1, 9 do
-        local x = sx + tx[i] - 1
+
+    for i = 1, 8 do
+        local x = sx_axis + bx[i] - 1
         draw_text(x, y, tostring(i), "white", "black")
-        draw_text(x, y + 1, "|", "white", "black")
+        draw_text(x, y + 1, "├┐", "white", "black")
     end
-    local x = sx
-    for i = 1, #seg do draw_text(x, y + 2, seg[i].t, seg[i].fg, seg[i].bg); x = x + wid(seg[i].t) end
+
+    local x = sx_expr
+    for i = 1, #seg do
+        draw_text(x, y + 2, seg[i].t, seg[i].fg, seg[i].bg)
+        x = x + wid(seg[i].t)
+    end
 end
+
 local function controls()
-    return tr("game.twenty_four.controls", "[Left]/[Right] Move  [1/+][2/-][3/*][4//] Edit  [Space] Clear  [Z] Add Brackets  [X] Remove Brackets  [P] Difficulty  [R] Restart  [Q]/[ESC] Exit")
+    return tr("game.twenty_four.controls", "[Left]/[Right] Move  [C] Num/Symbol Mode  [Up]/[Down] Reorder (Num Mode)  [1/+][2/-][3/*][4//] Edit  [Space] Clear  [Z] Add Brackets  [X] Remove Brackets  [P] Difficulty  [R] Restart  [Q]/[ESC] Exit")
 end
 
 local function min_size()
@@ -443,17 +528,53 @@ local function size_ok()
     return false
 end
 
+local function status_line_text()
+    return tr("game.twenty_four.time", "Time") .. " " .. fmt(sec()) .. "  " .. tr("game.twenty_four.steps", "Steps") .. " " .. tostring(S.steps)
+end
+
+local function draw_paren_remove_prompt(y, tw)
+    local segs = {}
+    for i = 1, 4 do
+        if S.pairs[i] then
+            if #segs > 0 then
+                segs[#segs + 1] = { t = "   ", fg = "white", bg = "black" }
+            end
+            segs[#segs + 1] = { t = tostring(i) .. " ", fg = "yellow", bg = "black" }
+            segs[#segs + 1] = { t = "(", fg = PAREN_COLORS[i], bg = "black" }
+            segs[#segs + 1] = { t = ")", fg = PAREN_COLORS[i], bg = "black" }
+        end
+    end
+
+    if #segs == 0 then
+        local t = tr("game.twenty_four.no_parens", "No brackets in current expression.")
+        draw_text(cx(t, 1, tw), y, t, "dark_gray", "black")
+        return
+    end
+
+    local w = 0
+    for i = 1, #segs do w = w + wid(segs[i].t) end
+    local x = cx(string.rep(" ", w), 1, tw)
+    for i = 1, #segs do
+        draw_text(x, y, segs[i].t, segs[i].fg, segs[i].bg)
+        x = x + wid(segs[i].t)
+    end
+end
 local function render()
     local tw, th = ts()
     local lines = wrap(controls(), math.max(20, tw - 2)); if #lines > 3 then lines = { lines[1], lines[2], lines[3] } end
     local top = math.floor((th - 10 - #lines) / 2); if top < 1 then top = 1 end
     local best = tr("game.twenty_four.best_time", "Best Time") .. "  " .. ((S.best_time > 0) and fmt(S.best_time) or tr("game.twenty_four.none", "--:--:--"))
-    local stat = tr("game.twenty_four.time", "Time") .. " " .. fmt(sec()) .. "  " .. tr("game.twenty_four.steps", "Steps") .. " " .. tostring(S.steps)
+    local stat = status_line_text()
     local m, mc = msg()
     for i = 0, 2 do draw_text(1, top + i, string.rep(" ", tw), "white", "black") end
     draw_text(cx(best, 1, tw), top, best, "dark_gray", "black")
     draw_text(cx(stat, 1, tw), top + 1, stat, "light_cyan", "black")
-    draw_text(cx(m, 1, tw), top + 2, m, mc, "black")
+    S.last_stat = stat
+    if S.input_mode == "paren_remove" then
+        draw_paren_remove_prompt(top + 2, tw)
+    else
+        draw_text(cx(m, 1, tw), top + 2, m, mc, "black")
+    end
     render_mid(top + 4, tw)
     local cy = top + 8
     for i = 0, 2 do draw_text(1, cy + i, string.rep(" ", tw), "white", "black") end
@@ -461,6 +582,19 @@ local function render()
     for i = 1, #lines do draw_text(cx(lines[i], 1, tw), cy + off + i - 1, lines[i], "white", "black") end
 end
 
+
+local function render_time_only()
+    local tw, th = ts()
+    local lines = wrap(controls(), math.max(20, tw - 2)); if #lines > 3 then lines = { lines[1], lines[2], lines[3] } end
+    local top = math.floor((th - 10 - #lines) / 2); if top < 1 then top = 1 end
+    local stat = status_line_text()
+    local old = S.last_stat or ""
+    local cw = math.max(wid(old), wid(stat))
+    local clear_x = cx(string.rep(" ", cw), 1, tw)
+    draw_text(clear_x, top + 1, string.rep(" ", cw), "white", "black")
+    draw_text(cx(stat, 1, tw), top + 1, stat, "light_cyan", "black")
+    S.last_stat = stat
+end
 local function handle_confirm(k)
     if k == "y" or k == "enter" then
         if S.confirm == "restart" then S.confirm = nil; reset_round(S.mode); return "changed" end
@@ -474,8 +608,12 @@ local function handle_input_mode(k)
     if k == "esc" or k == "q" then S.input_mode = nil; S.input_buf = ""; S.dirty = true; return "changed" end
     if k == "backspace" or k == "delete" then if #S.input_buf > 0 then S.input_buf = string.sub(S.input_buf, 1, #S.input_buf - 1); S.dirty = true end; return "changed" end
     if S.input_mode == "difficulty" then
-        if k:match("^[1-3]$") and #S.input_buf < 1 then S.input_buf = k; S.dirty = true; return "changed" end
-        if k == "enter" then local d = tonumber(S.input_buf); S.input_mode = nil; S.input_buf = ""; if d then reset_round(d) else S.dirty = true end; return "changed" end
+        if k:match("^[1-3]$") then
+            local d = tonumber(k)
+            S.input_mode, S.input_buf = nil, ""
+            reset_round(d)
+            return "changed"
+        end
         return "changed"
     end
     if S.input_mode == "paren_add" then
@@ -490,11 +628,16 @@ local function handle_input_mode(k)
         return "changed"
     end
     if S.input_mode == "paren_remove" then
-        if k:match("^[1-4]$") and #S.input_buf < 1 then S.input_buf = k; S.dirty = true; return "changed" end
-        if k == "enter" then
-            local i = tonumber(S.input_buf)
-            S.input_mode, S.input_buf = nil, ""
-            if i and S.pairs[i] then S.pairs[i] = nil; S.steps = S.steps + 1; eval_expr() else S.toast, S.toast_color, S.toast_until = tr("game.twenty_four.err_remove_paren", "No brackets for this color index."), "red", S.frame + FPS * 2 end
+        if k:match("^[1-4]$") then
+            local i = tonumber(k)
+            if i and S.pairs[i] then
+                S.pairs[i] = nil
+                S.steps = S.steps + 1
+                eval_expr()
+                S.input_mode, S.input_buf = nil, ""
+            else
+                S.toast, S.toast_color, S.toast_until = tr("game.twenty_four.err_remove_paren", "No brackets for this color index."), "red", S.frame + FPS * 2
+            end
             S.dirty = true
             return "changed"
         end
@@ -505,24 +648,96 @@ end
 
 local function handle_active(k)
     local f, n = focus()
-    if k == "left" then if S.cursor > 1 then S.cursor = S.cursor - 1; S.dirty = true end; return "changed" end
-    if k == "right" then if S.cursor < n then S.cursor = S.cursor + 1; S.dirty = true end; return "changed" end
-    if S.win then if k == "r" then reset_round(S.mode); return "changed" end; if k == "q" or k == "esc" then return "exit" end; return "none" end
+
+    if k == "left" then
+        if S.cursor > 1 then S.cursor = S.cursor - 1; S.dirty = true end
+        return "changed"
+    end
+    if k == "right" then
+        if S.cursor < n then S.cursor = S.cursor + 1; S.dirty = true end
+        return "changed"
+    end
+
+    if S.win then
+        if k == "r" then reset_round(S.mode); return "changed" end
+        if k == "q" or k == "esc" then return "exit" end
+        return "none"
+    end
+
+    if k == "c" then
+        if S.cursor_mode == "op" then
+            S.cursor_mode = "num"
+            if S.cursor > 4 then S.cursor = 4 end
+        else
+            S.cursor_mode = "op"
+            if S.cursor > 3 then S.cursor = 3 end
+        end
+        S.dirty = true
+        return "changed"
+    end
+
+    if k == "up" and f.k == "num" then
+        if f.i > 1 then
+            swap_nums(f.i, f.i - 1)
+            S.cursor = S.cursor - 1
+        end
+        return "changed"
+    end
+    if k == "down" and f.k == "num" then
+        if f.i < 4 then
+            swap_nums(f.i, f.i + 1)
+            S.cursor = S.cursor + 1
+        end
+        return "changed"
+    end
+
     if k == "r" then S.confirm = "restart"; S.dirty = true; return "changed" end
     if k == "q" or k == "esc" then S.confirm = "exit"; S.dirty = true; return "changed" end
     if k == "p" then S.input_mode, S.input_buf = "difficulty", ""; S.dirty = true; return "changed" end
     if k == "z" then S.input_mode, S.input_buf = "paren_add", ""; S.dirty = true; return "changed" end
-    if k == "x" then S.input_mode, S.input_buf = "paren_remove", ""; S.dirty = true; return "changed" end
+    if k == "x" then
+        local has_pair = false
+        for i = 1, 4 do
+            if S.pairs[i] then has_pair = true; break end
+        end
+        if has_pair then
+            S.input_mode, S.input_buf = "paren_remove", ""
+        else
+            S.toast = tr("game.twenty_four.no_parens", "No brackets in current expression.")
+            S.toast_color = "dark_gray"
+            S.toast_until = S.frame + FPS * 2
+        end
+        S.dirty = true
+        return "changed"
+    end
+
     if k == "space" and f.k == "op" then set_op(f.i, OP_EMPTY); return "changed" end
-    if k == "1" or k == "+" then if f.k == "op" then set_op(f.i, "+") elseif f.k == "num" and S.mode == M_FLEX_NEG then set_num_sign(f.i, 1) end; return "changed" end
-    if k == "2" or k == "-" then if f.k == "op" then set_op(f.i, "-") elseif f.k == "num" and S.mode == M_FLEX_NEG then set_num_sign(f.i, -1) end; return "changed" end
+
+    if k == "1" or k == "+" then
+        if f.k == "op" then
+            set_op(f.i, "+")
+        elseif f.k == "num" and S.mode == M_FLEX_NEG then
+            set_num_sign(f.i, 1)
+        end
+        return "changed"
+    end
+
+    if k == "2" or k == "-" then
+        if f.k == "op" then
+            set_op(f.i, "-")
+        elseif f.k == "num" and S.mode == M_FLEX_NEG then
+            set_num_sign(f.i, -1)
+        end
+        return "changed"
+    end
+
     if k == "3" or k == "*" then if f.k == "op" then set_op(f.i, "*") end; return "changed" end
     if k == "4" or k == "/" then if f.k == "op" then set_op(f.i, "/") end; return "changed" end
+
     return "none"
 end
-
 local function refresh_flags()
-    local e = sec(); if e ~= S.last_elapsed then S.last_elapsed = e; S.dirty = true end
+    local e = sec(); if e ~= S.last_elapsed then S.last_elapsed = e; S.time_dirty = true end
     local tv = S.toast ~= nil and S.frame <= S.toast_until
     if tv ~= S.last_toast then S.last_toast = tv; S.dirty = true end
     if (not tv) and S.toast ~= nil then S.toast = nil; S.dirty = true end
@@ -545,7 +760,14 @@ local function loop()
             if S.confirm then a = handle_confirm(k) elseif S.input_mode then a = handle_input_mode(k) else a = handle_active(k) end
             if a == "exit" then return end
             refresh_flags()
-            if S.dirty then render(); S.dirty = false end
+            if S.dirty then
+                render()
+                S.dirty = false
+                S.time_dirty = false
+            elseif S.time_dirty then
+                render_time_only()
+                S.time_dirty = false
+            end
             S.frame = S.frame + 1
         else
             if k == "q" or k == "esc" then return end

@@ -43,6 +43,7 @@ Windows, Linux, MacOS
 - [Sudoku](#sudoku)
 - [Tetris](#tetris)
 - [Tic-Tac-Toe](#tic-tac-toe)
+- [24 Points](#24-points)
 
 ## Language Support
 
@@ -282,6 +283,10 @@ cargo build --release
 ### Tic-Tac-Toe
 
 ![Tic-Tac-Toe](./README-i18n/image/tic-tac-toe.png)
+
+### 24 Points
+
+![24 Points](./README-i18n/image/24-points.png)
 
 ## Support This Project
 

@@ -1,4 +1,4 @@
-﻿{
+{
     "language": "语言",
     "language_name": "简体中文",
     "common.back_hint": "按 ESC / Q 返回主菜单",
@@ -392,7 +392,7 @@
     "game.twenty_four.best_time": "最短游戏时间",
     "game.twenty_four.confirm_exit": "确认退出？ [Y] 是 / [N] 否",
     "game.twenty_four.confirm_restart": "确认重新开始？ [Y] 是 / [N] 否",
-    "game.twenty_four.controls": "[←]/[→] 移动  [1/+][2/-][3/*][4//] 编辑  [Space] 清空  [Z] 添加括号  [X] 清理括号  [P] 难度  [R] 重开  [Q]/[ESC] 退出",
+    "game.twenty_four.controls": "[←]/[→] 移动  [C] 数字/符号模式  [↑]/[↓] 交换数字（数字模式）  [1/+][2/-][3/*][4//] 编辑  [Space] 清空  [Z] 添加括号  [X] 清理括号  [P] 难度  [R] 重开  [Q]/[ESC] 退出",
     "game.twenty_four.err_input": "输入格式错误。",
     "game.twenty_four.err_paren_cross": "不允许交叉括号。",
     "game.twenty_four.err_paren_duplicate": "相同括号对已存在。",
@@ -405,9 +405,10 @@
     "game.twenty_four.mode.fixed_negative": "定负数模式",
     "game.twenty_four.mode.flex_negative": "不定负数模式",
     "game.twenty_four.none": "--:--:--",
-    "game.twenty_four.prompt_add_paren": "添加括号：输入 X Y（1-9），回车确认",
+    "game.twenty_four.prompt_add_paren": "添加括号：输入 X Y（1-8），回车确认",
     "game.twenty_four.prompt_difficulty": "设置难度：1 经典 / 2 定负数 / 3 不定负数",
     "game.twenty_four.prompt_remove_paren": "清理括号：输入颜色编号 1-4",
+    "game.twenty_four.no_parens": "当前算式中没有括号。",
     "game.twenty_four.ready": "填满四个符号后自动结算。",
     "game.twenty_four.result_controls": "[R] 重开  [Q]/[ESC] 退出",
     "game.twenty_four.steps": "步骤数",
@@ -452,5 +453,7 @@
     "warning.required": "需要尺寸",
     "warning.size_title": "终端窗口过小"
 }
+
+
 
 

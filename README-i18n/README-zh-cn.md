@@ -43,6 +43,7 @@ Windows，Linux，MacOS
 - [数独](#数独)
 - [俄罗斯方块](#俄罗斯方块)
 - [井字棋](#井字棋)
+- [24点](#24点)
 
 ## 语言支持
 
@@ -282,6 +283,10 @@ cargo build --release
 ### 井字棋
 
 ![井字棋](./image/tic-tac-toe-zh-cn.png)
+
+### 24点
+
+![24点](./image/24-points-zh-cn.png)
 
 ## 支持本项目
 
