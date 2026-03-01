@@ -289,6 +289,34 @@ pub fn load_sudoku_best() -> Option<SudokuBest> {
         min_time_sec,
     })
 }
+
+/// Loads 24-points best time from shared Lua save file.
+pub fn load_twenty_four_best_time() -> Option<u64> {
+    let path = lua_saves_file_path();
+    if !path.exists() {
+        return None;
+    }
+
+    let raw = fs::read_to_string(path).ok()?;
+    let root = serde_json::from_str::<JsonValue>(&raw).ok()?;
+    let object = root.as_object()?;
+    let best = object.get("twenty_four_best_time")?;
+
+    if let Some(sec) = best.as_u64() {
+        return (sec > 0).then_some(sec);
+    }
+
+    if let Some(best_obj) = best.as_object() {
+        let sec = best_obj
+            .get("time_sec")
+            .and_then(JsonValue::as_u64)
+            .or_else(|| best_obj.get("best_time_sec").and_then(JsonValue::as_u64))?;
+        return (sec > 0).then_some(sec);
+    }
+
+    None
+}
+
 fn stats_file_path() -> PathBuf {
     match path_utils::stats_file() {
         Ok(path) => path,

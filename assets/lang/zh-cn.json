@@ -451,9 +451,21 @@
     "warning.current": "当前尺寸",
     "warning.enlarge_hint": "请放大终端窗口以继续。",
     "warning.required": "需要尺寸",
-    "warning.size_title": "终端窗口过小"
+    "warning.size_title": "终端窗口过小",
+    "game.wordle.best_streak": "最高连胜:",
+    "game.wordle.best_time": "最短时间:",
+    "game.wordle.time": "游戏时间",
+    "game.wordle.streak": "连胜局数",
+    "game.wordle.mode_input": "字母输入模式",
+    "game.wordle.mode_action": "操作模式",
+    "game.wordle.need_letters": "字母数量不足。",
+    "game.wordle.saved": "保存成功。",
+    "game.wordle.confirm_restart": "确认重新开始? [Y] 是 / [N] 否",
+    "game.wordle.confirm_exit": "确认退出? [Y] 是 / [N] 否",
+    "game.wordle.win": "猜出正确单词！",
+    "game.wordle.lose": "你没有猜出正确单词。",
+    "game.wordle.result_controls": "[R] 重开  [Q]/[ESC] 退出",
+    "game.wordle.controls_input": "[A-Z] 输入字母  [Backspace]/[Delete] 删除  [Enter] 提交  [Tab] 操作模式",
+    "game.wordle.controls_action": "[Tab] 字母输入模式  [S] 保存  [R] 重开  [Q]/[ESC] 退出",
+    "game.wordle.controls_result": "[R] 重开  [Q]/[ESC] 退出"
 }
-
-
-
-

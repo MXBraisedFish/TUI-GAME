@@ -12,7 +12,7 @@
     "game.2048.confirm_exit": "Confirm exit? [Y] Yes / [N] No",
     "game.2048.confirm_restart": "Confirm restart? [Y] Yes / [N] No",
     "game.2048.controls": "[↑]/[↓]/[←]/[→] Move  [R] Restart  [S] Save  [Q]/[ESC] Exit",
-    "game.2048.description": "Merge equal tiles to reach the 2048 tile.",
+    "game.2048.description": "Merge equaln tiles to reach the 2048 tile.",
     "game.2048.game_over": "Game over! [Y] Restart, [N] Back to game list.",
     "game.2048.name": "2048",
     "game.2048.save_success": "Save successful!",
@@ -451,9 +451,21 @@
     "warning.current": "Current size",
     "warning.enlarge_hint": "Please enlarge terminal window to continue.",
     "warning.required": "Required size",
-    "warning.size_title": "Terminal Too Small"
+    "warning.size_title": "Terminal Too Small",
+    "game.wordle.best_streak": "Best Win Streak:",
+    "game.wordle.best_time": "Best Time:",
+    "game.wordle.time": "Time",
+    "game.wordle.streak": "Streak",
+    "game.wordle.mode_input": "Letter Input Mode",
+    "game.wordle.mode_action": "Action Mode",
+    "game.wordle.need_letters": "Not enough letters.",
+    "game.wordle.saved": "Saved.",
+    "game.wordle.confirm_restart": "Confirm restart? [Y] Yes / [N] No",
+    "game.wordle.confirm_exit": "Confirm exit? [Y] Yes / [N] No",
+    "game.wordle.win": "Guessed the correct word!",
+    "game.wordle.lose": "You did not guess the correct word.",
+    "game.wordle.result_controls": "[R] Restart  [Q]/[ESC] Exit",
+    "game.wordle.controls_input": "[A-Z] Input  [Backspace]/[Delete] Remove  [Enter] Submit  [Tab] Action Mode",
+    "game.wordle.controls_action": "[Tab] Input Mode  [S] Save  [R] Restart  [Q]/[ESC] Exit",
+    "game.wordle.controls_result": "[R] Restart  [Q]/[ESC] Exit"
 }
-
-
-
-

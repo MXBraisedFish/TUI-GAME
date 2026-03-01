@@ -1,24 +1,46 @@
 ﻿GAME_META = {
-    name = "Lights Out",
-    description = "Light all tiles by toggling cross patterns."
+    name = "Memory Flip",
+    description = "Flip cards and match identical pairs with memory."
 }
 
-local DEFAULT_SIZE = 5
-local MIN_SIZE = 2
-local MAX_SIZE = 10
+local DEFAULT_DIFFICULTY = 2
+local MIN_DIFFICULTY = 1
+local MAX_DIFFICULTY = 3
+local DIFFICULTY_TO_SIZE = {
+    [1] = 2,
+    [2] = 4,
+    [3] = 6
+}
 
 local FPS = 60
 local FRAME_MS = 16
 
 local CELL_W = 4
 local CELL_H = 3
-local CELL_STEP_X = 5
+local CELL_STEP_X = 6
 local CELL_STEP_Y = 2
 local LABEL_W = 3
 
+local SYMBOLS = {
+    "!", "@", "#", "$", "%", "^", "&", "*", "A",
+    "B", "C", "D", "E", "F", "G", "H", "I", "J"
+}
+
+local PALETTE = {
+    "rgb(255,110,110)", "rgb(255,150,90)", "rgb(255,205,90)",
+    "rgb(200,235,90)", "rgb(120,230,120)", "rgb(90,215,175)",
+    "rgb(90,200,245)", "rgb(125,165,250)", "rgb(165,145,245)",
+    "rgb(205,130,245)", "rgb(245,125,220)", "rgb(245,125,175)",
+    "rgb(245,160,160)", "rgb(240,190,140)", "rgb(225,215,140)",
+    "rgb(190,220,150)", "rgb(150,215,195)", "rgb(150,200,220)"
+}
+
 local state = {
-    size = DEFAULT_SIZE,
+    difficulty = DEFAULT_DIFFICULTY,
+    size = DIFFICULTY_TO_SIZE[DEFAULT_DIFFICULTY],
     board = {},
+    revealed = {},
+    matched = {},
     cursor_r = 1,
     cursor_c = 1,
     steps = 0,
@@ -41,6 +63,8 @@ local state = {
     last_area = nil,
     best = nil,
     best_committed = false,
+    first_pick = nil,
+    pending_hide = nil,
     last_term_w = 0,
     last_term_h = 0,
     size_warning_active = false,
@@ -130,6 +154,18 @@ local function read_launch_mode()
     return "new"
 end
 
+local function clamp(v, lo, hi)
+    if v < lo then return lo end
+    if v > hi then return hi end
+    return v
+end
+
+local function normalize_key(key)
+    if key == nil then return "" end
+    if type(key) == "string" then return string.lower(key) end
+    return tostring(key):lower()
+end
+
 local function elapsed_seconds()
     local end_frame = state.end_frame
     if end_frame == nil then
@@ -145,33 +181,100 @@ local function format_duration(sec)
     return string.format("%02d:%02d:%02d", h, m, s)
 end
 
-local function clamp(v, lo, hi)
-    if v < lo then return lo end
-    if v > hi then return hi end
-    return v
+local function difficulty_to_size(difficulty)
+    local d = clamp(difficulty, MIN_DIFFICULTY, MAX_DIFFICULTY)
+    return DIFFICULTY_TO_SIZE[d]
 end
 
-local function normalize_key(key)
-    if key == nil then return "" end
-    if type(key) == "string" then return string.lower(key) end
-    return tostring(key):lower()
+local function size_to_difficulty(size)
+    for difficulty = MIN_DIFFICULTY, MAX_DIFFICULTY do
+        if DIFFICULTY_TO_SIZE[difficulty] == size then
+            return difficulty
+        end
+    end
+    return DEFAULT_DIFFICULTY
 end
 
-local function new_board(size, value)
-    local board = {}
+local function new_matrix(size, value)
+    local matrix = {}
     for r = 1, size do
-        board[r] = {}
+        matrix[r] = {}
         for c = 1, size do
-            board[r][c] = value
+            matrix[r][c] = value
+        end
+    end
+    return matrix
+end
+
+local function copy_matrix(source, size)
+    local matrix = new_matrix(size, false)
+    for r = 1, size do
+        for c = 1, size do
+            matrix[r][c] = source[r][c]
+        end
+    end
+    return matrix
+end
+
+local function pair_symbol(pair_id)
+    local idx = ((pair_id - 1) % #SYMBOLS) + 1
+    return SYMBOLS[idx]
+end
+
+local function pair_bg_color(pair_id)
+    local idx = ((pair_id - 1) % #PALETTE) + 1
+    return PALETTE[idx]
+end
+
+local function color_brightness(rgb)
+    local r, g, b = rgb:match("^rgb%((%d+),(%d+),(%d+)%)$")
+    if r == nil or g == nil or b == nil then
+        return 0
+    end
+    local rr = tonumber(r) or 0
+    local gg = tonumber(g) or 0
+    local bb = tonumber(b) or 0
+    return rr * 0.299 + gg * 0.587 + bb * 0.114
+end
+
+local function pair_text_color(pair_id)
+    if color_brightness(pair_bg_color(pair_id)) >= 150 then
+        return "black"
+    end
+    return "white"
+end
+
+local function shuffle_list(items)
+    for i = #items, 2, -1 do
+        local j = random(i) + 1
+        items[i], items[j] = items[j], items[i]
+    end
+end
+
+local function generate_board(size)
+    local pair_count = (size * size) / 2
+    local deck = {}
+    for pair_id = 1, pair_count do
+        deck[#deck + 1] = pair_id
+        deck[#deck + 1] = pair_id
+    end
+    shuffle_list(deck)
+
+    local board = new_matrix(size, 0)
+    local index = 1
+    for r = 1, size do
+        for c = 1, size do
+            board[r][c] = deck[index]
+            index = index + 1
         end
     end
     return board
 end
 
-local function all_lit_board(board, size)
-    for r = 1, size do
-        for c = 1, size do
-            if not board[r][c] then
+local function all_matched()
+    for r = 1, state.size do
+        for c = 1, state.size do
+            if not state.matched[r][c] then
                 return false
             end
         end
@@ -179,58 +282,182 @@ local function all_lit_board(board, size)
     return true
 end
 
-local function all_lit()
-    return all_lit_board(state.board, state.size)
+local function make_snapshot()
+    local snapshot = {
+        difficulty = state.difficulty,
+        size = state.size,
+        board = copy_matrix(state.board, state.size),
+        revealed = copy_matrix(state.revealed, state.size),
+        matched = copy_matrix(state.matched, state.size),
+        cursor_r = state.cursor_r,
+        cursor_c = state.cursor_c,
+        steps = state.steps,
+        elapsed_sec = elapsed_seconds(),
+        won = state.won,
+        last_auto_save_sec = state.last_auto_save_sec
+    }
+
+    if state.first_pick ~= nil then
+        snapshot.first_pick = {
+            r = state.first_pick.r,
+            c = state.first_pick.c
+        }
+    end
+    return snapshot
 end
 
-local function toggle_cell(board, size, r, c)
-    if r < 1 or r > size or c < 1 or c > size then
-        return
+local function save_game_state(show_toast)
+    local ok = false
+    local snapshot = make_snapshot()
+    if type(save_game_slot) == "function" then
+        local s, ret = pcall(save_game_slot, "memory_flip", snapshot)
+        ok = s and ret ~= false
+    elseif type(save_data) == "function" then
+        local s, ret = pcall(save_data, "memory_flip", snapshot)
+        ok = s and ret ~= false
     end
-    board[r][c] = not board[r][c]
+
+    if show_toast then
+        local key = ok and "game.2048.save_success" or "game.2048.save_unavailable"
+        local def = ok and "Save successful!" or "Save API unavailable."
+        state.toast_text = tr(key, def)
+        state.toast_until = state.frame + 2 * FPS
+        state.dirty = true
+    end
 end
 
-local function toggle_cross_on(board, size, r, c)
-    toggle_cell(board, size, r, c)
-    toggle_cell(board, size, r - 1, c)
-    toggle_cell(board, size, r + 1, c)
-    toggle_cell(board, size, r, c - 1)
-    toggle_cell(board, size, r, c + 1)
+local function parse_saved_matrix(snapshot, key, size, default_value)
+    if type(snapshot[key]) ~= "table" then
+        return nil
+    end
+    local matrix = new_matrix(size, default_value)
+    for r = 1, size do
+        if type(snapshot[key][r]) ~= "table" then
+            return nil
+        end
+        for c = 1, size do
+            matrix[r][c] = snapshot[key][r][c]
+        end
+    end
+    return matrix
 end
 
-local function randomize_board(size)
-    local board = new_board(size, true)
-    for _ = 1, size * size do
-        local rr = random(size) + 1
-        local cc = random(size) + 1
-        toggle_cross_on(board, size, rr, cc)
+local function restore_snapshot(snapshot)
+    if type(snapshot) ~= "table" then
+        return false
     end
-    if all_lit_board(board, size) then
-        toggle_cross_on(board, size, random(size) + 1, random(size) + 1)
+
+    local difficulty = tonumber(snapshot.difficulty)
+    local size = tonumber(snapshot.size)
+
+    if difficulty == nil and size ~= nil then
+        difficulty = size_to_difficulty(math.floor(size))
     end
-    return board
+    if difficulty == nil then
+        return false
+    end
+
+    difficulty = clamp(math.floor(difficulty), MIN_DIFFICULTY, MAX_DIFFICULTY)
+    size = difficulty_to_size(difficulty)
+
+    local board = parse_saved_matrix(snapshot, "board", size, 0)
+    local revealed = parse_saved_matrix(snapshot, "revealed", size, false)
+    local matched = parse_saved_matrix(snapshot, "matched", size, false)
+    if board == nil or revealed == nil or matched == nil then
+        return false
+    end
+
+    state.difficulty = difficulty
+    state.size = size
+    state.board = board
+    state.revealed = new_matrix(size, false)
+    state.matched = new_matrix(size, false)
+
+    for r = 1, size do
+        for c = 1, size do
+            state.matched[r][c] = not not matched[r][c]
+            state.revealed[r][c] = state.matched[r][c] or not not revealed[r][c]
+        end
+    end
+
+    state.cursor_r = clamp(math.floor(tonumber(snapshot.cursor_r) or 1), 1, size)
+    state.cursor_c = clamp(math.floor(tonumber(snapshot.cursor_c) or 1), 1, size)
+    state.steps = math.max(0, math.floor(tonumber(snapshot.steps) or 0))
+
+    local elapsed = math.max(0, math.floor(tonumber(snapshot.elapsed_sec) or 0))
+    state.start_frame = state.frame - elapsed * FPS
+    state.last_auto_save_sec = math.max(
+        0,
+        math.floor(tonumber(snapshot.last_auto_save_sec) or elapsed)
+    )
+
+    state.won = not not snapshot.won
+    state.end_frame = nil
+    if state.won then
+        state.end_frame = state.frame
+    end
+
+    state.first_pick = nil
+    if type(snapshot.first_pick) == "table" then
+        local r = clamp(math.floor(tonumber(snapshot.first_pick.r) or 0), 1, size)
+        local c = clamp(math.floor(tonumber(snapshot.first_pick.c) or 0), 1, size)
+        if not state.matched[r][c] then
+            state.first_pick = { r = r, c = c }
+            state.revealed[r][c] = true
+        end
+    end
+
+    state.pending_hide = nil
+    state.confirm_mode = nil
+    state.input_mode = nil
+    state.input_buffer = ""
+    state.toast_text = nil
+    state.toast_until = 0
+    state.best_committed = state.won
+    state.last_area = nil
+    state.dirty = true
+    return true
+end
+
+local function load_game_state()
+    local ok = false
+    local snapshot = nil
+    if type(load_game_slot) == "function" then
+        local s, ret = pcall(load_game_slot, "memory_flip")
+        ok = s and ret ~= nil
+        snapshot = ret
+    elseif type(load_data) == "function" then
+        local s, ret = pcall(load_data, "memory_flip")
+        ok = s and ret ~= nil
+        snapshot = ret
+    end
+
+    if ok then
+        return restore_snapshot(snapshot)
+    end
+    return false
 end
 
 local function load_best_record()
     if type(load_data) ~= "function" then
         return nil
     end
-    local ok, data = pcall(load_data, "lights_out_best")
+    local ok, data = pcall(load_data, "memory_flip_best")
     if not ok or type(data) ~= "table" then
         return nil
     end
 
-    local max_size = tonumber(data.max_size)
+    local difficulty = tonumber(data.difficulty)
     local min_steps = tonumber(data.min_steps)
     local min_time_sec = tonumber(data.min_time_sec)
-    if max_size == nil or min_steps == nil or min_time_sec == nil then
+    if difficulty == nil or min_steps == nil or min_time_sec == nil then
         return nil
     end
 
     return {
-        max_size = math.floor(max_size),
-        min_steps = math.floor(min_steps),
-        min_time_sec = math.floor(min_time_sec)
+        difficulty = clamp(math.floor(difficulty), MIN_DIFFICULTY, MAX_DIFFICULTY),
+        min_steps = math.max(0, math.floor(min_steps)),
+        min_time_sec = math.max(0, math.floor(min_time_sec))
     }
 end
 
@@ -238,8 +465,8 @@ local function should_replace_best(old, new)
     if old == nil then
         return true
     end
-    if new.max_size ~= old.max_size then
-        return new.max_size > old.max_size
+    if new.difficulty ~= old.difficulty then
+        return new.difficulty > old.difficulty
     end
     if new.min_steps ~= old.min_steps then
         return new.min_steps < old.min_steps
@@ -251,7 +478,7 @@ local function save_best_record(record)
     if type(save_data) ~= "function" then
         return
     end
-    pcall(save_data, "lights_out_best", record)
+    pcall(save_data, "memory_flip_best", record)
 end
 
 local function commit_best_if_needed()
@@ -259,7 +486,7 @@ local function commit_best_if_needed()
         return
     end
     local record = {
-        max_size = state.size,
+        difficulty = state.difficulty,
         min_steps = state.steps,
         min_time_sec = elapsed_seconds()
     }
@@ -277,121 +504,20 @@ local function mark_won()
     state.won = true
     state.end_frame = state.frame
     state.confirm_mode = nil
+    state.pending_hide = nil
+    state.first_pick = nil
     commit_best_if_needed()
     state.dirty = true
 end
 
-local function make_snapshot()
-    return {
-        size = state.size,
-        board = state.board,
-        cursor_r = state.cursor_r,
-        cursor_c = state.cursor_c,
-        steps = state.steps,
-        elapsed_sec = elapsed_seconds(),
-        won = state.won,
-        last_auto_save_sec = state.last_auto_save_sec
-    }
-end
-
-local function save_game_state(show_toast)
-    local ok = false
-    local snapshot = make_snapshot()
-    if type(save_game_slot) == "function" then
-        local s, ret = pcall(save_game_slot, "lights_out", snapshot)
-        ok = s and ret ~= false
-    elseif type(save_data) == "function" then
-        local s, ret = pcall(save_data, "lights_out", snapshot)
-        ok = s and ret ~= false
+local function reset_game(new_difficulty)
+    if new_difficulty ~= nil then
+        state.difficulty = clamp(new_difficulty, MIN_DIFFICULTY, MAX_DIFFICULTY)
     end
-
-    if show_toast then
-        local key = ok and "game.2048.save_success" or "game.2048.save_unavailable"
-        local def = ok and "Save successful!" or "Save API unavailable."
-        state.toast_text = tr(key, def)
-        state.toast_until = state.frame + 2 * FPS
-        state.dirty = true
-    end
-end
-
-local function restore_snapshot(snapshot)
-    if type(snapshot) ~= "table" then
-        return false
-    end
-
-    local size = tonumber(snapshot.size)
-    if size == nil then
-        return false
-    end
-    size = clamp(math.floor(size), MIN_SIZE, MAX_SIZE)
-
-    if type(snapshot.board) ~= "table" then
-        return false
-    end
-
-    local board = new_board(size, false)
-    for r = 1, size do
-        if type(snapshot.board[r]) ~= "table" then
-            return false
-        end
-        for c = 1, size do
-            board[r][c] = not not snapshot.board[r][c]
-        end
-    end
-
-    state.size = size
-    state.board = board
-    state.cursor_r = clamp(math.floor(tonumber(snapshot.cursor_r) or 1), 1, size)
-    state.cursor_c = clamp(math.floor(tonumber(snapshot.cursor_c) or 1), 1, size)
-    state.steps = math.max(0, math.floor(tonumber(snapshot.steps) or 0))
-
-    local elapsed = math.max(0, math.floor(tonumber(snapshot.elapsed_sec) or 0))
-    state.start_frame = state.frame - elapsed * FPS
-    state.last_auto_save_sec = math.max(0, math.floor(tonumber(snapshot.last_auto_save_sec) or elapsed))
-
-    state.won = not not snapshot.won
-    state.end_frame = nil
-    if state.won then
-        state.end_frame = state.frame
-    end
-
-    state.confirm_mode = nil
-    state.input_mode = nil
-    state.input_buffer = ""
-    state.toast_text = nil
-    state.toast_until = 0
-    state.best_committed = state.won
-    state.last_area = nil
-    state.dirty = true
-    return true
-end
-
-local function load_game_state()
-    local ok = false
-    local snapshot = nil
-    if type(load_game_slot) == "function" then
-        local s, ret = pcall(load_game_slot, "lights_out")
-        ok = s and ret ~= nil
-        snapshot = ret
-    elseif type(load_data) == "function" then
-        local s, ret = pcall(load_data, "lights_out")
-        ok = s and ret ~= nil
-        snapshot = ret
-    end
-
-    if ok then
-        return restore_snapshot(snapshot)
-    end
-    return false
-end
-
-local function reset_game(new_size)
-    if new_size ~= nil then
-        state.size = clamp(new_size, MIN_SIZE, MAX_SIZE)
-    end
-
-    -- Start from a fully unlit board (all false) instead of random state.
-    state.board = new_board(state.size, false)
+    state.size = difficulty_to_size(state.difficulty)
+    state.board = generate_board(state.size)
+    state.revealed = new_matrix(state.size, false)
+    state.matched = new_matrix(state.size, false)
     state.cursor_r = 1
     state.cursor_c = 1
     state.steps = 0
@@ -405,6 +531,8 @@ local function reset_game(new_size)
     state.toast_until = 0
     state.last_auto_save_sec = 0
     state.best_committed = false
+    state.first_pick = nil
+    state.pending_hide = nil
     state.last_area = nil
     state.dirty = true
 end
@@ -423,10 +551,10 @@ local function init_game()
     state.launch_mode = read_launch_mode()
     if state.launch_mode == "continue" then
         if not load_game_state() then
-            reset_game(DEFAULT_SIZE)
+            reset_game(DEFAULT_DIFFICULTY)
         end
     else
-        reset_game(DEFAULT_SIZE)
+        reset_game(DEFAULT_DIFFICULTY)
     end
 end
 
@@ -446,12 +574,12 @@ local function board_geometry()
     local grid_w = (state.size - 1) * CELL_STEP_X + CELL_W
     local grid_h = (state.size - 1) * CELL_STEP_Y + CELL_H
 
-    local status_w = key_width(tr("game.lights_out.time", "Time") .. " 00:00:00")
+    local status_w = key_width(tr("game.memory_flip.time", "Time") .. " 00:00:00")
         + 2
-        + key_width(tr("game.lights_out.steps", "Steps") .. " 9999")
+        + key_width(tr("game.memory_flip.steps", "Steps") .. " 9999")
     local win_line_w = key_width(
-        tr("game.lights_out.win_banner", "You lit all lights!")
-            .. tr("game.lights_out.win_controls", "[R] Restart  [Q]/[ESC] Exit")
+        tr("game.memory_flip.win_banner", "All cards are paired!")
+            .. tr("game.memory_flip.win_controls", "[R] Restart  [Q]/[ESC] Exit")
     )
     local content_w = math.max(LABEL_W + grid_w, status_w, win_line_w)
     local content_h = 1 + grid_h
@@ -463,7 +591,7 @@ local function board_geometry()
     if x < 1 then x = 1 end
     if y < 6 then y = 6 end
 
-    return x, y, frame_w, frame_h, content_w, content_h
+    return x, y, frame_w, frame_h
 end
 
 local function fill_rect(x, y, w, h, bg)
@@ -485,19 +613,32 @@ local function draw_outer_frame(x, y, frame_w, frame_h)
     draw_text(x, y + frame_h - 1, "╚" .. string.rep("═", frame_w - 2) .. "╝", "white", "black")
 end
 
-local function draw_lamp(x, y, lit, selected)
-    local lamp_color = lit and "rgb(255,255,0)" or "rgb(210,210,210)"
+local function draw_card(x, y, pair_id, visible, selected)
+    local bg = "rgb(90,90,90)"
+    local fg = "white"
+    local face = ".."
+    local frame_x = x - 1
+    local body = " " .. face .. " "
+
+    if visible then
+        bg = pair_bg_color(pair_id)
+        fg = pair_text_color(pair_id)
+        local symbol = pair_symbol(pair_id)
+        face = symbol .. symbol
+        body = " " .. face .. " "
+    end
 
     if selected then
-        draw_text(x, y, "┌──┐", "green", "black")
-        draw_text(x, y + 1, "│", "green", "black")
-        draw_text(x + 1, y + 1, "██", lamp_color, "black")
-        draw_text(x + 3, y + 1, "│", "green", "black")
-        draw_text(x, y + 2, "└──┘", "green", "black")
+        draw_text(frame_x, y, "┌────┐", "green", "black")
+        draw_text(frame_x, y + 1, "│", "green", "black")
+        draw_text(x, y + 1, body, fg, bg)
+        draw_text(frame_x + 5, y + 1, "│", "green", "black")
+        draw_text(frame_x, y + 2, "└────┘", "green", "black")
     else
-        draw_text(x, y, "    ", "white", "black")
-        draw_text(x, y + 1, " ██ ", lamp_color, "black")
-        draw_text(x, y + 2, "    ", "white", "black")
+        draw_text(frame_x, y, "      ", "white", "black")
+        draw_text(frame_x, y + 1, "      ", "white", "black")
+        draw_text(x, y + 1, body, fg, bg)
+        draw_text(frame_x, y + 2, "      ", "white", "black")
     end
 end
 
@@ -526,41 +667,41 @@ local function draw_board(x, y, frame_w, frame_h)
         for c = 1, state.size do
             local cx = grid_x + (c - 1) * CELL_STEP_X
             local selected = (r == state.cursor_r and c == state.cursor_c)
-            draw_lamp(cx, row_base, state.board[r][c], selected)
+            local visible = state.matched[r][c] or state.revealed[r][c]
+            draw_card(cx, row_base, state.board[r][c], visible, selected)
         end
     end
 
-    -- Redraw selected lamp last so its border is never erased by overlapping row spacing.
     local sr = state.cursor_r
     local sc = state.cursor_c
     if sr >= 1 and sr <= state.size and sc >= 1 and sc <= state.size then
         local sel_y = inner_y + 1 + (sr - 1) * CELL_STEP_Y
         local sel_x = grid_x + (sc - 1) * CELL_STEP_X
-        draw_lamp(sel_x, sel_y, state.board[sr][sc], true)
+        local visible = state.matched[sr][sc] or state.revealed[sr][sc]
+        draw_card(sel_x, sel_y, state.board[sr][sc], visible, true)
     end
 end
 
 local function best_line()
     if state.best == nil then
-        return tr("game.lights_out.best_none", "Best: none")
+        return tr("game.memory_flip.best_none", "Best: none")
     end
 
     return string.format(
-        "%s %dx%d  %s %d  %s %s",
-        tr("game.lights_out.best_size", "Max"),
-        state.best.max_size,
-        state.best.max_size,
-        tr("game.lights_out.best_steps", "Steps"),
+        "%s %d  %s %d  %s %s",
+        tr("game.memory_flip.best_difficulty", "Difficulty"),
+        state.best.difficulty,
+        tr("game.memory_flip.best_steps", "Steps"),
         state.best.min_steps,
-        tr("game.lights_out.best_time", "Time"),
+        tr("game.memory_flip.best_time", "Time"),
         format_duration(state.best.min_time_sec)
     )
 end
 
 local function draw_status(x, y, frame_w)
     local elapsed = elapsed_seconds()
-    local time_text = tr("game.lights_out.time", "Time") .. " " .. format_duration(elapsed)
-    local steps_text = tr("game.lights_out.steps", "Steps") .. " " .. tostring(state.steps)
+    local time_text = tr("game.memory_flip.time", "Time") .. " " .. format_duration(elapsed)
+    local steps_text = tr("game.memory_flip.steps", "Steps") .. " " .. tostring(state.steps)
     local term_w = terminal_size()
     local right_x = x + frame_w - key_width(steps_text)
     if right_x < 1 then right_x = 1 end
@@ -573,21 +714,33 @@ local function draw_status(x, y, frame_w)
     draw_text(x, y - 2, time_text, "light_cyan", "black")
     draw_text(right_x, y - 2, steps_text, "light_cyan", "black")
 
-    if state.input_mode == "size" then
+    if state.input_mode == "difficulty" then
         if state.input_buffer == "" then
-            draw_text(x, y - 1, tr("game.lights_out.input_size_hint", "Input 2-10 to resize board."), "dark_gray", "black")
+            draw_text(
+                x,
+                y - 1,
+                tr("game.memory_flip.input_size_hint", "Input 1 / 2 / 3 to change difficulty."),
+                "dark_gray",
+                "black"
+            )
         else
             draw_text(x, y - 1, state.input_buffer, "white", "black")
         end
     elseif state.input_mode == "jump" then
         if state.input_buffer == "" then
-            draw_text(x, y - 1, tr("game.lights_out.input_jump_hint", "Input xx xx to jump to coordinates."), "dark_gray", "black")
+            draw_text(
+                x,
+                y - 1,
+                tr("game.memory_flip.input_jump_hint", "Input xx xx to jump to coordinates."),
+                "dark_gray",
+                "black"
+            )
         else
             draw_text(x, y - 1, state.input_buffer, "white", "black")
         end
     elseif state.won then
-        local line = tr("game.lights_out.win_banner", "You lit all lights!")
-            .. tr("game.lights_out.win_controls", "[R] Restart  [Q]/[ESC] Exit")
+        local line = tr("game.memory_flip.win_banner", "All cards are paired!")
+            .. tr("game.memory_flip.win_controls", "[R] Restart  [Q]/[ESC] Exit")
         draw_text(x, y - 1, line, "yellow", "black")
     elseif state.confirm_mode == "restart" then
         draw_text(x, y - 1, tr("game.2048.confirm_restart", "Confirm restart? [Y] Yes / [N] No"), "yellow", "black")
@@ -601,8 +754,8 @@ end
 local function draw_controls(x, y, frame_h)
     local term_w = terminal_size()
     local text = tr(
-        "game.lights_out.controls",
-        "[↑]/[↓]/[←]/[→] Move  [Space] Toggle  [P] Resize  [D] Jump  [R] Restart  [S] Save  [Q]/[ESC] Exit"
+        "game.memory_flip.controls",
+        "[↑]/[↓]/[←]/[→] Move  [Space] Flip  [P] Difficulty  [D] Jump  [R] Restart  [S] Save  [Q]/[ESC] Exit"
     )
     local max_w = math.max(10, term_w - 2)
     local lines = wrap_words(text, max_w)
@@ -670,18 +823,25 @@ local function minimum_required_size()
 
     local controls_w = min_width_for_lines(
         tr(
-            "game.lights_out.controls",
-            "[↑]/[↓]/[←]/[→] Move  [Space] Toggle  [P] Resize  [D] Jump  [R] Restart  [S] Save  [Q]/[ESC] Exit"
+            "game.memory_flip.controls",
+            "[↑]/[↓]/[←]/[→] Move  [Space] Flip  [P] Difficulty  [D] Jump  [R] Restart  [S] Save  [Q]/[ESC] Exit"
         ),
         3,
         24
     )
-    local status_w = key_width(tr("game.lights_out.time", "Time") .. " 00:00:00")
+    local status_w = key_width(tr("game.memory_flip.time", "Time") .. " 00:00:00")
         + 2
-        + key_width(tr("game.lights_out.steps", "Steps") .. " 9999")
-    local hint_w = key_width(tr("game.lights_out.input_jump_hint", "Input xx xx to jump to coordinates."))
+        + key_width(tr("game.memory_flip.steps", "Steps") .. " 9999")
+    local hint_w = math.max(
+        key_width(tr("game.memory_flip.input_size_hint", "Input 1 / 2 / 3 to change difficulty.")),
+        key_width(tr("game.memory_flip.input_jump_hint", "Input xx xx to jump to coordinates."))
+    )
+    local win_w = key_width(
+        tr("game.memory_flip.win_banner", "All cards are paired!")
+            .. tr("game.memory_flip.win_controls", "[R] Restart  [Q]/[ESC] Exit")
+    )
 
-    local min_w = math.max(frame_w, controls_w, status_w, hint_w) + 2
+    local min_w = math.max(frame_w, controls_w, status_w, hint_w, win_w) + 2
     -- Render range is [y-3, y+frame_h+3], and y is clamped to >= 6.
     -- So minimum height must be at least frame_h + 9.
     local min_h = frame_h + 9
@@ -746,13 +906,13 @@ local function start_input_mode(mode)
     state.dirty = true
 end
 
-local function parse_size_input()
+local function parse_difficulty_input()
     local value = tonumber(state.input_buffer)
     if value == nil then
         return nil
     end
     value = math.floor(value)
-    if value < MIN_SIZE or value > MAX_SIZE then
+    if value < MIN_DIFFICULTY or value > MAX_DIFFICULTY then
         return nil
     end
     return value
@@ -780,16 +940,14 @@ local function handle_input_mode_key(key)
     end
 
     if key == "enter" then
-        if state.input_mode == "size" then
-            local size = parse_size_input()
+        if state.input_mode == "difficulty" then
+            local difficulty = parse_difficulty_input()
             state.input_mode = nil
             state.input_buffer = ""
-            if size ~= nil then
-                if size ~= state.size then
-                    clear()
-                    state.last_area = nil
-                end
-                reset_game(size)
+            if difficulty ~= nil then
+                clear()
+                state.last_area = nil
+                reset_game(difficulty)
             else
                 state.dirty = true
             end
@@ -818,13 +976,11 @@ local function handle_input_mode_key(key)
         return "none"
     end
 
-    if state.input_mode == "size" then
-        if key:match("^%d$") then
-            if #state.input_buffer < 2 then
-                state.input_buffer = state.input_buffer .. key
-                state.dirty = true
-                return "changed"
-            end
+    if state.input_mode == "difficulty" then
+        if key:match("^[1-3]$") and #state.input_buffer < 1 then
+            state.input_buffer = state.input_buffer .. key
+            state.dirty = true
+            return "changed"
         end
         return "none"
     end
@@ -850,7 +1006,7 @@ end
 local function handle_confirm_key(key)
     if key == "y" or key == "enter" then
         if state.confirm_mode == "restart" then
-            reset_game(state.size)
+            reset_game(state.difficulty)
             return "changed"
         end
         if state.confirm_mode == "exit" then
@@ -879,6 +1035,72 @@ local function should_debounce(key)
     return false
 end
 
+local function hide_pending_pair_if_needed()
+    if state.pending_hide == nil then
+        return
+    end
+    if state.frame < state.pending_hide.until_frame then
+        return
+    end
+
+    local p = state.pending_hide
+    if not state.matched[p.r1][p.c1] then
+        state.revealed[p.r1][p.c1] = false
+    end
+    if not state.matched[p.r2][p.c2] then
+        state.revealed[p.r2][p.c2] = false
+    end
+    state.pending_hide = nil
+    state.dirty = true
+end
+
+local function try_flip_current()
+    local r = state.cursor_r
+    local c = state.cursor_c
+
+    if state.matched[r][c] then
+        return
+    end
+    if state.revealed[r][c] then
+        return
+    end
+
+    state.revealed[r][c] = true
+    if state.first_pick == nil then
+        state.first_pick = { r = r, c = c }
+        state.dirty = true
+        return
+    end
+
+    local fr = state.first_pick.r
+    local fc = state.first_pick.c
+    if fr == r and fc == c then
+        return
+    end
+
+    state.steps = state.steps + 1
+    if state.board[fr][fc] == state.board[r][c] then
+        state.matched[fr][fc] = true
+        state.matched[r][c] = true
+        state.first_pick = nil
+        if all_matched() then
+            mark_won()
+        else
+            state.dirty = true
+        end
+    else
+        state.pending_hide = {
+            r1 = fr,
+            c1 = fc,
+            r2 = r,
+            c2 = c,
+            until_frame = state.frame + math.floor(0.5 * FPS)
+        }
+        state.first_pick = nil
+        state.dirty = true
+    end
+end
+
 local function handle_input(key)
     if key == nil or key == "" then
         return "none"
@@ -898,7 +1120,7 @@ local function handle_input(key)
 
     if state.won then
         if key == "r" then
-            reset_game(state.size)
+            reset_game(state.difficulty)
             return "changed"
         end
         if key == "q" or key == "esc" then
@@ -924,8 +1146,12 @@ local function handle_input(key)
         return "changed"
     end
 
+    if state.pending_hide ~= nil then
+        return "none"
+    end
+
     if key == "p" then
-        start_input_mode("size")
+        start_input_mode("difficulty")
         return "changed"
     end
 
@@ -959,13 +1185,7 @@ local function handle_input(key)
     end
 
     if key == "space" then
-        toggle_cross_on(state.board, state.size, state.cursor_r, state.cursor_c)
-        state.steps = state.steps + 1
-        if all_lit() then
-            mark_won()
-        else
-            state.dirty = true
-        end
+        try_flip_current()
         return "changed"
     end
 
@@ -1002,6 +1222,8 @@ local function game_loop()
         local key = normalize_key(get_key(false))
 
         if ensure_terminal_size_ok() then
+            hide_pending_pair_if_needed()
+
             local action = handle_input(key)
             if action == "exit" then
                 return

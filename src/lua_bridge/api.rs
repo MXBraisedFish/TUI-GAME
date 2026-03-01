@@ -12,7 +12,7 @@ use crossterm::queue;
 use crossterm::style::{
     Color as CColor, Print, ResetColor, SetBackgroundColor, SetForegroundColor,
 };
-use mlua::{Lua, Table, Value};
+use mlua::{Function, Lua, Table, Value};
 use once_cell::sync::Lazy;
 use serde_json::{Map, Number, Value as JsonValue};
 use unicode_width::UnicodeWidthStr;
@@ -79,14 +79,14 @@ pub fn register_api(lua: &Lua, mode: LaunchMode) -> mlua::Result<()> {
     lua.globals().set("clear", clear)?;
 
     let draw_text = lua.create_function(
-        |_, (x, y, text, fg, bg): (i64, i64, String, Option<String>, Option<String>)| {
-            draw_text_impl(x, y, &text, fg.as_deref(), bg.as_deref())
+        |lua, (x, y, text, fg, bg): (i64, i64, String, Option<String>, Option<String>)| {
+            draw_text_rich_impl(lua, x, y, &text, fg.as_deref(), bg.as_deref())
         },
     )?;
     lua.globals().set("draw_text", draw_text)?;
 
     let draw_text_ex = lua.create_function(
-        |_,
+        |lua,
          (x, y, text, fg, bg, max_width, align): (
             i64,
             i64,
@@ -113,7 +113,7 @@ pub fn register_api(lua: &Lua, mode: LaunchMode) -> mlua::Result<()> {
                     }
                 }
             }
-            draw_text_impl(x, y, &rendered, fg.as_deref(), bg.as_deref())
+            draw_text_rich_impl(lua, x, y, &rendered, fg.as_deref(), bg.as_deref())
         },
     )?;
     lua.globals().set("draw_text_ex", draw_text_ex)?;
@@ -204,6 +204,8 @@ pub fn run_game_script(script_path: &Path, mode: LaunchMode) -> Result<()> {
     let source = source.trim_start_matches('\u{feff}');
     let lua = Lua::new();
     register_api(&lua, mode).map_err(|e| anyhow!("Lua API registration error: {e}"))?;
+    load_text_functions(&lua, script_path)
+        .map_err(|e| anyhow!("Lua text command registration error: {e}"))?;
 
     let result = match lua.load(source).set_name(script_path.to_string_lossy()).exec() {
         Ok(()) => Ok(()),
@@ -248,6 +250,495 @@ pub fn clear_active_game_save() -> Result<()> {
         load_json_store().map_err(|e| anyhow!("failed to load lua save store for clearing: {e}"))?;
     clear_game_slots(&mut store);
     write_json_store(&store).map_err(|e| anyhow!("failed to write lua save store after clear: {e}"))
+}
+
+
+#[derive(Clone, Debug)]
+struct StyledChunk {
+    text: String,
+    fg: Option<String>,
+    bg: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+struct RichStyleState {
+    default_fg: Option<String>,
+    default_bg: Option<String>,
+    fg: Option<String>,
+    bg: Option<String>,
+    fg_count: Option<usize>,
+    bg_count: Option<usize>,
+    fg_need_clear: bool,
+    bg_need_clear: bool,
+}
+
+#[derive(Clone, Debug)]
+struct TextCommandResult {
+    clear: bool,
+    color: Option<String>,
+    count: Option<usize>,
+}
+
+fn load_text_functions(lua: &Lua, script_path: &Path) -> mlua::Result<()> {
+    let globals = lua.globals();
+    if globals.get::<Table>("TEXT_COMMANDS").is_err() {
+        globals.set("TEXT_COMMANDS", lua.create_table()?)?;
+    }
+
+    let register = lua.create_function(|lua, (name, func): (String, Function)| {
+        let globals = lua.globals();
+        let table = match globals.get::<Table>("TEXT_COMMANDS") {
+            Ok(t) => t,
+            Err(_) => {
+                let t = lua.create_table()?;
+                globals.set("TEXT_COMMANDS", t.clone())?;
+                t
+            }
+        };
+        table.set(name.trim().to_ascii_lowercase(), func)?;
+        Ok(true)
+    })?;
+    globals.set("register_text_command", register)?;
+
+    let mut dirs = Vec::<PathBuf>::new();
+    if let Some(parent) = script_path.parent() {
+        dirs.push(parent.join("text_function"));
+        if parent.file_name().and_then(|s| s.to_str()) == Some("game") {
+            if let Some(root) = parent.parent() {
+                dirs.push(root.join("text_function"));
+            }
+        }
+    }
+    if let Ok(scripts_dir) = path_utils::scripts_dir() {
+        dirs.push(scripts_dir.join("text_function"));
+    }
+
+    let mut unique_dirs = Vec::<PathBuf>::new();
+    for dir in dirs {
+        if !unique_dirs.iter().any(|d| d == &dir) {
+            unique_dirs.push(dir);
+        }
+    }
+
+    let mut loaded_any = false;
+    for dir in unique_dirs {
+        if !dir.exists() || !dir.is_dir() {
+            continue;
+        }
+
+        let mut entries: Vec<PathBuf> = fs::read_dir(&dir)
+            .map_err(mlua::Error::external)?
+            .filter_map(|entry| entry.ok().map(|e| e.path()))
+            .filter(|path| {
+                path.extension()
+                    .and_then(|ext| ext.to_str())
+                    .map(|ext| ext.eq_ignore_ascii_case("lua"))
+                    .unwrap_or(false)
+            })
+            .collect();
+        entries.sort();
+
+        for file in entries {
+            let source = fs::read_to_string(&file).map_err(mlua::Error::external)?;
+            let source = source.trim_start_matches('\u{feff}');
+            lua.load(source)
+                .set_name(file.to_string_lossy().as_ref())
+                .exec()?;
+            loaded_any = true;
+        }
+    }
+
+    if !loaded_any {
+        let globals = lua.globals();
+        if globals.get::<Table>("TEXT_COMMANDS").is_err() {
+            globals.set("TEXT_COMMANDS", lua.create_table()?)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn draw_text_rich_impl(
+    lua: &Lua,
+    x: i64,
+    y: i64,
+    text: &str,
+    fg: Option<&str>,
+    bg: Option<&str>,
+) -> mlua::Result<()> {
+    if !text.starts_with("f%") {
+        return draw_text_impl(x, y, text, fg, bg);
+    }
+
+    let default_fg = fg.map(|v| v.to_string());
+    let default_bg = bg.map(|v| v.to_string());
+
+    let mut state = RichStyleState {
+        default_fg: default_fg.clone(),
+        default_bg: default_bg.clone(),
+        fg: default_fg,
+        bg: default_bg,
+        fg_count: None,
+        bg_count: None,
+        fg_need_clear: false,
+        bg_need_clear: false,
+    };
+
+    let body = &text[2..];
+    let mut chunks = Vec::<StyledChunk>::new();
+
+    let mut i = 0usize;
+    while i < body.len() {
+        let mut iter = body[i..].chars();
+        let ch = match iter.next() {
+            Some(c) => c,
+            None => break,
+        };
+        let ch_len = ch.len_utf8();
+
+        if ch == '\\' {
+            if let Some(next_ch) = iter.next() {
+                push_styled_char(&mut chunks, next_ch, &mut state);
+                i += ch_len + next_ch.len_utf8();
+            } else {
+                push_styled_char(&mut chunks, '\\', &mut state);
+                i += ch_len;
+            }
+            continue;
+        }
+
+        if ch == '{' {
+            if let Some((inner, consumed)) = read_command_block(body, i)? {
+                if inner.trim().is_empty() {
+                    push_error(&mut chunks, "????");
+                    i += consumed;
+                    continue;
+                }
+
+                match apply_command_block(lua, &inner, &mut state) {
+                    Ok(()) => {}
+                    Err(msg) => push_error(&mut chunks, &msg.to_string()),
+                }
+
+                i += consumed;
+                continue;
+            }
+
+            push_error(&mut chunks, "??????");
+            i += ch_len;
+            continue;
+        }
+
+        if ch == '}' {
+            push_error(&mut chunks, "??????");
+            i += ch_len;
+            continue;
+        }
+
+        push_styled_char(&mut chunks, ch, &mut state);
+        i += ch_len;
+    }
+
+    if state.fg_need_clear || state.bg_need_clear {
+        push_error(&mut chunks, "?????");
+    }
+
+    draw_styled_chunks(x, y, &chunks)
+}
+
+fn read_command_block(input: &str, start: usize) -> mlua::Result<Option<(String, usize)>> {
+    let mut i = start + '{'.len_utf8();
+    let mut escape = false;
+    while i < input.len() {
+        let c = match input[i..].chars().next() {
+            Some(v) => v,
+            None => break,
+        };
+        let clen = c.len_utf8();
+
+        if escape {
+            escape = false;
+            i += clen;
+            continue;
+        }
+        if c == '\\' {
+            escape = true;
+            i += clen;
+            continue;
+        }
+        if c == '}' {
+            let inner = input[start + 1..i].to_string();
+            return Ok(Some((inner, i + clen - start)));
+        }
+        i += clen;
+    }
+    Ok(None)
+}
+
+fn split_unescaped(input: &str, sep: char) -> Vec<String> {
+    let mut out = Vec::<String>::new();
+    let mut cur = String::new();
+    let mut escape = false;
+
+    for c in input.chars() {
+        if escape {
+            cur.push(c);
+            escape = false;
+            continue;
+        }
+        if c == '\\' {
+            escape = true;
+            continue;
+        }
+        if c == sep {
+            out.push(cur.trim().to_string());
+            cur.clear();
+            continue;
+        }
+        cur.push(c);
+    }
+
+    if escape {
+        cur.push('\\');
+    }
+    out.push(cur.trim().to_string());
+    out
+}
+
+fn apply_command_block(lua: &Lua, block: &str, state: &mut RichStyleState) -> mlua::Result<()> {
+    let entries = split_unescaped(block, '|');
+    for entry in entries {
+        if entry.trim().is_empty() {
+            return Err(mlua::Error::external("????"));
+        }
+
+        let mut parts = split_unescaped(&entry, ':');
+        if parts.len() != 2 {
+            return Err(mlua::Error::external("????"));
+        }
+
+        let cmd = parts.remove(0).trim().to_ascii_lowercase();
+        let param_expr = parts.remove(0);
+        let params = split_unescaped(&param_expr, '>');
+
+        if cmd.is_empty() {
+            return Err(mlua::Error::external("????"));
+        }
+
+        let result = apply_single_command(lua, &cmd, &params)?;
+        apply_command_result(&cmd, result, state)?;
+    }
+    Ok(())
+}
+
+fn apply_single_command(lua: &Lua, cmd: &str, params: &[String]) -> mlua::Result<TextCommandResult> {
+    if let Some(via_lua) = apply_command_via_lua(lua, cmd, params)? {
+        return Ok(via_lua);
+    }
+
+    // Built-in fallback parser.
+    if params.is_empty() || params[0].trim().is_empty() {
+        return Err(mlua::Error::external("????"));
+    }
+
+    let first = params[0].trim();
+    if first.eq_ignore_ascii_case("clear") {
+        if params.len() != 1 {
+            return Err(mlua::Error::external("????"));
+        }
+        return Ok(TextCommandResult {
+            clear: true,
+            color: None,
+            count: None,
+        });
+    }
+
+    if parse_color(Some(first)).is_none() {
+        return Err(mlua::Error::external("????"));
+    }
+
+    let count = if params.len() >= 2 && !params[1].trim().is_empty() {
+        let raw = params[1].trim().parse::<usize>().map_err(|_| mlua::Error::external("????"))?;
+        if raw == 0 {
+            return Err(mlua::Error::external("????"));
+        }
+        Some(raw)
+    } else {
+        None
+    };
+
+    if params.len() > 2 {
+        return Err(mlua::Error::external("????"));
+    }
+
+    Ok(TextCommandResult {
+        clear: false,
+        color: Some(first.to_string()),
+        count,
+    })
+}
+
+fn apply_command_via_lua(
+    lua: &Lua,
+    cmd: &str,
+    params: &[String],
+) -> mlua::Result<Option<TextCommandResult>> {
+    let globals = lua.globals();
+    let commands = match globals.get::<Table>("TEXT_COMMANDS") {
+        Ok(t) => t,
+        Err(_) => return Ok(None),
+    };
+
+    let func = match commands.get::<Function>(cmd) {
+        Ok(f) => f,
+        Err(_) => return Ok(None),
+    };
+
+    let ptable = lua.create_table()?;
+    for (idx, p) in params.iter().enumerate() {
+        ptable.set((idx + 1) as i64, p.as_str())?;
+    }
+
+    let ret = func.call::<Value>(ptable)?;
+    let t = match ret {
+        Value::Table(t) => t,
+        _ => return Err(mlua::Error::external("????")),
+    };
+
+    if let Ok(msg) = t.get::<String>("error") {
+        if !msg.trim().is_empty() {
+            return Err(mlua::Error::external(msg));
+        }
+    }
+
+    let clear = t.get::<bool>("clear").unwrap_or(false);
+    let color = t.get::<String>("color").ok();
+    let count = t
+        .get::<i64>("count")
+        .ok()
+        .and_then(|v| if v > 0 { Some(v as usize) } else { None });
+
+    if !clear {
+        if let Some(c) = color.as_deref() {
+            if parse_color(Some(c)).is_none() {
+                return Err(mlua::Error::external("????"));
+            }
+        } else {
+            return Err(mlua::Error::external("????"));
+        }
+    }
+
+    Ok(Some(TextCommandResult { clear, color, count }))
+}
+
+fn apply_command_result(
+    cmd: &str,
+    result: TextCommandResult,
+    state: &mut RichStyleState,
+) -> mlua::Result<()> {
+    match cmd {
+        "tc" => {
+            if result.clear {
+                state.fg = state.default_fg.clone();
+                state.fg_count = None;
+                state.fg_need_clear = false;
+                return Ok(());
+            }
+            let color = result
+                .color
+                .ok_or_else(|| mlua::Error::external("????"))?;
+            state.fg = Some(color);
+            state.fg_count = result.count;
+            state.fg_need_clear = result.count.is_none();
+            Ok(())
+        }
+        "bg" => {
+            if result.clear {
+                state.bg = state.default_bg.clone();
+                state.bg_count = None;
+                state.bg_need_clear = false;
+                return Ok(());
+            }
+            let color = result
+                .color
+                .ok_or_else(|| mlua::Error::external("????"))?;
+            state.bg = Some(color);
+            state.bg_count = result.count;
+            state.bg_need_clear = result.count.is_none();
+            Ok(())
+        }
+        _ => Err(mlua::Error::external("????")),
+    }
+}
+
+fn push_error(chunks: &mut Vec<StyledChunk>, message: &str) {
+    push_styled_text(chunks, &format!("{{{message}}}"), Some("red".to_string()), None);
+}
+
+fn push_styled_char(chunks: &mut Vec<StyledChunk>, ch: char, state: &mut RichStyleState) {
+    let mut s = String::new();
+    s.push(ch);
+    push_styled_text(chunks, &s, state.fg.clone(), state.bg.clone());
+
+    if let Some(rem) = state.fg_count {
+        if rem <= 1 {
+            state.fg_count = None;
+            state.fg = state.default_fg.clone();
+        } else {
+            state.fg_count = Some(rem - 1);
+        }
+    }
+
+    if let Some(rem) = state.bg_count {
+        if rem <= 1 {
+            state.bg_count = None;
+            state.bg = state.default_bg.clone();
+        } else {
+            state.bg_count = Some(rem - 1);
+        }
+    }
+}
+
+fn push_styled_text(
+    chunks: &mut Vec<StyledChunk>,
+    text: &str,
+    fg: Option<String>,
+    bg: Option<String>,
+) {
+    if text.is_empty() {
+        return;
+    }
+
+    if let Some(last) = chunks.last_mut() {
+        if last.fg == fg && last.bg == bg {
+            last.text.push_str(text);
+            return;
+        }
+    }
+
+    chunks.push(StyledChunk {
+        text: text.to_string(),
+        fg,
+        bg,
+    });
+}
+
+fn draw_styled_chunks(x: i64, y: i64, chunks: &[StyledChunk]) -> mlua::Result<()> {
+    let mut cursor_x = x;
+    for chunk in chunks {
+        if chunk.text.is_empty() {
+            continue;
+        }
+        draw_text_impl(
+            cursor_x,
+            y,
+            &chunk.text,
+            chunk.fg.as_deref(),
+            chunk.bg.as_deref(),
+        )?;
+        cursor_x += UnicodeWidthStr::width(chunk.text.as_str()) as i64;
+    }
+    Ok(())
 }
 
 fn draw_text_impl(
@@ -313,6 +804,8 @@ fn keycode_to_string(code: KeyCode) -> String {
         KeyCode::Backspace => "backspace".to_string(),
         KeyCode::Delete => "delete".to_string(),
         KeyCode::Enter => "enter".to_string(),
+        KeyCode::Tab => "tab".to_string(),
+        KeyCode::BackTab => "tab".to_string(),
         KeyCode::Esc => "esc".to_string(),
         KeyCode::Char(' ') => "space".to_string(),
         KeyCode::Char(c) => c.to_ascii_lowercase().to_string(),

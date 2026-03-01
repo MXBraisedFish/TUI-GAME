@@ -17,7 +17,26 @@ pub struct GameMeta {
 /// Scans scripts directory for Lua game files and reads GAME_META when available.
 pub fn scan_scripts() -> Result<Vec<GameMeta>> {
     let scripts_dir = path_utils::scripts_dir()?;
-    scan_scripts_in(&scripts_dir)
+
+    let mut games = Vec::new();
+
+    let game_dir = scripts_dir.join("game");
+    if game_dir.exists() {
+        games.extend(scan_scripts_in(&game_dir)?);
+    }
+
+    // Backward-compatible fallback: also scan root scripts/*.lua.
+    games.extend(scan_scripts_in(&scripts_dir)?);
+
+    // Deduplicate by game id, keep first hit (scripts/game has priority).
+    let mut dedup = Vec::new();
+    for g in games {
+        if !dedup.iter().any(|x: &GameMeta| x.id == g.id) {
+            dedup.push(g);
+        }
+    }
+
+    Ok(dedup)
 }
 
 fn scan_scripts_in(dir: &Path) -> Result<Vec<GameMeta>> {

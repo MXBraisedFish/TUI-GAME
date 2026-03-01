@@ -3,5 +3,8 @@ pub mod i18n;
 pub mod layout;
 pub mod menu;
 pub mod placeholder_pages;
+pub mod rich_text;
 pub mod settings;
 pub mod stats;
+
+

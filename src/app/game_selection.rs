@@ -9,11 +9,11 @@ use ratatui::{symbols, widgets::Wrap};
 use unicode_width::UnicodeWidthStr;
 
 use crate::app::i18n;
+use crate::app::rich_text;
 use crate::app::stats::{
     self, GameStats, LightsOutBest, MazeEscapeBest, MemoryFlipBest, MinesweeperBest, SolitaireBest, SudokuBest,
 };
 use crate::lua_bridge::script_loader::GameMeta;
-use crate::terminal::renderer;
 
 pub struct GameSelection {
     games: Vec<GameMeta>,
@@ -24,6 +24,7 @@ pub struct GameSelection {
     maze_escape_best: Option<MazeEscapeBest>,
     solitaire_best: Option<SolitaireBest>,
     sudoku_best: Option<SudokuBest>,
+    twenty_four_best_time_sec: Option<u64>,
     list_state: ListState,
     page_state: PageState,
     launch_placeholder: bool,
@@ -51,6 +52,7 @@ impl GameSelection {
         let maze_escape_best = stats::load_maze_escape_best();
         let solitaire_best = stats::load_solitaire_best();
         let sudoku_best = stats::load_sudoku_best();
+        let twenty_four_best_time_sec = stats::load_twenty_four_best_time();
         let initial_page_size = games.len().max(1);
 
         let mut list_state = ListState::default();
@@ -67,6 +69,7 @@ impl GameSelection {
             maze_escape_best,
             solitaire_best,
             sudoku_best,
+            twenty_four_best_time_sec,
             list_state,
             page_state: PageState {
                 current_page: 0,
@@ -121,6 +124,7 @@ impl GameSelection {
                         || game.id == "tetris"
                         || game.id == "tic_tac_toe"
                         || game.id == "twenty_four"
+                        || game.id == "wordle"
                     {
                         return Some(GameSelectionAction::LaunchGame(game));
                     }
@@ -297,6 +301,7 @@ impl GameSelection {
         ))];
 
         lines.push(Line::from(separator.clone()));
+        let stat_lines_start = lines.len();
         if game.id == "lights_out" {
             if let Some(best) = self.lights_out_best {
                 lines.push(Line::from(format!(
@@ -432,10 +437,28 @@ impl GameSelection {
             } else {
                 lines.push(Line::from(i18n::t("game.sudoku.best_none")));
             }
+        } else if game.id == "twenty_four" {
+            let best = self
+                .twenty_four_best_time_sec
+                .map(stats::format_duration)
+                .unwrap_or_else(|| i18n::t("game.twenty_four.none"));
+            lines.push(Line::from(format!(
+                "{} {}",
+                i18n::t("game.twenty_four.best_time"),
+                best
+            )));
+        } else if game.id == "tic_tac_toe" {
+            // No best-score section for tic-tac-toe in game list details.
         } else if game.id == "pacman" {
             lines.push(Line::from(format!(
                 "{} {}",
                 i18n::t("game_selection.label.high_score"),
+                s.high_score
+            )));
+        } else if game.id == "wordle" {
+            lines.push(Line::from(format!(
+                "{} {}",
+                i18n::t("game.wordle.best_streak"),
                 s.high_score
             )));
         } else if game.id == "rock_paper_scissors" {
@@ -468,13 +491,17 @@ impl GameSelection {
                 stats::format_duration(s.max_duration_sec)
             )));
         }
-        lines.push(Line::from(separator));
+        if lines.len() > stat_lines_start {
+            lines.push(Line::from(separator));
+        }
         lines.push(Line::from(i18n::t("game_selection.label.how_to_play")));
 
-        let wrapped = renderer::wrap_text(&description, inner.width.saturating_sub(1) as usize);
-        for w in wrapped {
-            lines.push(Line::from(w));
-        }
+        let rich_lines = rich_text::parse_rich_text_wrapped(
+            &description,
+            inner.width.saturating_sub(1) as usize,
+            Style::default().fg(Color::White),
+        );
+        lines.extend(rich_lines);
 
         let paragraph = Paragraph::new(lines)
             .style(Style::default().fg(Color::White))
@@ -603,6 +630,8 @@ impl GameSelection {
         self.list_state.select(Some(selected_in_page));
     }
 }
+
+
 
 
 
