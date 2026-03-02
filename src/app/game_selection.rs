@@ -28,6 +28,8 @@ pub struct GameSelection {
     list_state: ListState,
     page_state: PageState,
     launch_placeholder: bool,
+    detail_scroll: usize,
+    detail_scroll_available: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -77,6 +79,8 @@ impl GameSelection {
                 total_pages: 1,
             },
             launch_placeholder: false,
+            detail_scroll: 0,
+            detail_scroll_available: false,
         }
     }
 
@@ -89,6 +93,14 @@ impl GameSelection {
 
         match key.code {
             KeyCode::Esc => Some(GameSelectionAction::BackToMenu),
+            KeyCode::Char('w') | KeyCode::Char('W') => {
+                self.scroll_detail_up();
+                None
+            }
+            KeyCode::Char('s') | KeyCode::Char('S') => {
+                self.scroll_detail_down();
+                None
+            }
             KeyCode::Char('q') | KeyCode::Char('Q') => {
                 self.prev_page();
                 None
@@ -156,7 +168,11 @@ impl GameSelection {
         self.render_list_panel(frame, columns[0]);
         self.render_detail_panel(frame, columns[1]);
 
-        let hints = i18n::t("game_selection.hint.controls");
+        let mut hints = i18n::t("game_selection.hint.controls");
+        if self.detail_scroll_available {
+            hints.push_str("  " );
+            hints.push_str(&i18n::t_or("game_selection.hint.detail_scroll", "[W/S] Scroll Details"));
+        }
         let hint_widget = Paragraph::new(hints)
             .style(Style::default().fg(Color::DarkGray))
             .alignment(Alignment::Center);
@@ -271,7 +287,7 @@ impl GameSelection {
         frame.render_widget(right_widget, pager_chunks[2]);
     }
 
-    fn render_detail_panel(&self, frame: &mut ratatui::Frame<'_>, area: Rect) {
+    fn render_detail_panel(&mut self, frame: &mut ratatui::Frame<'_>, area: Rect) {
         let block = Block::default()
             .borders(Borders::ALL)
             .border_set(symbols::border::DOUBLE)
@@ -286,62 +302,65 @@ impl GameSelection {
                 .alignment(Alignment::Center)
                 .style(Style::default().fg(Color::White));
             frame.render_widget(p, inner);
+            self.detail_scroll_available = false;
+            self.detail_scroll = 0;
             return;
         };
 
         let s = self.stats.get(&game.id).copied().unwrap_or_default();
-        let sep_len = inner.width.saturating_sub(1) as usize;
+        let sep_len = inner.width as usize;
         let separator = "─".repeat(sep_len.max(1));
         let name = self.localized_game_name(game);
         let description = self.localized_game_description(game);
+        let details = self.localized_game_details(game);
 
-        let mut lines = vec![Line::from(Span::styled(
+        let mut top_lines = vec![Line::from(Span::styled(
             name,
             Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
         ))];
 
-        lines.push(Line::from(separator.clone()));
-        let stat_lines_start = lines.len();
+        top_lines.push(Line::from(separator.clone()));
+        let stat_lines_start = top_lines.len();
         if game.id == "lights_out" {
             if let Some(best) = self.lights_out_best {
-                lines.push(Line::from(format!(
+                top_lines.push(Line::from(format!(
                     "{} {}x{}",
                     i18n::t("game.lights_out.best_size"),
                     best.max_size,
                     best.max_size
                 )));
-                lines.push(Line::from(format!(
+                top_lines.push(Line::from(format!(
                     "{} {}",
                     i18n::t("game.lights_out.best_steps"),
                     best.min_steps
                 )));
-                lines.push(Line::from(format!(
+                top_lines.push(Line::from(format!(
                     "{} {}",
                     i18n::t("game.lights_out.best_time"),
                     stats::format_duration(best.min_time_sec)
                 )));
             } else {
-                lines.push(Line::from(i18n::t("game.lights_out.best_none")));
+                top_lines.push(Line::from(i18n::t("game.lights_out.best_none")));
             }
         } else if game.id == "memory_flip" {
             if let Some(best) = self.memory_flip_best {
-                lines.push(Line::from(format!(
+                top_lines.push(Line::from(format!(
                     "{} {}",
                     i18n::t("game.memory_flip.best_difficulty"),
                     best.difficulty
                 )));
-                lines.push(Line::from(format!(
+                top_lines.push(Line::from(format!(
                     "{} {}",
                     i18n::t("game.memory_flip.best_steps"),
                     best.min_steps
                 )));
-                lines.push(Line::from(format!(
+                top_lines.push(Line::from(format!(
                     "{} {}",
                     i18n::t("game.memory_flip.best_time"),
                     stats::format_duration(best.min_time_sec)
                 )));
             } else {
-                lines.push(Line::from(i18n::t("game.memory_flip.best_none")));
+                top_lines.push(Line::from(i18n::t("game.memory_flip.best_none")));
             }
         } else if game.id == "minesweeper" {
             if let Some(best) = self.minesweeper_best {
@@ -351,24 +370,24 @@ impl GameSelection {
                         None => "-".to_string(),
                     }
                 };
-                lines.push(Line::from(i18n::t("game.minesweeper.best_title")));
-                lines.push(Line::from(format!(
+                top_lines.push(Line::from(i18n::t("game.minesweeper.best_title")));
+                top_lines.push(Line::from(format!(
                     "{} {}",
                     i18n::t("game.minesweeper.best_d1"),
                     fmt(best.d1_min_time_sec)
                 )));
-                lines.push(Line::from(format!(
+                top_lines.push(Line::from(format!(
                     "{} {}",
                     i18n::t("game.minesweeper.best_d2"),
                     fmt(best.d2_min_time_sec)
                 )));
-                lines.push(Line::from(format!(
+                top_lines.push(Line::from(format!(
                     "{} {}",
                     i18n::t("game.minesweeper.best_d3"),
                     fmt(best.d3_min_time_sec)
                 )));
             } else {
-                lines.push(Line::from(i18n::t("game.minesweeper.best_none")));
+                top_lines.push(Line::from(i18n::t("game.minesweeper.best_none")));
             }
         } else if game.id == "maze_escape" {
             if let Some(best) = self.maze_escape_best {
@@ -383,23 +402,23 @@ impl GameSelection {
                     .min_time_sec
                     .map(stats::format_duration)
                     .unwrap_or_else(|| "-".to_string());
-                lines.push(Line::from(format!(
+                top_lines.push(Line::from(format!(
                     "{} {}",
                     i18n::t("game.maze_escape.best_max_size"),
                     size
                 )));
-                lines.push(Line::from(format!(
+                top_lines.push(Line::from(format!(
                     "{} {}",
                     i18n::t("game.maze_escape.best_max_mode"),
                     best.max_mode
                 )));
-                lines.push(Line::from(format!(
+                top_lines.push(Line::from(format!(
                     "{} {}",
                     i18n::t("game.maze_escape.best_fastest"),
                     fastest
                 )));
             } else {
-                lines.push(Line::from(i18n::t("game.maze_escape.best_none")));
+                top_lines.push(Line::from(i18n::t("game.maze_escape.best_none")));
             }
         } else if game.id == "solitaire" {
             let fmt = |v: Option<u64>| -> String {
@@ -407,107 +426,203 @@ impl GameSelection {
                     .unwrap_or_else(|| "--:--:--".to_string())
             };
             let best = self.solitaire_best.unwrap_or_default();
-            lines.push(Line::from(format!(
+            top_lines.push(Line::from(format!(
                 "{} {}",
                 i18n::t("game.solitaire.best.freecell"),
                 fmt(best.freecell_min_time_sec)
             )));
-            lines.push(Line::from(format!(
+            top_lines.push(Line::from(format!(
                 "{} {}",
                 i18n::t("game.solitaire.best.klondike"),
                 fmt(best.klondike_min_time_sec)
             )));
-            lines.push(Line::from(format!(
+            top_lines.push(Line::from(format!(
                 "{} {}",
                 i18n::t("game.solitaire.best.spider"),
                 fmt(best.spider_min_time_sec)
             )));
         } else if game.id == "sudoku" {
             if let Some(best) = self.sudoku_best {
-                lines.push(Line::from(format!(
+                top_lines.push(Line::from(format!(
                     "{} {}",
                     i18n::t("game.sudoku.best_difficulty"),
                     i18n::t(&format!("game.sudoku.difficulty.{}", best.difficulty))
                 )));
-                lines.push(Line::from(format!(
+                top_lines.push(Line::from(format!(
                     "{} {}",
                     i18n::t("game.sudoku.best_time"),
                     stats::format_duration(best.min_time_sec)
                 )));
             } else {
-                lines.push(Line::from(i18n::t("game.sudoku.best_none")));
+                top_lines.push(Line::from(i18n::t("game.sudoku.best_none")));
             }
         } else if game.id == "twenty_four" {
             let best = self
                 .twenty_four_best_time_sec
                 .map(stats::format_duration)
                 .unwrap_or_else(|| i18n::t("game.twenty_four.none"));
-            lines.push(Line::from(format!(
+            top_lines.push(Line::from(format!(
                 "{} {}",
                 i18n::t("game.twenty_four.best_time"),
                 best
             )));
         } else if game.id == "tic_tac_toe" {
-            // No best-score section for tic-tac-toe in game list details.
         } else if game.id == "pacman" {
-            lines.push(Line::from(format!(
+            top_lines.push(Line::from(format!(
                 "{} {}",
                 i18n::t("game_selection.label.high_score"),
                 s.high_score
             )));
         } else if game.id == "wordle" {
-            lines.push(Line::from(format!(
+            top_lines.push(Line::from(format!(
                 "{} {}",
                 i18n::t("game.wordle.best_streak"),
                 s.high_score
             )));
         } else if game.id == "rock_paper_scissors" {
-            lines.push(Line::from(format!(
+            top_lines.push(Line::from(format!(
                 "{} {}",
                 i18n::t("game.rock_paper_scissors.best_streak"),
                 s.high_score
             )));
         } else if game.id == "blackjack" {
-            lines.push(Line::from(format!(
+            top_lines.push(Line::from(format!(
                 "{} {}",
                 i18n::t("game_selection.label.high_net_profit"),
                 s.high_score
             )));
         } else if game.id == "tetris" {
-            lines.push(Line::from(format!(
+            top_lines.push(Line::from(format!(
                 "{} {}",
                 i18n::t("game_selection.label.high_score"),
                 s.high_score
             )));
         } else {
-            lines.push(Line::from(format!(
+            top_lines.push(Line::from(format!(
                 "{} {}",
                 i18n::t("game_selection.label.high_score"),
                 s.high_score
             )));
-            lines.push(Line::from(format!(
+            top_lines.push(Line::from(format!(
                 "{} {}",
                 i18n::t("game_selection.label.longest_play"),
                 stats::format_duration(s.max_duration_sec)
             )));
         }
-        if lines.len() > stat_lines_start {
-            lines.push(Line::from(separator));
+        if top_lines.len() > stat_lines_start {
+            top_lines.push(Line::from(separator.clone()));
         }
-        lines.push(Line::from(i18n::t("game_selection.label.how_to_play")));
+        top_lines.push(Line::from(i18n::t("game_selection.label.how_to_play")));
 
         let rich_lines = rich_text::parse_rich_text_wrapped(
             &description,
             inner.width.saturating_sub(1) as usize,
             Style::default().fg(Color::White),
         );
-        lines.extend(rich_lines);
+        top_lines.extend(rich_lines);
 
-        let paragraph = Paragraph::new(lines)
+        let min_details_h = 3u16.min(inner.height.max(1));
+        let top_content_h = top_lines.len() as u16;
+        let top_h = top_content_h.min(inner.height.saturating_sub(min_details_h));
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(top_h), Constraint::Min(min_details_h)])
+            .split(inner);
+
+        let top_paragraph = Paragraph::new(top_lines)
             .style(Style::default().fg(Color::White))
             .wrap(Wrap { trim: false });
-        frame.render_widget(paragraph, inner);
+        frame.render_widget(top_paragraph, chunks[0]);
+
+        let detail_rows = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(1), Constraint::Length(1), Constraint::Min(1)])
+            .split(chunks[1]);
+
+        frame.render_widget(
+            Paragraph::new("─".repeat(detail_rows[0].width as usize))
+                .style(Style::default().fg(Color::White))
+                .alignment(Alignment::Left),
+            detail_rows[0],
+        );
+
+        frame.render_widget(
+            Paragraph::new(i18n::t("game_selection.label.game_details"))
+                .style(Style::default().fg(Color::White))
+                .alignment(Alignment::Left),
+            detail_rows[1],
+        );
+
+        let details_full_lines = rich_text::parse_rich_text_wrapped(
+            &details,
+            detail_rows[2].width.saturating_sub(2) as usize,
+            Style::default().fg(Color::White),
+        );
+
+        let viewport_h = detail_rows[2].height as usize;
+        let max_scroll = details_full_lines.len().saturating_sub(viewport_h);
+        if self.detail_scroll > max_scroll {
+            self.detail_scroll = max_scroll;
+        }
+        self.detail_scroll_available = max_scroll > 0;
+
+        let text_area = if self.detail_scroll_available && detail_rows[2].width > 2 {
+            Rect::new(
+                detail_rows[2].x,
+                detail_rows[2].y,
+                detail_rows[2].width - 2,
+                detail_rows[2].height,
+            )
+        } else {
+            detail_rows[2]
+        };
+
+        let details_paragraph = Paragraph::new(details_full_lines)
+            .style(Style::default().fg(Color::White))
+            .wrap(Wrap { trim: false })
+            .scroll((self.detail_scroll as u16, 0));
+        frame.render_widget(details_paragraph, text_area);
+
+        if self.detail_scroll_available && detail_rows[2].width > 2 {
+            let scroll_x = detail_rows[2].x + detail_rows[2].width - 1;
+            let can_up = self.detail_scroll > 0;
+            let can_down = self.detail_scroll < max_scroll;
+
+            frame.render_widget(
+                Paragraph::new(if can_up { "↑" } else { " " }).style(Style::default().fg(Color::White)),
+                Rect::new(scroll_x, detail_rows[2].y, 1, 1),
+            );
+            frame.render_widget(
+                Paragraph::new(if can_up { "W" } else { " " }).style(Style::default().fg(Color::White)),
+                Rect::new(scroll_x, detail_rows[2].y.saturating_add(1), 1, 1),
+            );
+
+            if detail_rows[2].height > 4 {
+                let track_start = detail_rows[2].y.saturating_add(2);
+                let track_len = detail_rows[2].height.saturating_sub(4);
+                let pos = if max_scroll == 0 {
+                    0
+                } else {
+                    ((self.detail_scroll * (track_len as usize - 1)) / max_scroll) as u16
+                };
+                frame.render_widget(
+                    Paragraph::new("█").style(Style::default().fg(Color::White)),
+                    Rect::new(scroll_x, track_start.saturating_add(pos), 1, 1),
+                );
+            }
+
+            let d_y = detail_rows[2].y + detail_rows[2].height.saturating_sub(2);
+            frame.render_widget(
+                Paragraph::new(if can_down { "S" } else { " " }).style(Style::default().fg(Color::White)),
+                Rect::new(scroll_x, d_y, 1, 1),
+            );
+            frame.render_widget(
+                Paragraph::new(if can_down { "↓" } else { " " }).style(Style::default().fg(Color::White)),
+                Rect::new(scroll_x, d_y.saturating_add(1), 1, 1),
+            );
+        }
     }
+
 
     fn render_launch_placeholder(&self, frame: &mut ratatui::Frame<'_>, area: Rect) {
         let width = 32u16.min(area.width.saturating_sub(2));
@@ -549,6 +664,18 @@ impl GameSelection {
         &self.games[start..end]
     }
 
+    fn scroll_detail_up(&mut self) {
+        self.detail_scroll = self.detail_scroll.saturating_sub(1);
+    }
+
+    fn scroll_detail_down(&mut self) {
+        self.detail_scroll = self.detail_scroll.saturating_add(1);
+    }
+
+    fn reset_detail_scroll(&mut self) {
+        self.detail_scroll = 0;
+    }
+
     fn select_prev(&mut self) {
         let page_len = self.current_page_games().len();
         if page_len == 0 {
@@ -559,6 +686,7 @@ impl GameSelection {
         let selected = self.list_state.selected().unwrap_or(0);
         if selected > 0 {
             self.list_state.select(Some(selected - 1));
+            self.reset_detail_scroll();
         }
     }
 
@@ -572,6 +700,7 @@ impl GameSelection {
         let selected = self.list_state.selected().unwrap_or(0);
         if selected + 1 < page_len {
             self.list_state.select(Some(selected + 1));
+            self.reset_detail_scroll();
         }
     }
 
@@ -579,6 +708,7 @@ impl GameSelection {
         if self.page_state.current_page > 0 {
             self.page_state.current_page -= 1;
             self.list_state.select(Some(0));
+            self.reset_detail_scroll();
         }
     }
 
@@ -586,6 +716,7 @@ impl GameSelection {
         if self.page_state.current_page + 1 < self.page_state.total_pages {
             self.page_state.current_page += 1;
             self.list_state.select(Some(0));
+            self.reset_detail_scroll();
         }
     }
 
@@ -595,6 +726,10 @@ impl GameSelection {
 
     fn localized_game_description(&self, game: &GameMeta) -> String {
         i18n::t_or(&format!("game.{}.description", game.id), &game.description)
+    }
+
+    fn localized_game_details(&self, game: &GameMeta) -> String {
+        i18n::t_or(&format!("game.{}.details", game.id), "")
     }
 
     fn selected_global_index(&self) -> Option<usize> {
@@ -630,6 +765,13 @@ impl GameSelection {
         self.list_state.select(Some(selected_in_page));
     }
 }
+
+
+
+
+
+
+
 
 
 

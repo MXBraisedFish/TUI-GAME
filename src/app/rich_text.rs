@@ -332,50 +332,115 @@ fn push_error(out: &mut Vec<StyledChar>, msg: &str, base: Style) {
 
 fn styled_chars_to_lines(chars: &[StyledChar], width: usize, base: Style) -> Vec<Line<'static>> {
     let mut lines: Vec<Line<'static>> = Vec::new();
-    let mut cur_spans: Vec<Span<'static>> = Vec::new();
-    let mut cur_text = String::new();
-    let mut cur_style = base;
-    let mut cur_width = 0usize;
+    let mut segment: Vec<StyledChar> = Vec::new();
 
     for item in chars {
         if item.ch == '\n' {
-            flush_span(&mut cur_spans, &mut cur_text, cur_style);
-            lines.push(Line::from(std::mem::take(&mut cur_spans)));
-            cur_width = 0;
+            if segment.is_empty() {
+                lines.push(Line::default());
+            } else {
+                wrap_segment_wordwise(&segment, width, base, &mut lines);
+                segment.clear();
+            }
             continue;
         }
-
-        let w = UnicodeWidthChar::width(item.ch).unwrap_or(0);
-        if cur_width > 0 && w > 0 && cur_width + w > width {
-            flush_span(&mut cur_spans, &mut cur_text, cur_style);
-            lines.push(Line::from(std::mem::take(&mut cur_spans)));
-            cur_width = 0;
-        }
-
-        if cur_text.is_empty() {
-            cur_style = item.style;
-        } else if cur_style != item.style {
-            flush_span(&mut cur_spans, &mut cur_text, cur_style);
-            cur_style = item.style;
-        }
-
-        cur_text.push(item.ch);
-        cur_width += w;
+        segment.push(item.clone());
     }
 
-    flush_span(&mut cur_spans, &mut cur_text, cur_style);
-    if !cur_spans.is_empty() || lines.is_empty() {
-        lines.push(Line::from(cur_spans));
+    if !segment.is_empty() {
+        wrap_segment_wordwise(&segment, width, base, &mut lines);
+    }
+
+    if lines.is_empty() {
+        lines.push(Line::default());
     }
     lines
 }
 
-fn flush_span(spans: &mut Vec<Span<'static>>, text: &mut String, style: Style) {
-    if text.is_empty() {
-        return;
+fn wrap_segment_wordwise(segment: &[StyledChar], width: usize, base: Style, out: &mut Vec<Line<'static>>) {
+    let mut remaining: Vec<StyledChar> = segment.to_vec();
+    let width = width.max(1);
+
+    while !remaining.is_empty() {
+        let total_w = remaining.iter().map(|c| UnicodeWidthChar::width(c.ch).unwrap_or(0)).sum::<usize>();
+        if total_w <= width {
+            out.push(build_line(&remaining, base));
+            break;
+        }
+
+        let mut cur_w = 0usize;
+        let mut limit = 0usize;
+        for (idx, ch) in remaining.iter().enumerate() {
+            let w = UnicodeWidthChar::width(ch.ch).unwrap_or(0);
+            if cur_w + w > width {
+                break;
+            }
+            cur_w += w;
+            limit = idx + 1;
+        }
+
+        if limit == 0 {
+            limit = 1;
+        }
+
+        let mut break_at = None;
+        for i in (0..limit).rev() {
+            if remaining[i].ch.is_whitespace() {
+                break_at = Some(i);
+                break;
+            }
+        }
+
+        let cut = match break_at {
+            Some(i) if i > 0 => i,
+            _ => limit,
+        };
+
+        let mut head = remaining[..cut].to_vec();
+        while head.last().map(|v| v.ch.is_whitespace()).unwrap_or(false) {
+            head.pop();
+        }
+        out.push(build_line(&head, base));
+
+        let mut next = if break_at.is_some() {
+            remaining[cut + 1..].to_vec()
+        } else {
+            remaining[cut..].to_vec()
+        };
+        while next.first().map(|v| v.ch.is_whitespace()).unwrap_or(false) {
+            next.remove(0);
+        }
+        remaining = next;
     }
-    spans.push(Span::styled(std::mem::take(text), style));
 }
+
+fn build_line(chars: &[StyledChar], base: Style) -> Line<'static> {
+    if chars.is_empty() {
+        return Line::default();
+    }
+
+    let mut spans: Vec<Span<'static>> = Vec::new();
+    let mut cur = String::new();
+    let mut style = base;
+
+    for item in chars {
+        if cur.is_empty() {
+            style = item.style;
+        } else if style != item.style {
+            spans.push(Span::styled(std::mem::take(&mut cur), style));
+            style = item.style;
+        }
+        cur.push(item.ch);
+    }
+
+    if !cur.is_empty() {
+        spans.push(Span::styled(cur, style));
+    }
+
+    Line::from(spans)
+}
+
+
 
 fn parse_color(raw: &str) -> Option<Color> {
     let text = raw.trim();
@@ -450,3 +515,4 @@ fn parse_rgb_color(raw: &str) -> Option<Color> {
     let b = parts[2].parse::<u8>().ok()?;
     Some(Color::Rgb(r, g, b))
 }
+

@@ -407,9 +407,9 @@ local function multiplier_display_text(h)
     local base = effective_mult(h)
     local settle = settlement_factor(h)
     if settle > 1.001 then
-        return string.format("x%.1f", base * settle)
+        return string.format("%.1fx", base * settle)
     end
-    return string.format("x%.1f", base)
+    return string.format("%.1fx", base)
 end
 
 local function adjust_bet_multiplier(delta)
