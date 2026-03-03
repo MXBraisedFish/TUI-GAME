@@ -8,7 +8,7 @@ local FRAME_MS = 16
 local PLAYER_STEP_FRAMES = 12
 local GHOST_SLOW_FACTOR = 2
 local MAX_LEVEL = 20
-local EXTRA_LIFE_SCORE = 10000
+local EXTRA_LIFE_SCORE = 100000
 
 local PELLET_CHAR = "·"
 local POWER_CHAR = "*"

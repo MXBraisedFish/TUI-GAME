@@ -831,7 +831,7 @@ local function board_geometry()
     local term_w, term_h = terminal_size()
     local controls_text = tr(
         "game.maze_escape.controls",
-        "[UP]/[DOWN]/[LEFT]/[RIGHT] Move  [P] Resize/Mode  [R] Restart  [S] Save  [Q]/[ESC] Exit"
+        "↑]/[↓]/[L←]/[→] Move  [P] Resize/Mode  [R] Restart  [S] Save  [Q]/[ESC] Exit"
     )
     local controls_w = min_width_for_lines(controls_text, 3, 28)
 
@@ -968,7 +968,7 @@ end
 local function draw_controls(x, y, w)
     local text = tr(
         "game.maze_escape.controls",
-        "[UP]/[DOWN]/[LEFT]/[RIGHT] Move  [P] Resize/Mode  [R] Restart  [S] Save  [Q]/[ESC] Exit"
+        "↑]/[↓]/[L←]/[→] Move  [P] Resize/Mode  [R] Restart  [S] Save  [Q]/[ESC] Exit"
     )
     local term_w = terminal_size()
     local max_w = math.max(10, term_w - 2)
@@ -1015,7 +1015,7 @@ end
 local function minimum_required_size()
     local controls_text = tr(
         "game.maze_escape.controls",
-        "[UP]/[DOWN]/[LEFT]/[RIGHT] Move  [P] Resize/Mode  [R] Restart  [S] Save  [Q]/[ESC] Exit"
+        "↑]/[↓]/[L←]/[→] Move  [P] Resize/Mode  [R] Restart  [S] Save  [Q]/[ESC] Exit"
     )
     local controls_w = min_width_for_lines(controls_text, 3, 28)
 
