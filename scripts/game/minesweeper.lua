@@ -82,14 +82,20 @@ local state = {
     last_warn_min_h = 0
 }
 
-local function tr(key, fallback)
+local function tr(key)
     if type(translate) ~= "function" then
-        return fallback
+        return key
     end
+
     local ok, value = pcall(translate, key)
-    if not ok or value == nil or value == "" or value == key then
-        return fallback
+    if not ok or value == nil or value == "" then
+        return key
     end
+
+    if type(value) == "string" and string.find(value, "[missing-i18n-key:", 1, true) ~= nil then
+        return key
+    end
+
     return value
 end
 
@@ -303,7 +309,7 @@ local function best_line()
     local d2 = state.best[2]
     local d3 = state.best[3]
     if d1 == nil and d2 == nil and d3 == nil then
-        return tr("game.minesweeper.best_none", "Best: none")
+        return tr("game.minesweeper.best_none")
     end
     local function fmt(v)
         if v == nil then return "-" end
@@ -311,7 +317,7 @@ local function best_line()
     end
     return string.format(
         "%s  1:%s  2:%s  3:%s",
-        tr("game.minesweeper.best_title", "Best"),
+        tr("game.minesweeper.best_title"),
         fmt(d1), fmt(d2), fmt(d3)
     )
 end
@@ -351,7 +357,7 @@ local function save_game_state(show_toast)
     if show_toast then
         local key = ok and "game.2048.save_success" or "game.2048.save_unavailable"
         local def = ok and "Save successful!" or "Save API unavailable."
-        state.toast_text = tr(key, def)
+        state.toast_text = tr(key)
         state.toast_until = state.frame + 2 * FPS
         state.dirty = true
     end
@@ -535,22 +541,20 @@ local function board_geometry()
     local grid_w = ROW_LABEL_W + state.cols
     local grid_h = 2 + state.rows
 
-    local time_text = tr("game.minesweeper.time", "Time") .. " 00:00:00"
-    local mines_text = tr("game.minesweeper.mines_left", "Mines") .. " -999"
+    local time_text = tr("game.minesweeper.time") .. " 00:00:00"
+    local mines_text = tr("game.minesweeper.mines_left") .. " -999"
     local status_w = key_width(time_text) + 2 + key_width("ovo") + 2 + key_width(mines_text)
     local message_w = math.max(
-        key_width(tr("game.2048.confirm_restart", "Confirm restart? [Y] Yes / [N] No")),
-        key_width(tr("game.2048.confirm_exit", "Confirm exit? [Y] Yes / [N] No")),
-        key_width(tr("game.minesweeper.win_banner", "All mines cleared!")),
-        key_width(tr("game.minesweeper.lose_banner", "You hit a mine!")),
-        key_width(tr("game.minesweeper.input_config_hint", "Input 1/2/3 or row col mines.")),
-        key_width(tr("game.minesweeper.input_jump_hint", "Input row col to jump."))
+        key_width(tr("game.2048.confirm_restart")),
+        key_width(tr("game.2048.confirm_exit")),
+        key_width(tr("game.minesweeper.win_banner")),
+        key_width(tr("game.minesweeper.lose_banner")),
+        key_width(tr("game.minesweeper.input_config_hint")),
+        key_width(tr("game.minesweeper.input_jump_hint"))
     )
 
     local controls_text = tr(
-        "game.minesweeper.controls",
-        "[↑]/[↓]/[←]/[→] Move  [Space] Open  [Z] Flag  [X] Question  [P] Config  [D] Jump  [R] Restart  [S] Save  [Q]/[ESC] Exit"
-    )
+        "game.minesweeper.controls")
     local controls_w = min_width_for_lines(controls_text, 3, 26)
 
     local frame_w = math.max(grid_w, status_w, message_w, controls_w, key_width(best_line())) + 2
@@ -668,9 +672,9 @@ end
 local function draw_status(x, y, frame_w)
     local elapsed = elapsed_seconds()
     local term_w = terminal_size()
-    local left = tr("game.minesweeper.time", "Time") .. " " .. format_duration(elapsed)
+    local left = tr("game.minesweeper.time") .. " " .. format_duration(elapsed)
     local center = face_text()
-    local right = tr("game.minesweeper.mines_left", "Mines") .. " " .. tostring(state.mines - count_flags())
+    local right = tr("game.minesweeper.mines_left") .. " " .. tostring(state.mines - count_flags())
     draw_text(1, y - 3, string.rep(" ", term_w), "white", "black")
     draw_text(1, y - 2, string.rep(" ", term_w), "white", "black")
     draw_text(1, y - 1, string.rep(" ", term_w), "white", "black")
@@ -692,28 +696,28 @@ local function draw_status(x, y, frame_w)
 
     if state.input_mode == "config" then
         if state.input_buffer == "" then
-            draw_text(x, y - 1, tr("game.minesweeper.input_config_hint", "Input 1/2/3 or row col mines."), "dark_gray", "black")
+            draw_text(x, y - 1, tr("game.minesweeper.input_config_hint"), "dark_gray", "black")
         else
             draw_text(x, y - 1, state.input_buffer, "white", "black")
         end
     elseif state.input_mode == "jump" then
         if state.input_buffer == "" then
-            draw_text(x, y - 1, tr("game.minesweeper.input_jump_hint", "Input row col to jump."), "dark_gray", "black")
+            draw_text(x, y - 1, tr("game.minesweeper.input_jump_hint"), "dark_gray", "black")
         else
             draw_text(x, y - 1, state.input_buffer, "white", "black")
         end
     elseif state.won then
-        local line = tr("game.minesweeper.win_banner", "All mines cleared!")
-            .. tr("game.minesweeper.win_controls", "[R] Restart  [Q]/[ESC] Exit")
+        local line = tr("game.minesweeper.win_banner")
+            .. tr("game.minesweeper.win_controls")
         draw_text(x, y - 1, line, "yellow", "black")
     elseif state.lost then
-        local line = tr("game.minesweeper.lose_banner", "You hit a mine!")
-            .. tr("game.minesweeper.lose_controls", "[R] Restart  [Q]/[ESC] Exit")
+        local line = tr("game.minesweeper.lose_banner")
+            .. tr("game.minesweeper.lose_controls")
         draw_text(x, y - 1, line, "red", "black")
     elseif state.confirm_mode == "restart" then
-        draw_text(x, y - 1, tr("game.2048.confirm_restart", "Confirm restart? [Y] Yes / [N] No"), "yellow", "black")
+        draw_text(x, y - 1, tr("game.2048.confirm_restart"), "yellow", "black")
     elseif state.confirm_mode == "exit" then
-        draw_text(x, y - 1, tr("game.2048.confirm_exit", "Confirm exit? [Y] Yes / [N] No"), "yellow", "black")
+        draw_text(x, y - 1, tr("game.2048.confirm_exit"), "yellow", "black")
     elseif state.toast_text ~= nil and state.frame <= state.toast_until then
         draw_text(x, y - 1, state.toast_text, "green", "black")
     end
@@ -721,9 +725,7 @@ end
 
 local function draw_controls(x, y, frame_h)
     local text = tr(
-        "game.minesweeper.controls",
-        "[↑]/[↓]/[←]/[→] Move  [Space] Open  [Z] Flag  [X] Question  [P] Config  [D] Jump  [R] Restart  [S] Save  [Q]/[ESC] Exit"
-    )
+        "game.minesweeper.controls")
     local term_w = terminal_size()
     local max_w = math.max(10, term_w - 2)
     local lines = wrap_words(text, max_w)
@@ -796,20 +798,18 @@ local function minimum_required_size()
     local frame_h = grid_h + 2
 
     local controls_text = tr(
-        "game.minesweeper.controls",
-        "[↑]/[↓]/[←]/[→] Move  [Space] Open  [Z] Flag  [X] Question  [P] Config  [D] Jump  [R] Restart  [S] Save  [Q]/[ESC] Exit"
-    )
+        "game.minesweeper.controls")
     local controls_w = min_width_for_lines(controls_text, 3, 26)
-    local status_w = key_width(tr("game.minesweeper.time", "Time") .. " 00:00:00")
+    local status_w = key_width(tr("game.minesweeper.time") .. " 00:00:00")
         + 2 + key_width("ovo")
-        + 2 + key_width(tr("game.minesweeper.mines_left", "Mines") .. " -999")
+        + 2 + key_width(tr("game.minesweeper.mines_left") .. " -999")
     local hint_w = math.max(
-        key_width(tr("game.minesweeper.input_config_hint", "Input 1/2/3 or row col mines.")),
-        key_width(tr("game.minesweeper.input_jump_hint", "Input row col to jump.")),
-        key_width(tr("game.minesweeper.win_banner", "All mines cleared!") .. tr("game.minesweeper.win_controls", "[R] Restart  [Q]/[ESC] Exit")),
-        key_width(tr("game.minesweeper.lose_banner", "You hit a mine!") .. tr("game.minesweeper.lose_controls", "[R] Restart  [Q]/[ESC] Exit")),
-        key_width(tr("game.2048.confirm_restart", "Confirm restart? [Y] Yes / [N] No")),
-        key_width(tr("game.2048.confirm_exit", "Confirm exit? [Y] Yes / [N] No"))
+        key_width(tr("game.minesweeper.input_config_hint")),
+        key_width(tr("game.minesweeper.input_jump_hint")),
+        key_width(tr("game.minesweeper.win_banner") .. tr("game.minesweeper.win_controls")),
+        key_width(tr("game.minesweeper.lose_banner") .. tr("game.minesweeper.lose_controls")),
+        key_width(tr("game.2048.confirm_restart")),
+        key_width(tr("game.2048.confirm_exit"))
     )
 
     local min_w = math.max(frame_w, controls_w, status_w, hint_w) + 2
@@ -821,10 +821,10 @@ end
 
 local function draw_terminal_size_warning(term_w, term_h, min_w, min_h)
     local lines = {
-        tr("warning.size_title", "Terminal Too Small"),
-        string.format("%s: %dx%d", tr("warning.required", "Required size"), min_w, min_h),
-        string.format("%s: %dx%d", tr("warning.current", "Current size"), term_w, term_h),
-        tr("warning.enlarge_hint", "Please enlarge terminal window to continue.")
+        tr("warning.size_title"),
+        string.format("%s: %dx%d", tr("warning.required"), min_w, min_h),
+        string.format("%s: %dx%d", tr("warning.current"), term_w, term_h),
+        tr("warning.enlarge_hint")
     }
 
     local top = math.floor((term_h - #lines) / 2)

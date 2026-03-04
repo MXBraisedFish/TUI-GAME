@@ -54,14 +54,20 @@ local state = {
     result_committed = false,
 }
 
-local function tr(key, fallback)
+local function tr(key)
     if type(translate) ~= "function" then
-        return fallback
+        return key
     end
+
     local ok, value = pcall(translate, key)
-    if not ok or value == nil or value == "" or value == key then
-        return fallback
+    if not ok or value == nil or value == "" then
+        return key
     end
+
+    if type(value) == "string" and string.find(value, "[missing-i18n-key:", 1, true) ~= nil then
+        return key
+    end
+
     return value
 end
 
@@ -304,17 +310,17 @@ local function board_geometry()
     local grid_w = SIZE * CELL_W
     local grid_h = SIZE * CELL_H
 
-    local status_w = text_width(tr("game.sliding_puzzle.time", "Time") .. " 00:00:00")
+    local status_w = text_width(tr("game.sliding_puzzle.time") .. " 00:00:00")
         + 2
-        + text_width(tr("game.sliding_puzzle.steps", "Steps") .. " 99999")
+        + text_width(tr("game.sliding_puzzle.steps") .. " 99999")
     local best_w = text_width(
-        tr("game.sliding_puzzle.best_title", "Best")
+        tr("game.sliding_puzzle.best_title")
             .. "  "
-            .. tr("game.sliding_puzzle.best_steps", "Steps")
+            .. tr("game.sliding_puzzle.best_steps")
             .. " "
             .. tostring(math.max(0, state.best_steps))
             .. "  "
-            .. tr("game.sliding_puzzle.best_time", "Time")
+            .. tr("game.sliding_puzzle.best_time")
             .. " "
             .. format_duration(math.max(0, state.best_time_sec))
     )
@@ -347,27 +353,27 @@ end
 
 local function best_line_text()
     if state.best_steps <= 0 then
-        return tr("game.sliding_puzzle.best_none", "Best: none")
+        return tr("game.sliding_puzzle.best_none")
     end
-    return tr("game.sliding_puzzle.best_title", "Best")
+    return tr("game.sliding_puzzle.best_title")
         .. "  "
-        .. tr("game.sliding_puzzle.best_steps", "Steps")
+        .. tr("game.sliding_puzzle.best_steps")
         .. " " .. tostring(state.best_steps)
         .. "  "
-        .. tr("game.sliding_puzzle.best_time", "Time")
+        .. tr("game.sliding_puzzle.best_time")
         .. " " .. format_duration(state.best_time_sec)
 end
 
 local function move_mode_text()
     if state.move_mode == "number" then
-        return tr("game.sliding_puzzle.mode_number", "Number Move")
+        return tr("game.sliding_puzzle.mode_number")
     end
-    return tr("game.sliding_puzzle.mode_blank", "Blank Move")
+    return tr("game.sliding_puzzle.mode_blank")
 end
 local function draw_status(x, y, frame_w)
     local elapsed = elapsed_seconds()
-    local left = tr("game.sliding_puzzle.time", "Time") .. " " .. format_duration(elapsed)
-    local right = tr("game.sliding_puzzle.steps", "Steps") .. " " .. tostring(state.steps)
+    local left = tr("game.sliding_puzzle.time") .. " " .. format_duration(elapsed)
+    local right = tr("game.sliding_puzzle.steps") .. " " .. tostring(state.steps)
 
     local term_w = terminal_size()
     local right_x = x + frame_w - text_width(right)
@@ -382,13 +388,13 @@ local function draw_status(x, y, frame_w)
     draw_text(right_x, y - 2, right, "light_cyan", "black")
 
     if state.won then
-        local line = tr("game.sliding_puzzle.win_banner", "All numbers are in order!")
-            .. tr("game.sliding_puzzle.win_controls", " [R] Restart  [Q]/[ESC] Exit")
+        local line = tr("game.sliding_puzzle.win_banner")
+            .. tr("game.sliding_puzzle.win_controls")
         draw_text(x, y - 1, line, "yellow", "black")
     elseif state.confirm_mode == "restart" then
-        draw_text(x, y - 1, tr("game.sliding_puzzle.confirm_restart", "Confirm restart? [Y] Yes / [N] No"), "yellow", "black")
+        draw_text(x, y - 1, tr("game.sliding_puzzle.confirm_restart"), "yellow", "black")
     elseif state.confirm_mode == "exit" then
-        draw_text(x, y - 1, tr("game.sliding_puzzle.confirm_exit", "Confirm exit? [Y] Yes / [N] No"), "yellow", "black")
+        draw_text(x, y - 1, tr("game.sliding_puzzle.confirm_exit"), "yellow", "black")
     elseif state.toast_text ~= nil and state.frame <= state.toast_until then
         draw_text(x, y - 1, state.toast_text, "green", "black")
     end
@@ -396,7 +402,7 @@ end
 
 local function draw_controls(y_bottom)
     local term_w = terminal_size()
-    local controls = tr("game.sliding_puzzle.controls", "[↑]/[↓]/[←]/[→] Move  [X] Switch Mode  [R] Restart  [S] Save  [Q]/[ESC] Exit")
+    local controls = tr("game.sliding_puzzle.controls")
     local max_w = math.max(10, term_w - 2)
     local lines = wrap_words(controls, max_w)
     if #lines > 3 then
@@ -422,7 +428,7 @@ end
 
 local function draw_move_mode(y_bottom)
     local term_w = terminal_size()
-    local line = tr("game.sliding_puzzle.mode_label", "Move Mode")
+    local line = tr("game.sliding_puzzle.mode_label")
         .. ": "
         .. move_mode_text()
     local cx = math.floor((term_w - text_width(line)) / 2)
@@ -589,7 +595,7 @@ local function save_game_state(show_toast)
     if show_toast then
         local key = ok and "game.sliding_puzzle.save_success" or "game.sliding_puzzle.save_unavailable"
         local def = ok and "Save successful!" or "Save API unavailable."
-        state.toast_text = tr(key, def)
+        state.toast_text = tr(key)
         state.toast_until = state.frame + 2 * FPS
         state.dirty = true
     end
@@ -792,30 +798,30 @@ local function minimum_required_size()
     local frame_h = SIZE * CELL_H + 2
 
     local controls_w = min_width_for_lines(
-        tr("game.sliding_puzzle.controls", "[↑]/[↓]/[←]/[→] Move  [X] Switch Mode  [R] Restart  [S] Save  [Q]/[ESC] Exit"),
+        tr("game.sliding_puzzle.controls"),
         3,
         26
     )
 
-    local status_w = text_width(tr("game.sliding_puzzle.time", "Time") .. " 00:00:00")
+    local status_w = text_width(tr("game.sliding_puzzle.time") .. " 00:00:00")
         + 2
-        + text_width(tr("game.sliding_puzzle.steps", "Steps") .. " 99999")
+        + text_width(tr("game.sliding_puzzle.steps") .. " 99999")
 
     local best_w = text_width(
-        tr("game.sliding_puzzle.best_title", "Best")
+        tr("game.sliding_puzzle.best_title")
             .. "  "
-            .. tr("game.sliding_puzzle.best_steps", "Steps")
+            .. tr("game.sliding_puzzle.best_steps")
             .. " 99999  "
-            .. tr("game.sliding_puzzle.best_time", "Time")
+            .. tr("game.sliding_puzzle.best_time")
             .. " 00:00:00"
     )
 
     local tip_w = math.max(
-        text_width(tr("game.sliding_puzzle.confirm_restart", "Confirm restart? [Y] Yes / [N] No")),
-        text_width(tr("game.sliding_puzzle.confirm_exit", "Confirm exit? [Y] Yes / [N] No")),
-        text_width(tr("game.sliding_puzzle.win_banner", "All numbers are in order!") .. tr("game.sliding_puzzle.win_controls", " [R] Restart  [Q]/[ESC] Exit"))
+        text_width(tr("game.sliding_puzzle.confirm_restart")),
+        text_width(tr("game.sliding_puzzle.confirm_exit")),
+        text_width(tr("game.sliding_puzzle.win_banner") .. tr("game.sliding_puzzle.win_controls"))
     )
-    local mode_w = text_width(tr("game.sliding_puzzle.mode_label", "Move Mode") .. ": " .. tr("game.sliding_puzzle.mode_number", "Number Move"))
+    local mode_w = text_width(tr("game.sliding_puzzle.mode_label") .. ": " .. tr("game.sliding_puzzle.mode_number"))
     local min_w = math.max(frame_w, controls_w, status_w, best_w, tip_w, mode_w) + 2
     local min_h = frame_h + 8
     return min_w, min_h
@@ -823,10 +829,10 @@ end
 
 local function draw_terminal_size_warning(term_w, term_h, min_w, min_h)
     local lines = {
-        tr("warning.size_title", "Terminal Too Small"),
-        string.format("%s: %dx%d", tr("warning.required", "Required size"), min_w, min_h),
-        string.format("%s: %dx%d", tr("warning.current", "Current size"), term_w, term_h),
-        tr("warning.enlarge_hint", "Please enlarge terminal window to continue.")
+        tr("warning.size_title"),
+        string.format("%s: %dx%d", tr("warning.required"), min_w, min_h),
+        string.format("%s: %dx%d", tr("warning.current"), term_w, term_h),
+        tr("warning.enlarge_hint")
     }
 
     local top = math.floor((term_h - #lines) / 2)

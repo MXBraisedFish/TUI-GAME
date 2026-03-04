@@ -8,11 +8,21 @@ local BM = "    ╟──────┼──────┼──────�
 local BB = "    ╚══════╧══════╧══════╝"
 local S = { d = 3, p = {}, sol = {}, b = {}, g = {}, cf = {}, r = 1, c = 1, undo = {}, f = 0, sf = 0, ef = nil, win = false, bc = false, im = nil, ib =
 "", cm = nil, toast = nil, tu = 0, as = 0, best = nil, dirty = true, le = -1, lt = false, launch = "new", area = nil, tw = 0, th = 0, hl = false }
-local function tr(k, d)
-  if type(translate) ~= "function" then return d end
-  local ok, v = pcall(translate, k)
-  if (not ok) or v == nil or v == "" or v == k then return d end
-  return v
+local function tr(key)
+    if type(translate) ~= "function" then
+        return key
+    end
+
+    local ok, value = pcall(translate, key)
+    if not ok or value == nil or value == "" then
+        return key
+    end
+
+    if type(value) == "string" and string.find(value, "[missing-i18n-key:", 1, true) ~= nil then
+        return key
+    end
+
+    return value
 end
 local function wid(t)
   if type(get_text_width) == "function" then
@@ -62,10 +72,9 @@ local function fmt(s)
   local x = s % 60; return string.format("%02d:%02d:%02d", h, m, x)
 end
 local function dn(d)
-  if d == 1 then return tr("game.sudoku.difficulty.1", "Easy") elseif d == 2 then return tr("game.sudoku.difficulty.2",
-      "Normal") elseif d == 3 then return tr("game.sudoku.difficulty.3", "Hard") elseif d == 4 then return tr(
-    "game.sudoku.difficulty.4", "Extreme") end
-  return tr("game.sudoku.difficulty.5", "Hell")
+  if d == 1 then return tr("game.sudoku.difficulty.1") elseif d == 2 then return tr("game.sudoku.difficulty.2") elseif d == 3 then return tr("game.sudoku.difficulty.3") elseif d == 4 then return tr(
+    "game.sudoku.difficulty.4") end
+  return tr("game.sudoku.difficulty.5")
 end
 local function okv(b, r, c, n)
   for i = 1, N do if i ~= c and b[r][i] == n then return false end end
@@ -235,7 +244,7 @@ local function restore(x)
   while #S.undo > UL do table.remove(S.undo, 1) end
   local e = math.max(0, math.floor(tonumber(x.e) or tonumber(x.elapsed_sec) or 0)); S.sf = S.f - e * FPS; S.as = math
   .max(0, math.floor(tonumber(x.a) or tonumber(x.last_auto_save_sec) or e))
-  S.toast = tr("game.sudoku.continue_loaded", "Loaded previous save."); S.tu = S.f + 3 * FPS; S.im = nil; S.ib = ""; S.cm = nil; S.ef = nil; S.win = (x.w == true or x.won == true); S.bc = false
+  S.toast = tr("game.sudoku.continue_loaded"); S.tu = S.f + 3 * FPS; S.im = nil; S.ib = ""; S.cm = nil; S.ef = nil; S.win = (x.w == true or x.won == true); S.bc = false
   recf(); chk(); S.area = nil; S.dirty = true; return true
 end
 local function save_state(show)
@@ -247,7 +256,7 @@ local function save_state(show)
   end
   if show then
     local k = ok and "game.sudoku.save_success" or "game.sudoku.save_unavailable"; local d = ok and "Save successful!" or
-    "Save API unavailable."; S.toast = tr(k, d); S.tu = S.f + 3 * FPS; S.dirty = true
+    "Save API unavailable."; S.toast = tr(k); S.tu = S.f + 3 * FPS; S.dirty = true
   end
 end
 local function load_state()
@@ -276,9 +285,9 @@ local function setv(r, c, n)
 end
 local function undo()
   local n = #S.undo; if n <= 0 then
-    S.toast = tr("game.sudoku.undo_empty", "No more undo steps."); S.tu = S.f + 3 * FPS; S.dirty = true; return
+    S.toast = tr("game.sudoku.undo_empty"); S.tu = S.f + 3 * FPS; S.dirty = true; return
   end; local e = table.remove(S.undo, n); if S.g[e.r][e.c] then return end; S.b[e.r][e.c] = e.o; recf(); chk(); S.toast =
-  tr("game.sudoku.undo_done", "Undo successful."); S.tu = S.f + 2 * FPS; S.dirty = true
+  tr("game.sudoku.undo_done"); S.tu = S.f + 2 * FPS; S.dirty = true
 end
 local function wrap(t, w)
   if w <= 1 then return { t } end; local ls, cur, had = {}, "", false; for tok in string.gmatch(t, "%S+") do
@@ -301,22 +310,19 @@ local function fr(x, y, w, h, bg)
   for i = 0, h - 1 do draw_text(x, y + i, ln, "white", bg or "black") end
 end
 local function geo()
-  local tw, th = ts(); local ctl = tr("game.sudoku.controls",
-    "[↑]/[↓]/[←]/[→] Move  [1-9] Fill  [Space] Clear  [A] Undo  [D] Jump  [P] Difficulty  [S] Save  [R] Restart  [Q]/[ESC] Exit")
-  if not string.find(ctl, "%[Z%]") then ctl = ctl .. "  [Z] " .. tr("game.sudoku.toggle_locator", "Guide") end
+  local tw, th = ts(); local ctl = tr("game.sudoku.controls")
+  if not string.find(ctl, "%[Z%]") then ctl = ctl .. "  [Z] " .. tr("game.sudoku.toggle_locator") end
   local cl = wrap(ctl, math.max(10, tw - 2)); if #cl > 3 then cl = { cl[1], cl[2], cl[3] } end
   local bw, bh = wid(BB), 15
-  local best = S.best and (tr("game.sudoku.best", "Best") .. " " .. dn(S.best.d) .. " " .. fmt(S.best.t)) or
-  tr("game.sudoku.best_none", "Best: none")
-  local st = tr("game.sudoku.time", "Time") ..
-  " " .. fmt(sec()) .. "   " .. tr("game.sudoku.difficulty", "Difficulty") .. " " .. dn(S.d)
+  local best = S.best and (tr("game.sudoku.best") .. " " .. dn(S.best.d) .. " " .. fmt(S.best.t)) or
+  tr("game.sudoku.best_none")
+  local st = tr("game.sudoku.time") ..
+  " " .. fmt(sec()) .. "   " .. tr("game.sudoku.difficulty") .. " " .. dn(S.d)
   local topw = math.max(wid(best), wid(st))
-  local nw = 0; local ns = { tr("game.sudoku.win_banner", "Sudoku completed!") ..
-  " " .. tr("game.sudoku.win_controls", "[R] Restart  [Q]/[ESC] Exit"), tr("game.sudoku.input_jump_hint",
-    "Input row col for jump."), tr("game.sudoku.input_difficulty_hint", "Input 1-5 to change difficulty."), tr(
-    "game.sudoku.confirm_exit", "Confirm exit? [Y] Yes / [N] No"), tr("game.sudoku.confirm_restart",
-    "Confirm restart? [Y] Yes / [N] No"), tr(
-  "game.sudoku.save_success", "Save successful!"), tr("game.sudoku.save_unavailable", "Save API unavailable.") }
+  local nw = 0; local ns = { tr("game.sudoku.win_banner") ..
+  " " .. tr("game.sudoku.win_controls"), tr("game.sudoku.input_jump_hint"), tr("game.sudoku.input_difficulty_hint"), tr(
+    "game.sudoku.confirm_exit"), tr("game.sudoku.confirm_restart"), tr(
+  "game.sudoku.save_success"), tr("game.sudoku.save_unavailable") }
   for i = 1, #ns do nw = math.max(nw, wid(ns[i])) end
   local thh = 3 + bh + 1 + math.max(1, #cl); local sy = math.floor((th - thh) / 2); if sy < 1 then sy = 1 end; local bx =
   math.floor((tw - bw) / 2); if bx < 1 then bx = 1 end; local tx = math.floor((tw - topw) / 2); if tx < 1 then tx = 1 end
@@ -361,20 +367,20 @@ local function dnotice(g)
   draw_text(1, g.ny, string.rep(" ", g.tw), "white", "black")
   local l, col = "", "white"
   if S.cm == "exit" then
-    l = tr("game.sudoku.confirm_exit", "Confirm exit? [Y] Yes / [N] No"); col = "yellow"
+    l = tr("game.sudoku.confirm_exit"); col = "yellow"
   elseif S.cm == "restart" then
-    l = tr("game.sudoku.confirm_restart", "Confirm restart? [Y] Yes / [N] No"); col = "yellow"
+    l = tr("game.sudoku.confirm_restart"); col = "yellow"
   elseif S.im == "difficulty" then
     if S.ib == "" then
-      l = tr("game.sudoku.input_difficulty_hint", "Input 1-5 to change difficulty."); col = "dark_gray"
+      l = tr("game.sudoku.input_difficulty_hint"); col = "dark_gray"
     else l = S.ib end
   elseif S.im == "jump" then
     if S.ib == "" then
-      l = tr("game.sudoku.input_jump_hint", "Input row col for jump."); col = "dark_gray"
+      l = tr("game.sudoku.input_jump_hint"); col = "dark_gray"
     else l = S.ib end
   elseif S.win then
-    l = tr("game.sudoku.win_banner", "Sudoku completed!") ..
-    " " .. tr("game.sudoku.win_controls", "[R] Restart  [Q]/[ESC] Exit"); col = "yellow"
+    l = tr("game.sudoku.win_banner") ..
+    " " .. tr("game.sudoku.win_controls"); col = "yellow"
   elseif S.toast ~= nil and S.f <= S.tu then
     l = S.toast; col = "green"
   end
@@ -405,9 +411,9 @@ local function render()
   dboard(g); dnotice(g); dcontrols(g)
 end
 local function warn(tw, th, mw, mh)
-  local ls = { tr("warning.size_title", "Terminal Too Small"), string.format("%s: %dx%d",
-    tr("warning.required", "Required size"), mw, mh), string.format("%s: %dx%d", tr("warning.current", "Current size"),
-    tw, th), tr("warning.enlarge_hint", "Please enlarge terminal window to continue.") }
+  local ls = { tr("warning.size_title"), string.format("%s: %dx%d",
+    tr("warning.required"), mw, mh), string.format("%s: %dx%d", tr("warning.current"),
+    tw, th), tr("warning.enlarge_hint") }
   local top = math.floor((th - #ls) / 2); if top < 1 then top = 1 end
   for i = 1, #ls do
     local x = math.floor((tw - wid(ls[i])) / 2); if x < 1 then x = 1 end; draw_text(x, top + i - 1, ls[i], "white",
@@ -515,8 +521,7 @@ local function input(k)
     undo(); return "changed"
   end
   if k == "z" then
-    S.hl = not S.hl; S.toast = S.hl and tr("game.sudoku.locator_on", "Guide lines: ON") or tr("game.sudoku.locator_off",
-      "Guide lines: OFF"); S.tu = S.f + 2 * FPS; S.dirty = true; return "changed"
+    S.hl = not S.hl; S.toast = S.hl and tr("game.sudoku.locator_on") or tr("game.sudoku.locator_off"); S.tu = S.f + 2 * FPS; S.dirty = true; return "changed"
   end
   if k == "up" then
     S.r = math.max(1, S.r - 1); S.dirty = true; return "changed"

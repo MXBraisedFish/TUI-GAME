@@ -72,14 +72,20 @@ local state = {
     }
 }
 
-local function tr(key, fallback)
+local function tr(key)
     if type(translate) ~= "function" then
-        return fallback
+        return key
     end
+
     local ok, value = pcall(translate, key)
-    if not ok or value == nil or value == "" or value == key then
-        return fallback
+    if not ok or value == nil or value == "" then
+        return key
     end
+
+    if type(value) == "string" and string.find(value, "[missing-i18n-key:", 1, true) ~= nil then
+        return key
+    end
+
     return value
 end
 
@@ -206,15 +212,15 @@ end
 
 local function mode_label(mode)
     if mode == 1 then
-        return tr("game.maze_escape.mode1", "Normal")
+        return tr("game.maze_escape.mode1")
     end
     if mode == 2 then
-        return tr("game.maze_escape.mode2", "Keys+Doors")
+        return tr("game.maze_escape.mode2")
     end
     if mode == 3 then
-        return tr("game.maze_escape.mode3", "Timed")
+        return tr("game.maze_escape.mode3")
     end
-    return tr("game.maze_escape.mode4", "Timed+Keys")
+    return tr("game.maze_escape.mode4")
 end
 
 local function maze_cell_width()
@@ -703,7 +709,7 @@ local function save_game_state(show_toast)
     if show_toast then
         local key = ok and "game.maze_escape.save_success" or "game.maze_escape.save_unavailable"
         local fallback = ok and "Save successful!" or "Save API unavailable."
-        state.toast_text = tr(key, fallback)
+        state.toast_text = tr(key)
         state.toast_until = state.frame + 2 * FPS
         state.dirty = true
     end
@@ -830,26 +836,24 @@ end
 local function board_geometry()
     local term_w, term_h = terminal_size()
     local controls_text = tr(
-        "game.maze_escape.controls",
-        "↑]/[↓]/[L←]/[→] Move  [P] Resize/Mode  [R] Restart  [S] Save  [Q]/[ESC] Exit"
-    )
+        "game.maze_escape.controls")
     local controls_w = min_width_for_lines(controls_text, 3, 28)
 
-    local status_left = tr("game.maze_escape.time", "Time") .. " 00:00:00"
-    local status_mid = tr("game.maze_escape.steps", "Steps") .. " 9999"
-    local status_right = tr("game.maze_escape.keys", "Keys") .. " 99"
+    local status_left = tr("game.maze_escape.time") .. " 00:00:00"
+    local status_mid = tr("game.maze_escape.steps") .. " 9999"
+    local status_right = tr("game.maze_escape.keys") .. " 99"
     local status_w = key_width(status_left) + 2 + key_width(status_mid) + 2 + key_width(status_right)
 
-    local mode_text = tr("game.maze_escape.mode", "Mode") .. ": " .. mode_label(state.mode)
-    local timer_text = tr("game.maze_escape.remaining", "Remaining") .. " 00:00:00"
+    local mode_text = tr("game.maze_escape.mode") .. ": " .. mode_label(state.mode)
+    local timer_text = tr("game.maze_escape.remaining") .. " 00:00:00"
     local mode_line_w = key_width(mode_text) + 2 + key_width(timer_text)
 
     local message_w = math.max(
-        key_width(tr("game.maze_escape.win_banner", "Escaped the maze!")),
-        key_width(tr("game.maze_escape.lose_banner", "You are trapped in the maze!")),
-        key_width(tr("game.maze_escape.input_config_hint", "Input: mode(1-4) or cols rows [mode].")),
-        key_width(tr("game.2048.confirm_restart", "Confirm restart? [Y] Yes / [N] No")),
-        key_width(tr("game.2048.confirm_exit", "Confirm exit? [Y] Yes / [N] No"))
+        key_width(tr("game.maze_escape.win_banner")),
+        key_width(tr("game.maze_escape.lose_banner")),
+        key_width(tr("game.maze_escape.input_config_hint")),
+        key_width(tr("game.2048.confirm_restart")),
+        key_width(tr("game.2048.confirm_exit"))
     )
 
     local board_w = state.cols * maze_cell_width()
@@ -874,9 +878,9 @@ end
 
 local function draw_status(x, y, w)
     local elapsed = elapsed_seconds()
-    local left = tr("game.maze_escape.time", "Time") .. " " .. format_duration(elapsed)
-    local mid = tr("game.maze_escape.steps", "Steps") .. " " .. tostring(state.steps)
-    local right = tr("game.maze_escape.keys", "Keys") .. " " .. tostring(state.keys_held)
+    local left = tr("game.maze_escape.time") .. " " .. format_duration(elapsed)
+    local mid = tr("game.maze_escape.steps") .. " " .. tostring(state.steps)
+    local right = tr("game.maze_escape.keys") .. " " .. tostring(state.keys_held)
 
     draw_text(x, y, string.rep(" ", w), "white", "black")
     draw_text(x, y + 1, string.rep(" ", w), "white", "black")
@@ -896,35 +900,35 @@ local function draw_status(x, y, w)
     draw_text(mid_x, y, mid, "light_cyan", "black")
     draw_text(right_x, y, right, "light_cyan", "black")
 
-    local mode_text = tr("game.maze_escape.mode", "Mode") .. ": " .. mode_label(state.mode)
-    local timer_text = tr("game.maze_escape.timer", "No Timer")
+    local mode_text = tr("game.maze_escape.mode") .. ": " .. mode_label(state.mode)
+    local timer_text = tr("game.maze_escape.timer")
     if state.time_limit_sec ~= nil then
         local remain = math.max(0, state.time_limit_sec - elapsed)
-        timer_text = tr("game.maze_escape.remaining", "Remaining") .. ": " .. format_duration(remain)
+        timer_text = tr("game.maze_escape.remaining") .. ": " .. format_duration(remain)
     end
     local mode_line = mode_text .. "  " .. timer_text
     draw_text(centered_x(mode_line, x, w), y + 1, mode_line, "dark_gray", "black")
 
     if state.input_mode == "config" then
         if state.input_buffer == "" then
-            local hint = tr("game.maze_escape.input_config_hint", "Input: mode(1-4) or cols rows [mode].")
+            local hint = tr("game.maze_escape.input_config_hint")
             draw_text(centered_x(hint, x, w), y + 2, hint, "dark_gray", "black")
         else
             draw_text(centered_x(state.input_buffer, x, w), y + 2, state.input_buffer, "white", "black")
         end
     elseif state.won then
-        local line = tr("game.maze_escape.win_banner", "Escaped the maze!")
-            .. " " .. tr("game.maze_escape.result_controls", "[R] Restart  [Q]/[ESC] Exit")
+        local line = tr("game.maze_escape.win_banner")
+            .. " " .. tr("game.maze_escape.result_controls")
         draw_text(centered_x(line, x, w), y + 2, line, "green", "black")
     elseif state.lost then
-        local line = tr("game.maze_escape.lose_banner", "You are trapped in the maze!")
-            .. " " .. tr("game.maze_escape.result_controls", "[R] Restart  [Q]/[ESC] Exit")
+        local line = tr("game.maze_escape.lose_banner")
+            .. " " .. tr("game.maze_escape.result_controls")
         draw_text(centered_x(line, x, w), y + 2, line, "red", "black")
     elseif state.confirm_mode == "restart" then
-        local line = tr("game.2048.confirm_restart", "Confirm restart? [Y] Yes / [N] No")
+        local line = tr("game.2048.confirm_restart")
         draw_text(centered_x(line, x, w), y + 2, line, "yellow", "black")
     elseif state.confirm_mode == "exit" then
-        local line = tr("game.2048.confirm_exit", "Confirm exit? [Y] Yes / [N] No")
+        local line = tr("game.2048.confirm_exit")
         draw_text(centered_x(line, x, w), y + 2, line, "yellow", "black")
     elseif state.toast_text ~= nil and state.frame <= state.toast_until then
         draw_text(centered_x(state.toast_text, x, w), y + 2, state.toast_text, "green", "black")
@@ -967,9 +971,7 @@ end
 
 local function draw_controls(x, y, w)
     local text = tr(
-        "game.maze_escape.controls",
-        "↑]/[↓]/[L←]/[→] Move  [P] Resize/Mode  [R] Restart  [S] Save  [Q]/[ESC] Exit"
-    )
+        "game.maze_escape.controls")
     local term_w = terminal_size()
     local max_w = math.max(10, term_w - 2)
     local lines = wrap_words(text, max_w)
@@ -1014,22 +1016,20 @@ end
 
 local function minimum_required_size()
     local controls_text = tr(
-        "game.maze_escape.controls",
-        "↑]/[↓]/[L←]/[→] Move  [P] Resize/Mode  [R] Restart  [S] Save  [Q]/[ESC] Exit"
-    )
+        "game.maze_escape.controls")
     local controls_w = min_width_for_lines(controls_text, 3, 28)
 
-    local status_left = tr("game.maze_escape.time", "Time") .. " 00:00:00"
-    local status_mid = tr("game.maze_escape.steps", "Steps") .. " 9999"
-    local status_right = tr("game.maze_escape.keys", "Keys") .. " 99"
+    local status_left = tr("game.maze_escape.time") .. " 00:00:00"
+    local status_mid = tr("game.maze_escape.steps") .. " 9999"
+    local status_right = tr("game.maze_escape.keys") .. " 99"
     local status_w = key_width(status_left) + 2 + key_width(status_mid) + 2 + key_width(status_right)
 
     local hint_w = math.max(
-        key_width(tr("game.maze_escape.input_config_hint", "Input: mode(1-4) or cols rows [mode].")),
-        key_width(tr("game.maze_escape.win_banner", "Escaped the maze!") .. " " .. tr("game.maze_escape.result_controls", "[R] Restart  [Q]/[ESC] Exit")),
-        key_width(tr("game.maze_escape.lose_banner", "You are trapped in the maze!") .. " " .. tr("game.maze_escape.result_controls", "[R] Restart  [Q]/[ESC] Exit")),
-        key_width(tr("game.2048.confirm_restart", "Confirm restart? [Y] Yes / [N] No")),
-        key_width(tr("game.2048.confirm_exit", "Confirm exit? [Y] Yes / [N] No"))
+        key_width(tr("game.maze_escape.input_config_hint")),
+        key_width(tr("game.maze_escape.win_banner") .. " " .. tr("game.maze_escape.result_controls")),
+        key_width(tr("game.maze_escape.lose_banner") .. " " .. tr("game.maze_escape.result_controls")),
+        key_width(tr("game.2048.confirm_restart")),
+        key_width(tr("game.2048.confirm_exit"))
     )
 
     local board_w = state.cols * maze_cell_width()
@@ -1040,10 +1040,10 @@ end
 
 local function draw_terminal_size_warning(term_w, term_h, min_w, min_h)
     local lines = {
-        tr("warning.size_title", "Terminal Too Small"),
-        string.format("%s: %dx%d", tr("warning.required", "Required size"), min_w, min_h),
-        string.format("%s: %dx%d", tr("warning.current", "Current size"), term_w, term_h),
-        tr("warning.enlarge_hint", "Please enlarge terminal window to continue.")
+        tr("warning.size_title"),
+        string.format("%s: %dx%d", tr("warning.required"), min_w, min_h),
+        string.format("%s: %dx%d", tr("warning.current"), term_w, term_h),
+        tr("warning.enlarge_hint")
     }
     local top = math.floor((term_h - #lines) / 2)
     if top < 1 then top = 1 end
@@ -1188,7 +1188,7 @@ local function handle_input_mode_key(key)
             build_maze(cols, rows, mode)
             force_full_refresh()
         else
-            state.toast_text = tr("game.maze_escape.input_config_invalid", "Invalid config.")
+            state.toast_text = tr("game.maze_escape.input_config_invalid")
             state.toast_until = state.frame + 2 * FPS
             state.dirty = true
         end

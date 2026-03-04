@@ -134,11 +134,20 @@ local state = {
     last_layout = nil,
 }
 
-local function tr(key, fallback)
-    if type(translate) ~= "function" then return fallback end
+local function tr(key)
+    if type(translate) ~= "function" then
+        return key
+    end
+
     local ok, value = pcall(translate, key)
-    if not ok or value == nil or value == "" or value == key then return fallback end
-    if type(value) == "string" and string.find(value, "missing-i18n-key", 1, true) ~= nil then return fallback end
+    if not ok or value == nil or value == "" then
+        return key
+    end
+
+    if type(value) == "string" and string.find(value, "[missing-i18n-key:", 1, true) ~= nil then
+        return key
+    end
+
     return value
 end
 
@@ -247,14 +256,14 @@ end
 
 local function stage_label()
     local key = stage_label_key()
-    if key == "game.tetris.stage.dawn" then return tr(key, "Dawn") end
-    if key == "game.tetris.stage.marathon" then return tr(key, "Marathon") end
-    if key == "game.tetris.stage.crash" then return tr(key, "Crash Point") end
-    if key == "game.tetris.stage.darkness" then return tr(key, "Darkness") end
-    if key == "game.tetris.stage.dusk" then return tr(key, "Dusk") end
-    if key == "game.tetris.stage.challenge" then return tr(key, "Challenge") end
-    if key == "game.tetris.stage.rebirth" then return tr(key, "Rebirth") end
-    return tr(key, "Classic")
+    if key == "game.tetris.stage.dawn" then return tr(key) end
+    if key == "game.tetris.stage.marathon" then return tr(key) end
+    if key == "game.tetris.stage.crash" then return tr(key) end
+    if key == "game.tetris.stage.darkness" then return tr(key) end
+    if key == "game.tetris.stage.dusk" then return tr(key) end
+    if key == "game.tetris.stage.challenge" then return tr(key) end
+    if key == "game.tetris.stage.rebirth" then return tr(key) end
+    return tr(key)
 end
 
 local function stage_color()
@@ -590,10 +599,10 @@ local function save_snapshot(manual)
 
     if manual then
         if ok then
-            state.toast_text = tr("game.tetris.save_success", "Save successful!")
+            state.toast_text = tr("game.tetris.save_success")
             state.toast_until = state.frame + FPS * 2
         else
-            state.toast_text = tr("game.tetris.save_unavailable", "Save API unavailable.")
+            state.toast_text = tr("game.tetris.save_unavailable")
             state.toast_until = state.frame + FPS * 2
         end
         state.dirty = true
@@ -676,7 +685,7 @@ local function load_snapshot()
     state.start_frame = state.frame - elapsed * FPS
     state.last_auto_save_sec = elapsed
     if state.active == nil then spawn_active() end
-    state.toast_text = tr("game.tetris.continue_loaded", "Loaded previous save.")
+    state.toast_text = tr("game.tetris.continue_loaded")
     state.toast_until = state.frame + FPS * 2
     state.dirty = true
     return true
@@ -781,18 +790,16 @@ end
 
 local function controls_text()
     return tr(
-        "game.tetris.controls",
-        "[←]/[→] Move [Z] Left Rotate [X] Right Rotate [↓] Soft Drop [Space] Hard Drop [P] Start Level [S] Save [R] Restart [Q]/[ESC] Exit"
-    )
+        "game.tetris.controls")
 end
 
 local function minimum_required_size()
     local controls_w = min_width_for_lines(controls_text(), 3, 60)
     local content_w = LEFT_W + SIDE_GAP + FRAME_W + SIDE_GAP + RIGHT_W
     local msg_w = math.max(
-        key_width(tr("game.tetris.confirm_exit", "Confirm exit? [Y] Yes / [N] No")),
-        key_width(tr("game.tetris.confirm_restart", "Confirm restart? [Y] Yes / [N] No")),
-        key_width(tr("game.tetris.lose_banner", "Blocks exceeded the screen!") .. " " .. tr("game.tetris.result_controls", "[R] Restart  [Q]/[ESC] Exit"))
+        key_width(tr("game.tetris.confirm_exit")),
+        key_width(tr("game.tetris.confirm_restart")),
+        key_width(tr("game.tetris.lose_banner") .. " " .. tr("game.tetris.result_controls"))
     )
     local min_w = math.max(content_w, controls_w, msg_w) + 2
     local min_h = FRAME_H + 6
@@ -801,10 +808,10 @@ end
 
 local function draw_size_warning(term_w, term_h, min_w, min_h)
     local lines = {
-        tr("warning.size_title", "Terminal Too Small"),
-        string.format("%s: %dx%d", tr("warning.required", "Required size"), min_w, min_h),
-        string.format("%s: %dx%d", tr("warning.current", "Current size"), term_w, term_h),
-        tr("warning.enlarge_hint", "Please enlarge terminal window to continue."),
+        tr("warning.size_title"),
+        string.format("%s: %dx%d", tr("warning.required"), min_w, min_h),
+        string.format("%s: %dx%d", tr("warning.current"), term_w, term_h),
+        tr("warning.enlarge_hint"),
     }
 
     clear()
@@ -960,38 +967,38 @@ end
 
 local function draw_right_panel(layout)
     local x, y = layout.right_x, layout.right_y
-    draw_padded(x, y + 0, RIGHT_W, tr("game.tetris.best_score", "Best Score"), "dark_gray", "black", "left")
+    draw_padded(x, y + 0, RIGHT_W, tr("game.tetris.best_score"), "dark_gray", "black", "left")
     draw_padded(x, y + 1, RIGHT_W, tostring(state.best_score), "white", "black", "left")
 
-    draw_padded(x, y + 3, RIGHT_W, tr("game.tetris.current_score", "Current Score"), "dark_gray", "black", "left")
+    draw_padded(x, y + 3, RIGHT_W, tr("game.tetris.current_score"), "dark_gray", "black", "left")
     draw_padded(x, y + 4, RIGHT_W, tostring(state.score), "white", "black", "left")
 
-    draw_padded(x, y + 6, RIGHT_W, tr("game.tetris.time", "Time"), "dark_gray", "black", "left")
+    draw_padded(x, y + 6, RIGHT_W, tr("game.tetris.time"), "dark_gray", "black", "left")
     draw_padded(x, y + 7, RIGHT_W, format_duration(elapsed_seconds()), "light_cyan", "black", "left")
 
-    draw_padded(x, y + 9, RIGHT_W, tr("game.tetris.next", "Next"), "white", "black", "left")
+    draw_padded(x, y + 9, RIGHT_W, tr("game.tetris.next"), "white", "black", "left")
     draw_next_preview(layout)
 
     draw_padded(x, y + 18, RIGHT_W, string.format("LV %d", state.level), "white", "black", "left")
     draw_padded(x, y + 19, RIGHT_W, "", "white", "black", "left")
-    local prefix = tr("game.tetris.stage", "Stage") .. " "
+    local prefix = tr("game.tetris.stage") .. " "
     draw_text(x, y + 19, prefix, "white", "black")
     draw_text(x + key_width(prefix), y + 19, stage_label(), stage_color(), "black")
 end
 
 local function current_message()
     if state.game_over then
-        return tr("game.tetris.lose_banner", "Blocks exceeded the screen!") .. " "
-            .. tr("game.tetris.result_controls", "[R] Restart  [Q]/[ESC] Exit"), "red"
+        return tr("game.tetris.lose_banner") .. " "
+            .. tr("game.tetris.result_controls"), "red"
     end
     if state.confirm_mode == "restart" then
-        return tr("game.tetris.confirm_restart", "Confirm restart? [Y] Yes / [N] No"), "yellow"
+        return tr("game.tetris.confirm_restart"), "yellow"
     end
     if state.confirm_mode == "exit" then
-        return tr("game.tetris.confirm_exit", "Confirm exit? [Y] Yes / [N] No"), "yellow"
+        return tr("game.tetris.confirm_exit"), "yellow"
     end
     if state.input_mode == "level" then
-        local p = tr("game.tetris.input_level", "Start level (0-28): ")
+        local p = tr("game.tetris.input_level")
         return p .. state.input_buffer, "yellow"
     end
     if state.toast_text ~= nil and state.frame < state.toast_until then
@@ -1141,7 +1148,7 @@ local function handle_input_mode(key)
             state.input_buffer = ""
             reset_run(math.floor(v))
         else
-            state.toast_text = tr("game.tetris.input_invalid", "Invalid level. Please enter 0-28.")
+            state.toast_text = tr("game.tetris.input_invalid")
             state.toast_until = state.frame + FPS * 2
             state.dirty = true
         end

@@ -53,17 +53,20 @@ local state = {
     last_warn_min_h = 0,
 }
 
-local function tr(key, fallback)
+local function tr(key)
     if type(translate) ~= "function" then
-        return fallback
+        return key
     end
+
     local ok, value = pcall(translate, key)
-    if not ok or value == nil or value == "" or value == key then
-        return fallback
+    if not ok or value == nil or value == "" then
+        return key
     end
-    if type(value) == "string" and string.find(value, "missing-i18n-key", 1, true) ~= nil then
-        return fallback
+
+    if type(value) == "string" and string.find(value, "[missing-i18n-key:", 1, true) ~= nil then
+        return key
     end
+
     return value
 end
 
@@ -161,9 +164,9 @@ end
 
 local function mark_name(mark)
     if mark == MARK_X then
-        return tr("game.tic_tac_toe.mark_x", "X")
+        return tr("game.tic_tac_toe.mark_x")
     end
-    return tr("game.tic_tac_toe.mark_o", "O")
+    return tr("game.tic_tac_toe.mark_o")
 end
 
 local function set_empty_board()
@@ -437,11 +440,11 @@ local function switch_marks()
     if state.player_mark == MARK_X then
         state.player_mark = MARK_O
         state.ai_mark = MARK_X
-        state.toast_text = tr("game.tic_tac_toe.switch_to_o", "Switched: You are O.")
+        state.toast_text = tr("game.tic_tac_toe.switch_to_o")
     else
         state.player_mark = MARK_X
         state.ai_mark = MARK_O
-        state.toast_text = tr("game.tic_tac_toe.switch_to_x", "Switched: You are X.")
+        state.toast_text = tr("game.tic_tac_toe.switch_to_x")
     end
     state.toast_until = state.frame + FPS * 2
     if state.ai_mark == MARK_X then
@@ -453,10 +456,10 @@ end
 local function draw_size_warning(term_w, term_h, min_w, min_h)
     clear()
     local lines = {
-        tr("warning.size_title", "Terminal Too Small"),
-        string.format("%s: %dx%d", tr("warning.required", "Required size"), min_w, min_h),
-        string.format("%s: %dx%d", tr("warning.current", "Current size"), term_w, term_h),
-        tr("warning.enlarge_hint", "Please enlarge terminal window to continue.")
+        tr("warning.size_title"),
+        string.format("%s: %dx%d", tr("warning.required"), min_w, min_h),
+        string.format("%s: %dx%d", tr("warning.current"), term_w, term_h),
+        tr("warning.enlarge_hint")
     }
     local top = math.floor((term_h - #lines) / 2)
     if top < 1 then top = 1 end
@@ -468,24 +471,22 @@ end
 
 local function controls_text()
     return tr(
-        "game.tic_tac_toe.controls",
-        "[↑]/[↓]/[←]/[→] Move  [Space]/[Enter] Place  [X] Switch Mark  [R] Restart  [Q]/[ESC] Exit"
-    )
+        "game.tic_tac_toe.controls")
 end
 
 local function minimum_required_size()
-    local status = tr("game.tic_tac_toe.you", "You")
+    local status = tr("game.tic_tac_toe.you")
         .. ":" .. mark_symbol(state.player_mark)
         .. "  "
-        .. tr("game.tic_tac_toe.ai", "AI")
+        .. tr("game.tic_tac_toe.ai")
         .. ":" .. mark_symbol(state.ai_mark)
 
     local msg_w = math.max(
-        text_width(tr("game.tic_tac_toe.confirm_restart", "Confirm restart? [Y] Yes / [N] No")),
-        text_width(tr("game.tic_tac_toe.confirm_exit", "Confirm exit? [Y] Yes / [N] No")),
-        text_width(tr("game.tic_tac_toe.win_banner", "You win!") .. " " .. tr("game.tic_tac_toe.result_controls", "[R] Restart  [Q]/[ESC] Exit")),
-        text_width(tr("game.tic_tac_toe.lose_banner", "You lose!") .. " " .. tr("game.tic_tac_toe.result_controls", "[R] Restart  [Q]/[ESC] Exit")),
-        text_width(tr("game.tic_tac_toe.draw_banner", "Draw!") .. " " .. tr("game.tic_tac_toe.result_controls", "[R] Restart  [Q]/[ESC] Exit"))
+        text_width(tr("game.tic_tac_toe.confirm_restart")),
+        text_width(tr("game.tic_tac_toe.confirm_exit")),
+        text_width(tr("game.tic_tac_toe.win_banner") .. " " .. tr("game.tic_tac_toe.result_controls")),
+        text_width(tr("game.tic_tac_toe.lose_banner") .. " " .. tr("game.tic_tac_toe.result_controls")),
+        text_width(tr("game.tic_tac_toe.draw_banner") .. " " .. tr("game.tic_tac_toe.result_controls"))
     )
     local controls_w = min_width_for_lines(controls_text(), 3, 40)
     local min_w = math.max(BOARD_W, text_width(status), msg_w, controls_w) + 2
@@ -570,23 +571,23 @@ end
 local function current_message()
     if state.game_over then
         if state.winner == state.player_mark then
-            return tr("game.tic_tac_toe.win_banner", "You win!") .. " " .. tr("game.tic_tac_toe.result_controls", "[R] Restart  [Q]/[ESC] Exit"), "green"
+            return tr("game.tic_tac_toe.win_banner") .. " " .. tr("game.tic_tac_toe.result_controls"), "green"
         end
         if state.winner == state.ai_mark then
-            return tr("game.tic_tac_toe.lose_banner", "You lose!") .. " " .. tr("game.tic_tac_toe.result_controls", "[R] Restart  [Q]/[ESC] Exit"), "red"
+            return tr("game.tic_tac_toe.lose_banner") .. " " .. tr("game.tic_tac_toe.result_controls"), "red"
         end
-        return tr("game.tic_tac_toe.draw_banner", "Draw!") .. " " .. tr("game.tic_tac_toe.result_controls", "[R] Restart  [Q]/[ESC] Exit"), "yellow"
+        return tr("game.tic_tac_toe.draw_banner") .. " " .. tr("game.tic_tac_toe.result_controls"), "yellow"
     end
     if state.confirm_mode == "restart" then
-        return tr("game.tic_tac_toe.confirm_restart", "Confirm restart? [Y] Yes / [N] No"), "yellow"
+        return tr("game.tic_tac_toe.confirm_restart"), "yellow"
     end
     if state.confirm_mode == "exit" then
-        return tr("game.tic_tac_toe.confirm_exit", "Confirm exit? [Y] Yes / [N] No"), "yellow"
+        return tr("game.tic_tac_toe.confirm_exit"), "yellow"
     end
     if state.toast_text ~= nil and state.frame <= state.toast_until then
         return state.toast_text, "light_cyan"
     end
-    return tr("game.tic_tac_toe.ready", "Your turn."), "dark_gray"
+    return tr("game.tic_tac_toe.ready"), "dark_gray"
 end
 
 local function draw_controls(y, term_w)
@@ -612,10 +613,10 @@ local function render()
     local board_y = math.floor((term_h - 10) / 2) + 1
     if board_y < 4 then board_y = 4 end
 
-    local status = tr("game.tic_tac_toe.you", "You")
+    local status = tr("game.tic_tac_toe.you")
         .. ":" .. mark_name(state.player_mark) .. " " .. mark_symbol(state.player_mark)
         .. "  "
-        .. tr("game.tic_tac_toe.ai", "AI")
+        .. tr("game.tic_tac_toe.ai")
         .. ":" .. mark_name(state.ai_mark) .. " " .. mark_symbol(state.ai_mark)
 
     local msg, msg_color = current_message()

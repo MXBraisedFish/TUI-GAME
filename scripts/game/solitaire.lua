@@ -75,10 +75,20 @@ local state = {
     last_term_h = 0,
 }
 
-local function tr(key, fallback)
-    if type(translate) ~= "function" then return fallback end
+local function tr(key)
+    if type(translate) ~= "function" then
+        return key
+    end
+
     local ok, value = pcall(translate, key)
-    if not ok or value == nil or value == "" or value == key then return fallback end
+    if not ok or value == nil or value == "" then
+        return key
+    end
+
+    if type(value) == "string" and string.find(value, "[missing-i18n-key:", 1, true) ~= nil then
+        return key
+    end
+
     return value
 end
 
@@ -205,9 +215,9 @@ local function mode_key()
 end
 
 local function mode_label(mode)
-    if mode == MODE_FREECELL then return tr("game.solitaire.mode.freecell", "FreeCell") end
-    if mode == MODE_KLONDIKE then return tr("game.solitaire.mode.klondike", "Klondike") end
-    return tr("game.solitaire.mode.spider", "Spider")
+    if mode == MODE_FREECELL then return tr("game.solitaire.mode.freecell") end
+    if mode == MODE_KLONDIKE then return tr("game.solitaire.mode.klondike") end
+    return tr("game.solitaire.mode.spider")
 end
 
 local function rank_text(rank)
@@ -458,13 +468,13 @@ end
 
 local function pop_undo()
     if #state.undo_stack == 0 then
-        show_message(tr("game.solitaire.undo_empty", "No more undo steps."), "dark_gray", 2, false)
+        show_message(tr("game.solitaire.undo_empty"), "dark_gray", 2, false)
         return false
     end
     local snap = state.undo_stack[#state.undo_stack]
     table.remove(state.undo_stack)
     restore_snapshot(snap, false)
-    show_message(tr("game.solitaire.undo_done", "Undo successful."), "yellow", 2, false)
+    show_message(tr("game.solitaire.undo_done"), "yellow", 2, false)
     return true
 end
 
@@ -542,7 +552,7 @@ local function check_win()
         if type(update_game_stats) == "function" then
             pcall(update_game_stats, "solitaire", mode_score(), elapsed_seconds())
         end
-        show_message(tr("game.solitaire.win_banner", "All cards have been collected!") .. " " .. tr("game.solitaire.result_controls", "[R] Restart  [Q]/[ESC] Exit"), "green", 0, true)
+        show_message(tr("game.solitaire.win_banner") .. " " .. tr("game.solitaire.result_controls"), "green", 0, true)
     end
 end
 
@@ -859,7 +869,7 @@ local function draw_from_stock_klondike()
 
     if #state.stock == 0 then
         if #state.waste == 0 then
-            show_message(tr("game.solitaire.stock_empty", "No cards in stock and waste."), "dark_gray", 2, false)
+            show_message(tr("game.solitaire.stock_empty"), "dark_gray", 2, false)
             return false
         end
 
@@ -873,7 +883,7 @@ local function draw_from_stock_klondike()
         state.stock = recycled
         state.waste = {}
         state.dirty = true
-        show_message(tr("game.solitaire.recycle_done", "Waste recycled to stock."), "yellow", 2, false)
+        show_message(tr("game.solitaire.recycle_done"), "yellow", 2, false)
         return true
     end
 
@@ -889,13 +899,13 @@ end
 local function draw_spider_row()
     if state.mode ~= MODE_SPIDER then return false end
     if #state.stock < 10 then
-        show_message(tr("game.solitaire.spider_no_stock", "No more stock rows."), "dark_gray", 2, false)
+        show_message(tr("game.solitaire.spider_no_stock"), "dark_gray", 2, false)
         return false
     end
 
     for c = 1, 10 do
         if #state.tableau[c] == 0 then
-            show_message(tr("game.solitaire.spider_need_full", "Cannot deal while any tableau column is empty."), "red", 2, false)
+            show_message(tr("game.solitaire.spider_need_full"), "red", 2, false)
             return false
         end
     end
@@ -937,7 +947,7 @@ local function remove_spider_complete_runs()
             state.spider_removed = state.spider_removed + 1
             reveal_new_top(c)
             changed = true
-            show_message(tr("game.solitaire.spider_removed", "Completed sequence removed."), "green", 2, false)
+            show_message(tr("game.solitaire.spider_removed"), "green", 2, false)
         end
     end
 
@@ -959,9 +969,9 @@ local function save_progress(manual)
 
     if manual then
         if ok then
-            show_message(tr("game.solitaire.save_success", "Save successful!"), "green", 2, false)
+            show_message(tr("game.solitaire.save_success"), "green", 2, false)
         else
-            show_message(tr("game.solitaire.save_unavailable", "Save unavailable."), "red", 2, false)
+            show_message(tr("game.solitaire.save_unavailable"), "red", 2, false)
         end
     end
 
@@ -1021,7 +1031,7 @@ local function minimum_size()
     local gap = 1
     local grid_w = row_label_w + cols * col_cell_w + (cols - 1) * gap + 2
 
-    local controls = tr("game.solitaire.controls." .. state.mode, "")
+    local controls = tr("game.solitaire.controls." .. state.mode)
     local controls_w = min_width_for_lines(controls, 3, 32)
 
     local min_w = math.max(70, grid_w + 6, controls_w + 4)
@@ -1031,10 +1041,10 @@ local function minimum_size()
 end
 local function draw_size_warning(term_w, term_h, min_w, min_h)
     clear()
-    local title = tr("warning.size_title", "Terminal Too Small")
-    local req = tr("warning.required", "Required") .. ": " .. tostring(min_w) .. "x" .. tostring(min_h)
-    local cur = tr("warning.current", "Current") .. ": " .. tostring(term_w) .. "x" .. tostring(term_h)
-    local hint = tr("warning.enlarge_hint", "Please enlarge the terminal window.")
+    local title = tr("warning.size_title")
+    local req = tr("warning.required") .. ": " .. tostring(min_w) .. "x" .. tostring(min_h)
+    local cur = tr("warning.current") .. ": " .. tostring(term_w) .. "x" .. tostring(term_h)
+    local hint = tr("warning.enlarge_hint")
 
     local y = math.max(2, math.floor(term_h / 2) - 2)
     draw_text(centered_x(title, 1, term_w), y, title, "yellow", "black")
@@ -1143,8 +1153,8 @@ local function foundation_label(slot)
     return "[" .. rank_text(pile[#pile].rank) .. "]"
 end
 local function draw_color_hint(term_w, y)
-    local red_text = tr("game.solitaire.color_hint.red", "Red Cards")
-    local black_text = tr("game.solitaire.color_hint.black", "Black Cards")
+    local red_text = tr("game.solitaire.color_hint.red")
+    local black_text = tr("game.solitaire.color_hint.black")
     local segments = {
         {"[A]", "red"},
         {" ", "white"},
@@ -1179,9 +1189,9 @@ local function draw_top_bar(term_w)
         mode_text = mode_text .. " " .. tostring(state.spider_diff)
     end
 
-    local line1 = tr("game.solitaire.time", "Time") .. " " .. format_duration(elapsed_seconds())
-        .. "   " .. tr("game.solitaire.mode", "Mode") .. " " .. mode_text
-        .. "   " .. tr("game.solitaire.mode_best", "Mode Best") .. " " .. best_text
+    local line1 = tr("game.solitaire.time") .. " " .. format_duration(elapsed_seconds())
+        .. "   " .. tr("game.solitaire.mode") .. " " .. mode_text
+        .. "   " .. tr("game.solitaire.mode_best") .. " " .. best_text
     draw_text(centered_x(line1, 1, term_w), 2, line1, "cyan", "black")
 
     if state.mode == MODE_FREECELL or state.mode == MODE_KLONDIKE then
@@ -1198,7 +1208,7 @@ local function draw_top_bar(term_w)
             end
         end
         local f = foundation_label(1) .. " " .. foundation_label(2) .. " " .. foundation_label(3) .. " " .. foundation_label(4)
-        local line2 = tr("game.solitaire.cells", "Cells") .. " " .. cells .. "   " .. tr("game.solitaire.foundations", "Foundations") .. " " .. f
+        local line2 = tr("game.solitaire.cells") .. " " .. cells .. "   " .. tr("game.solitaire.foundations") .. " " .. f
         draw_text(centered_x(line2, 1, term_w), 4, line2, "white", "black")
     elseif state.mode == MODE_KLONDIKE then
         local w1, w2, w3 = "  ", "  ", "  "
@@ -1206,12 +1216,12 @@ local function draw_top_bar(term_w)
         if #state.waste >= 2 then w2 = card_two_chars(state.waste[#state.waste - 1]) end
         if #state.waste >= 3 then w3 = card_two_chars(state.waste[#state.waste - 2]) end
         local f = foundation_label(1) .. " " .. foundation_label(2) .. " " .. foundation_label(3) .. " " .. foundation_label(4)
-        local line2 = tr("game.solitaire.stock", "Stock") .. " [##]   " .. tr("game.solitaire.waste", "Waste") .. " [" .. w3 .. " " .. w2 .. " " .. w1 .. "]"
-            .. "   " .. tr("game.solitaire.foundations", "Foundations") .. " " .. f
+        local line2 = tr("game.solitaire.stock") .. " [##]   " .. tr("game.solitaire.waste") .. " [" .. w3 .. " " .. w2 .. " " .. w1 .. "]"
+            .. "   " .. tr("game.solitaire.foundations") .. " " .. f
         draw_text(centered_x(line2, 1, term_w), 4, line2, "white", "black")
     else
-        local line2 = tr("game.solitaire.spider_stock", "Spider Stock") .. " " .. tostring(math.floor(#state.stock / 10))
-            .. "   " .. tr("game.solitaire.spider_removed", "Removed") .. " " .. tostring(state.spider_removed) .. "/8"
+        local line2 = tr("game.solitaire.spider_stock") .. " " .. tostring(math.floor(#state.stock / 10))
+            .. "   " .. tr("game.solitaire.spider_removed") .. " " .. tostring(state.spider_removed) .. "/8"
         draw_text(centered_x(line2, 1, term_w), 4, line2, "white", "black")
     end
 end
@@ -1219,15 +1229,15 @@ end
 local function current_message()
     if state.mode_input then
         if state.spider_diff_input then
-            return tr("game.solitaire.mode_prompt_spider", "Spider difficulty: [1] Easy [2] Medium [3] Hard"), "yellow"
+            return tr("game.solitaire.mode_prompt_spider"), "yellow"
         end
-        return tr("game.solitaire.mode_prompt", "Switch mode: [F] FreeCell / [K] Klondike / [S] Spider"), "yellow"
+        return tr("game.solitaire.mode_prompt"), "yellow"
     end
     if state.confirm_mode == "restart" then
-        return tr("game.solitaire.confirm_restart", "Confirm restart? [Y] Yes / [N] No"), "yellow"
+        return tr("game.solitaire.confirm_restart"), "yellow"
     end
     if state.confirm_mode == "exit" then
-        return tr("game.solitaire.confirm_exit", "Confirm exit? [Y] Yes / [N] No"), "yellow"
+        return tr("game.solitaire.confirm_exit"), "yellow"
     end
     if state.msg_text ~= "" then
         return state.msg_text, state.msg_color
@@ -1237,11 +1247,11 @@ end
 
 local function controls_text()
     if state.mode == MODE_FREECELL then
-        return tr("game.solitaire.controls.freecell", "[←]/[→] Move [↑]/[↓] Height [Space] Select [Enter] Move [X] To Cell [C] Cell->Column [P] Switch Mode [A] Undo [S] Save [R] Restart [Q]/[ESC] Exit")
+        return tr("game.solitaire.controls.freecell")
     elseif state.mode == MODE_KLONDIKE then
-        return tr("game.solitaire.controls.klondike", "[←]/[→] Move [↑]/[↓] Height [Space] Select [Enter] Move/Foundation [X] Draw [C] Waste->Column [P] Switch Mode [A] Undo [S] Save [R] Restart [Q]/[ESC] Exit")
+        return tr("game.solitaire.controls.klondike")
     end
-    return tr("game.solitaire.controls.spider", "[←]/[→] Move [↑]/[↓] Height [Space] Select [Enter] Move [X] Deal Row [P] Switch Mode [A] Undo [S] Save [R] Restart [Q]/[ESC] Exit")
+    return tr("game.solitaire.controls.spider")
 end
 local function compute_layout(term_w, term_h)
     local cols = #state.tableau
@@ -1287,7 +1297,7 @@ local function draw_bottom_area(layout)
     end
 
     if layout.controls_too_long then
-        draw_text(centered_x(tr("warning.size_title", "Terminal Too Small"), 1, layout.term_w), layout.controls_start_y, tr("warning.size_title", "Terminal Too Small"), "yellow", "black")
+        draw_text(centered_x(tr("warning.size_title"), 1, layout.term_w), layout.controls_start_y, tr("warning.size_title"), "yellow", "black")
     else
         for i = 1, #layout.wrapped do
             draw_text(centered_x(layout.wrapped[i], 1, layout.term_w), layout.controls_start_y + i - 1, layout.wrapped[i], "white", "black")
@@ -1444,7 +1454,7 @@ local function handle_normal_key(key)
             state.selected_pick_depth = clamp(state.cursor_pick_depth or 1, 1, math.max(1, maxd))
             state.grid_dirty = true
         else
-            show_message(tr("game.solitaire.select_empty", "Current column cannot be selected."), "dark_gray", 2, false)
+            show_message(tr("game.solitaire.select_empty"), "dark_gray", 2, false)
         end
         return
     end
@@ -1456,7 +1466,7 @@ local function handle_normal_key(key)
             if src ~= dst and start_idx ~= nil and move_tableau_stack(src, dst, start_idx) then
                 if state.mode == MODE_SPIDER then remove_spider_complete_runs() else check_win() end
             else
-                show_message(tr("game.solitaire.move_invalid", "Invalid move."), "red", 2, false)
+                show_message(tr("game.solitaire.move_invalid"), "red", 2, false)
             end
         else
             if not move_column_top_to_foundation(state.cursor_col) then
@@ -1482,7 +1492,7 @@ local function handle_normal_key(key)
             remove_spider_complete_runs()
         else
             if not move_column_to_cell(state.cursor_col) then
-                show_message(tr("game.solitaire.cell_full", "No empty FreeCell."), "dark_gray", 2, false)
+                show_message(tr("game.solitaire.cell_full"), "dark_gray", 2, false)
             end
         end
         clamp_cursor_pick_depth()
@@ -1492,11 +1502,11 @@ local function handle_normal_key(key)
     if key == "c" then
         if state.mode == MODE_KLONDIKE then
             if not move_waste_to_column(state.cursor_col) then
-                show_message(tr("game.solitaire.waste_invalid", "Waste card cannot be placed there."), "red", 2, false)
+                show_message(tr("game.solitaire.waste_invalid"), "red", 2, false)
             end
         elseif state.mode == MODE_FREECELL then
             if not move_cell_to_column(state.cursor_col) then
-                show_message(tr("game.solitaire.cell_empty", "No suitable card in FreeCells."), "dark_gray", 2, false)
+                show_message(tr("game.solitaire.cell_empty"), "dark_gray", 2, false)
             end
         end
         clamp_cursor_pick_depth()
@@ -1546,7 +1556,7 @@ local function init_game()
     if state.launch_mode == "continue" and try_load_progress() then
         state.start_frame = state.frame - elapsed_seconds() * FPS
         state.bottom_dirty = true
-        show_message(tr("game.solitaire.continue_loaded", "Loaded previous save."), "green", 2, false)
+        show_message(tr("game.solitaire.continue_loaded"), "green", 2, false)
     else
         deal_new_game(MODE_FREECELL)
     end

@@ -70,11 +70,21 @@ local state = {
     last_warn_term_w = 0, last_warn_term_h = 0, last_warn_min_w = 0, last_warn_min_h = 0,
 }
 
-local function tr(k, fb)
-    if type(translate) ~= "function" then return fb end
-    local ok, v = pcall(translate, k)
-    if not ok or v == nil or v == "" or v == k then return fb end
-    return v
+local function tr(key)
+    if type(translate) ~= "function" then
+        return key
+    end
+
+    local ok, value = pcall(translate, key)
+    if not ok or value == nil or value == "" then
+        return key
+    end
+
+    if type(value) == "string" and string.find(value, "[missing-i18n-key:", 1, true) ~= nil then
+        return key
+    end
+
+    return value
 end
 
 local function key_width(t)
@@ -384,9 +394,9 @@ local function save_game_state(show_toast)
 
     if show_toast then
         if ok then
-            show_message(tr("game.shooter.save_success", "Save successful!"), "green", 3, false)
+            show_message(tr("game.shooter.save_success"), "green", 3, false)
         else
-            show_message(tr("game.shooter.save_failed", "Save unavailable."), "red", 3, false)
+            show_message(tr("game.shooter.save_failed"), "red", 3, false)
         end
     end
 end
@@ -573,7 +583,7 @@ local function set_lost_state()
     state.end_frame = state.frame
     state.confirm_mode = nil
     commit_result_once()
-    show_message(tr("game.shooter.lose_banner", "Plane destroyed!") .. " " .. tr("game.shooter.result_controls", "[R] Restart  [Q]/[ESC] Exit"), "red", 0, true)
+    show_message(tr("game.shooter.lose_banner") .. " " .. tr("game.shooter.result_controls"), "red", 0, true)
 end
 
 local function apply_player_damage(dmg, ignore_invuln)
@@ -659,7 +669,7 @@ local function activate_attack_buff(symbol)
         state.missile_shots = 0
     end
 
-    show_message(tr("game.shooter.item." .. symbol, symbol) .. " " .. tr("game.shooter.msg_buff_on", "activated"), "green", 3, false)
+    show_message(tr("game.shooter.item." .. symbol) .. " " .. tr("game.shooter.msg_buff_on"), "green", 3, false)
 end
 
 local function activate_function_item(symbol)
@@ -684,7 +694,7 @@ local function activate_function_item(symbol)
         if state.nuke_stock < 3 then state.nuke_stock = state.nuke_stock + 1 end
     end
 
-    show_message(tr("game.shooter.item." .. symbol, symbol) .. " " .. tr("game.shooter.msg_item_get", "picked"), "light_cyan", 3, false)
+    show_message(tr("game.shooter.item." .. symbol) .. " " .. tr("game.shooter.msg_item_get"), "light_cyan", 3, false)
 end
 
 local function nuke_spawn_permille()
@@ -814,7 +824,7 @@ local function boss_take_damage(dmg)
         state.score = state.score + 20
         state.stage = state.stage + 1
         state.next_boss_score = next_boss_threshold(state.next_boss_score, state.stage)
-        show_message(tr("game.shooter.msg_boss_defeated", "BOSS defeated!"), "green", 3, false)
+        show_message(tr("game.shooter.msg_boss_defeated"), "green", 3, false)
     end
     state.dirty = true
 end
@@ -1051,7 +1061,7 @@ local function enter_boss_battle()
     state.boss.next_shot_at = state.frame + sec_to_frames(1)
     state.boss.start_frame = state.frame
     state.boss.chase_cd_until = state.frame
-    show_message(tr("game.shooter.msg_boss_incoming", "BOSS incoming!"), "yellow", 3, false)
+    show_message(tr("game.shooter.msg_boss_incoming"), "yellow", 3, false)
 end
 
 local function maybe_trigger_boss()
@@ -1207,7 +1217,7 @@ end
 
 local function use_nuke()
     if state.nuke_stock <= 0 then
-        show_message(tr("game.shooter.msg_nuke_empty", "No nuke in magazine."), "dark_gray", 2, false)
+        show_message(tr("game.shooter.msg_nuke_empty"), "dark_gray", 2, false)
         return
     end
 
@@ -1352,7 +1362,7 @@ local function draw_boss_bar(layout)
 end
 
 local function draw_life_block(x, y)
-    draw_text(x, y, tr("game.shooter.hp", "HP") .. ":", "white", "black")
+    draw_text(x, y, tr("game.shooter.hp") .. ":", "white", "black")
     local a = math.min(5, state.hp)
     local b = math.max(0, state.hp - 5)
     draw_text(x, y + 1, string.rep("A", a), "yellow", "black")
@@ -1370,24 +1380,24 @@ local function draw_buff_line(x, y, sym, remain, total)
     draw_text(x, y, sym, "white", "black")
     if filled > 0 then draw_text(x + 2, y, string.rep(CH_BLOCK, filled), "green", "black") end
     if filled < blocks then draw_text(x + 2 + filled, y, string.rep(CH_BLOCK, blocks - filled), "dark_gray", "black") end
-    draw_text(x + 2 + blocks + 1, y, tostring(remain) .. tr("game.shooter.seconds", "s"), "white", "black")
+    draw_text(x + 2 + blocks + 1, y, tostring(remain) .. tr("game.shooter.seconds"), "white", "black")
 end
 
 local function draw_info(layout)
     local x, y, w = layout.info_x, layout.info_y, layout.info_w
     fill_rect(x, y, w, BOARD_H, "black")
 
-    draw_text(x, y + 0, tr("game.shooter.best_score", "Best Score") .. ": " .. tostring(state.best_score), "dark_gray", "black")
-    draw_text(x, y + 1, tr("game.shooter.best_stage", "Best Stage") .. ": " .. tostring(state.best_stage), "dark_gray", "black")
-    draw_text(x, y + 2, tr("game.shooter.score", "Score") .. ": " .. tostring(state.score), "white", "black")
-    draw_text(x, y + 3, tr("game.shooter.time", "Time") .. ": " .. format_duration(elapsed_seconds()), "light_cyan", "black")
+    draw_text(x, y + 0, tr("game.shooter.best_score") .. ": " .. tostring(state.best_score), "dark_gray", "black")
+    draw_text(x, y + 1, tr("game.shooter.best_stage") .. ": " .. tostring(state.best_stage), "dark_gray", "black")
+    draw_text(x, y + 2, tr("game.shooter.score") .. ": " .. tostring(state.score), "white", "black")
+    draw_text(x, y + 3, tr("game.shooter.time") .. ": " .. format_duration(elapsed_seconds()), "light_cyan", "black")
 
-    draw_text(x, y + 4, tr("game.shooter.fire_mode", "Fire") .. ": " .. tr(state.fire_mode == "manual" and "game.shooter.fire_mode_manual" or "game.shooter.fire_mode_auto", state.fire_mode), "white", "black")
-    draw_text(x, y + 5, tr("game.shooter.stage", "Stage") .. ": " .. tostring(state.stage), "white", "black")
+    draw_text(x, y + 4, tr("game.shooter.fire_mode") .. ": " .. tr(state.fire_mode == "manual" and "game.shooter.fire_mode_manual" or "game.shooter.fire_mode_auto"), "white", "black")
+    draw_text(x, y + 5, tr("game.shooter.stage") .. ": " .. tostring(state.stage), "white", "black")
     draw_life_block(x, y + 6)
 
     local slot = string.rep("G", state.nuke_stock) .. string.rep("-", 3 - state.nuke_stock)
-    draw_text(x, y + 10, tr("game.shooter.magazine", "Magazine") .. ": " .. slot, "white", "black")
+    draw_text(x, y + 10, tr("game.shooter.magazine") .. ": " .. slot, "white", "black")
 
     local line_y = y + 12
     if state.attack_symbol ~= nil and state.attack_until > state.frame then
@@ -1410,13 +1420,13 @@ local function draw_info(layout)
 end
 
 local function current_msg()
-    if state.confirm_mode == "restart" then return tr("game.shooter.confirm_restart", "Confirm restart? [Y] Yes / [N] No"), "yellow" end
-    if state.confirm_mode == "exit" then return tr("game.shooter.confirm_exit", "Confirm exit? [Y] Yes / [N] No"), "yellow" end
+    if state.confirm_mode == "restart" then return tr("game.shooter.confirm_restart"), "yellow" end
+    if state.confirm_mode == "exit" then return tr("game.shooter.confirm_exit"), "yellow" end
     return state.msg_text, state.msg_color
 end
 
 local function shooter_controls_text()
-    return tr("game.shooter.controls", "[LEFT]/[RIGHT] Move  [Z] Fire Mode  [Space] Fire  [X] Nuke  [S] Save  [R] Restart  [Q]/[ESC] Exit")
+    return tr("game.shooter.controls")
 end
 
 local function draw_message_controls(layout)
@@ -1442,11 +1452,11 @@ local function build_layout()
     local content_w = BOARD_W + gap + info_w
     local controls_w = min_width_for_lines(shooter_controls_text(), 3, 28)
     local msg_w = math.max(
-        key_width(tr("game.shooter.lose_banner", "Plane destroyed!") .. " " .. tr("game.shooter.result_controls", "[R] Restart  [Q]/[ESC] Exit")),
-        key_width(tr("game.shooter.confirm_restart", "Confirm restart? [Y] Yes / [N] No")),
-        key_width(tr("game.shooter.confirm_exit", "Confirm exit? [Y] Yes / [N] No")),
-        key_width(tr("game.shooter.msg_boss_incoming", "BOSS incoming!")),
-        key_width(tr("game.shooter.msg_boss_defeated", "BOSS defeated!"))
+        key_width(tr("game.shooter.lose_banner") .. " " .. tr("game.shooter.result_controls")),
+        key_width(tr("game.shooter.confirm_restart")),
+        key_width(tr("game.shooter.confirm_exit")),
+        key_width(tr("game.shooter.msg_boss_incoming")),
+        key_width(tr("game.shooter.msg_boss_defeated"))
     )
 
     local total_w = math.max(content_w, controls_w, msg_w, BOSS_HP_BAR_W + 8)
@@ -1501,9 +1511,9 @@ local function minimum_required_size()
     local content_w = BOARD_W + 4 + 28
     local controls_w = min_width_for_lines(shooter_controls_text(), 3, 28)
     local msg_w = math.max(
-        key_width(tr("game.shooter.confirm_restart", "Confirm restart? [Y] Yes / [N] No")),
-        key_width(tr("game.shooter.confirm_exit", "Confirm exit? [Y] Yes / [N] No")),
-        key_width(tr("game.shooter.lose_banner", "Plane destroyed!") .. " " .. tr("game.shooter.result_controls", "[R] Restart  [Q]/[ESC] Exit"))
+        key_width(tr("game.shooter.confirm_restart")),
+        key_width(tr("game.shooter.confirm_exit")),
+        key_width(tr("game.shooter.lose_banner") .. " " .. tr("game.shooter.result_controls"))
     )
 
     local min_w = math.max(content_w, controls_w, msg_w, BOSS_HP_BAR_W + 8) + 2
@@ -1513,10 +1523,10 @@ end
 
 local function draw_size_warning(term_w, term_h, min_w, min_h)
     local lines = {
-        tr("warning.size_title", "Terminal Too Small"),
-        string.format("%s: %dx%d", tr("warning.required", "Required size"), min_w, min_h),
-        string.format("%s: %dx%d", tr("warning.current", "Current size"), term_w, term_h),
-        tr("warning.enlarge_hint", "Please enlarge terminal window to continue."),
+        tr("warning.size_title"),
+        string.format("%s: %dx%d", tr("warning.required"), min_w, min_h),
+        string.format("%s: %dx%d", tr("warning.current"), term_w, term_h),
+        tr("warning.enlarge_hint"),
     }
 
     clear()
@@ -1599,10 +1609,10 @@ local function handle_input(key)
     if key == "z" then
         if state.fire_mode == "auto" then
             state.fire_mode = "manual"
-            show_message(tr("game.shooter.msg_fire_mode_manual", "Manual fire"), "yellow", 2, false)
+            show_message(tr("game.shooter.msg_fire_mode_manual"), "yellow", 2, false)
         else
             state.fire_mode = "auto"
-            show_message(tr("game.shooter.msg_fire_mode_auto", "Auto fire"), "yellow", 2, false)
+            show_message(tr("game.shooter.msg_fire_mode_auto"), "yellow", 2, false)
         end
         state.dirty = true
         return

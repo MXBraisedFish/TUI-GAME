@@ -55,14 +55,20 @@ local state = {
     last_term_h = 0
 }
 
-local function tr(key, fallback)
+local function tr(key)
     if type(translate) ~= "function" then
-        return fallback
+        return key
     end
+
     local ok, value = pcall(translate, key)
-    if not ok or value == nil or value == "" or value == key then
-        return fallback
+    if not ok or value == nil or value == "" then
+        return key
     end
+
+    if type(value) == "string" and string.find(value, "[missing-i18n-key:", 1, true) ~= nil then
+        return key
+    end
+
     return value
 end
 
@@ -202,7 +208,7 @@ end
 
 local function hand_value_text(cards)
     if is_blackjack(cards) then
-        return tr("game.blackjack.value_blackjack", "Blackjack")
+        return tr("game.blackjack.value_blackjack")
     end
     return tostring(hand_total(cards))
 end
@@ -415,7 +421,7 @@ end
 local function adjust_bet_multiplier(delta)
     local h = active_hand_ref()
     if not can_adjust_multiplier(h) then
-        add_toast(tr("game.blackjack.action_unavailable", "Action unavailable."), "dark_gray")
+        add_toast(tr("game.blackjack.action_unavailable"), "dark_gray")
         return
     end
 
@@ -433,7 +439,7 @@ local function adjust_bet_multiplier(delta)
     if target_bet < 1 then target_bet = 1 end
     local projected_total = committed_bets_total() - old_bet + target_bet
     if projected_total > state.funds then
-        add_toast(tr("game.blackjack.action_need_funds", "Cannot perform this action now."), "red")
+        add_toast(tr("game.blackjack.action_need_funds"), "red")
         return
     end
 
@@ -450,19 +456,19 @@ end
 local function hand_actions_text(h)
     if h.stood or h.resolved or h.bust then
         return {
-            text = tr("game.blackjack.msg_stood", "Stood"),
+            text = tr("game.blackjack.msg_stood"),
             color = "red"
         }
     end
     local ops = {}
     if can_adjust_multiplier(h) then
-        ops[#ops + 1] = tr("game.blackjack.ops_adjust_multiplier", "Adjust Multiplier")
+        ops[#ops + 1] = tr("game.blackjack.ops_adjust_multiplier")
     end
-    if can_hit(h) then ops[#ops + 1] = tr("game.blackjack.ops_hit", "Hit") end
-    if can_double(h) then ops[#ops + 1] = tr("game.blackjack.ops_double", "Double") end
-    if can_split() then ops[#ops + 1] = tr("game.blackjack.ops_split", "Split") end
-    if can_stand(h) then ops[#ops + 1] = tr("game.blackjack.ops_stand", "Stand") end
-    if can_insurance() then ops[#ops + 1] = tr("game.blackjack.ops_insurance", "Insurance") end
+    if can_hit(h) then ops[#ops + 1] = tr("game.blackjack.ops_hit") end
+    if can_double(h) then ops[#ops + 1] = tr("game.blackjack.ops_double") end
+    if can_split() then ops[#ops + 1] = tr("game.blackjack.ops_split") end
+    if can_stand(h) then ops[#ops + 1] = tr("game.blackjack.ops_stand") end
+    if can_insurance() then ops[#ops + 1] = tr("game.blackjack.ops_insurance") end
     return { text = table.concat(ops, "  "), color = "white" }
 end
 
@@ -472,11 +478,11 @@ update_player_prompt = function()
         local left = hand_actions_text(state.hands[1])
         local right = hand_actions_text(state.hands[2])
         lines[#lines + 1] = {
-            text = tr("game.blackjack.bet_round_left", "Left") .. ": " .. (left.text or ""),
+            text = tr("game.blackjack.bet_round_left") .. ": " .. (left.text or ""),
             color = left.color or "white"
         }
         lines[#lines + 1] = {
-            text = tr("game.blackjack.bet_round_right", "Right") .. ": " .. (right.text or ""),
+            text = tr("game.blackjack.bet_round_right") .. ": " .. (right.text or ""),
             color = right.color or "white"
         }
     else
@@ -521,7 +527,7 @@ local function begin_round()
             h.adj_locked = true
         end
         state.force_double_next_round = false
-        add_toast(tr("game.blackjack.msg_forced_double_applied", "Insurance effect: forced double this round."), "yellow")
+        add_toast(tr("game.blackjack.msg_forced_double_applied"), "yellow")
     end
 
     update_player_prompt()
@@ -547,7 +553,7 @@ local function resolve_hand(h, outcome, payout_mult, text_key, fallback, color)
     h.resolved = true
     h.outcome = outcome
     h.payout_mult = payout_mult
-    h.result_text = tr(text_key, fallback)
+    h.result_text = tr(text_key)
     h.result_color = color
 end
 
@@ -555,9 +561,7 @@ local function render_once()
     clear()
     local w, h = terminal_size()
     local controls = tr(
-        "game.blackjack.controls",
-        "[\u{2190}][\u{2192}] Switch Hand  [Z] Double  [X] Split  [C] Insurance  [Space] Hit  [Enter] Stand  [R] Restart  [Q]/[ESC] Exit"
-    )
+        "game.blackjack.controls")
     local ctrl_lines = wrap_words(controls, math.max(10, w - 2))
     if #ctrl_lines > 3 then
         ctrl_lines = { ctrl_lines[1], ctrl_lines[2], ctrl_lines[3] }
@@ -589,7 +593,7 @@ local function render_once()
         return cx
     end
 
-    local best_text = tr("game.blackjack.best", "Best Net") .. ": " .. tostring(state.best_net)
+    local best_text = tr("game.blackjack.best") .. ": " .. tostring(state.best_net)
     local net = net_value()
     local net_color = "dark_gray"
     if net > 0 then
@@ -597,7 +601,7 @@ local function render_once()
     elseif net < 0 then
         net_color = "red"
     end
-    local net_text = tr("game.blackjack.net", "Current Net") .. ": " .. tostring(net)
+    local net_text = tr("game.blackjack.net") .. ": " .. tostring(net)
 
     fill_line(status_y, w)
     local status_sep = "    "
@@ -611,18 +615,18 @@ local function render_once()
     local alert_text = ""
     local alert_color = "red"
     if state.confirm_mode == "restart" then
-        alert_text = tr("game.blackjack.confirm_restart", "Confirm restart? [Y] Yes / [N] No")
+        alert_text = tr("game.blackjack.confirm_restart")
         alert_color = "yellow"
     elseif state.confirm_mode == "exit" then
-        alert_text = tr("game.blackjack.confirm_exit", "Confirm exit? [Y] Yes / [N] No")
+        alert_text = tr("game.blackjack.confirm_exit")
         alert_color = "yellow"
     elseif state.bankrupt then
-        alert_text = tr("game.blackjack.msg_bankrupt", "You lost everything, you damned gambler!")
+        alert_text = tr("game.blackjack.msg_bankrupt")
             .. "  "
-            .. tr("game.blackjack.bankrupt_controls", "[R] Restart  [Q]/[ESC] Exit")
+            .. tr("game.blackjack.bankrupt_controls")
         alert_color = "red"
     elseif state.await_next_round then
-        alert_text = tr("game.blackjack.msg_press_enter_next", "Press [Enter] to start next round.")
+        alert_text = tr("game.blackjack.msg_press_enter_next")
         alert_color = "yellow"
     elseif state.toast_text ~= nil and state.frame <= state.toast_until then
         alert_text = state.toast_text
@@ -640,8 +644,8 @@ local function render_once()
     end
     draw_text(table_x, table_y + TABLE_H - 1, "\u{255A}" .. string.rep("\u{2550}", TABLE_W - 2) .. "\u{255D}", "white", "black")
 
-    local dealer_label = " " .. tr("game.blackjack.dealer_cards", "Dealer") .. " "
-    local player_label = " " .. tr("game.blackjack.player_cards", "Player") .. " "
+    local dealer_label = " " .. tr("game.blackjack.dealer_cards") .. " "
+    local player_label = " " .. tr("game.blackjack.player_cards") .. " "
     draw_text(centered_x(dealer_label, table_x + 2, table_right - 2), table_y, dealer_label, "white", "black")
     draw_text(centered_x(player_label, table_x + 2, table_right - 2), table_y + TABLE_H - 1, player_label, "white", "black")
 
@@ -679,7 +683,7 @@ local function render_once()
     if not state.dealer_hidden then
         dealer_points = hand_value_text(state.dealer_cards)
     end
-    draw_points_line(tr("game.blackjack.msg_dealer_points", "Dealer Points") .. ": " .. dealer_points, dealer_y + CARD_H, "dark_gray")
+    draw_points_line(tr("game.blackjack.msg_dealer_points") .. ": " .. dealer_points, dealer_y + CARD_H, "dark_gray")
 
     local deck_x = table_x + TABLE_W - 16
     local deck_y = table_y + math.floor(TABLE_H / 2) - 2
@@ -694,14 +698,14 @@ local function render_once()
         draw_text(
             info_x,
             info_y + 1,
-            tr("game.blackjack.bet_round_left", "Left") .. " -[$] " .. tostring(state.hands[1].bet) .. " " .. multiplier_display_text(state.hands[1]),
+            tr("game.blackjack.bet_round_left") .. " -[$] " .. tostring(state.hands[1].bet) .. " " .. multiplier_display_text(state.hands[1]),
             "white",
             "black"
         )
         draw_text(
             info_x,
             info_y + 2,
-            tr("game.blackjack.bet_round_right", "Right") .. " -[$] " .. tostring(state.hands[2].bet) .. " " .. multiplier_display_text(state.hands[2]),
+            tr("game.blackjack.bet_round_right") .. " -[$] " .. tostring(state.hands[2].bet) .. " " .. multiplier_display_text(state.hands[2]),
             "white",
             "black"
         )
@@ -743,7 +747,7 @@ local function render_once()
         draw_text(center_left, y, string.rep(" ", center_w), "white", "black")
     end
 
-    local lines_to_draw = { { text = tr(phase_key, "Player Turn"), color = phase_color } }
+    local lines_to_draw = { { text = tr(phase_key), color = phase_color } }
     for i = 1, #state.center_lines do
         lines_to_draw[#lines_to_draw + 1] = state.center_lines[i]
     end
@@ -776,12 +780,12 @@ local function render_once()
             draw_card(right_x + (i - 1) * (CARD_W + 1), player_cards_y, state.hands[2].cards[i], false, "white", "white")
         end
         draw_points_line(
-            tr("game.blackjack.msg_left_points", "Left Points") .. ": " .. hand_value_text(state.hands[1].cards),
+            tr("game.blackjack.msg_left_points") .. ": " .. hand_value_text(state.hands[1].cards),
             player_points_y,
             "dark_gray"
         )
         draw_points_line(
-            tr("game.blackjack.msg_right_points", "Right Points") .. ": " .. hand_value_text(state.hands[2].cards),
+            tr("game.blackjack.msg_right_points") .. ": " .. hand_value_text(state.hands[2].cards),
             player_points_y + 1,
             "dark_gray"
         )
@@ -798,14 +802,14 @@ local function render_once()
             draw_card(px + (i - 1) * (CARD_W + 1), player_cards_y, state.hands[1].cards[i], false, "white", "white")
         end
         draw_points_line(
-            tr("game.blackjack.msg_player_points", "Player Points") .. ": " .. hand_value_text(state.hands[1].cards),
+            tr("game.blackjack.msg_player_points") .. ": " .. hand_value_text(state.hands[1].cards),
             player_points_y,
             "dark_gray"
         )
     end
 
     fill_line(warn_y, w)
-    local warning = tr("game.blackjack.warning", "Simulation only. For fun only; stay away from gambling.")
+    local warning = tr("game.blackjack.warning")
     local wx = centered_x(warning, 1, w)
     draw_text(wx, warn_y, warning, "dark_gray", "black")
 
@@ -859,7 +863,7 @@ local function dealer_phase_and_settle()
     state.await_next_round = false
     state.dealer_hidden = false
     set_center_lines({
-        { text = tr("game.blackjack.msg_player_stand_dealer", "Player stands, dealer turn."), color = "light_cyan" }
+        { text = tr("game.blackjack.msg_player_stand_dealer"), color = "light_cyan" }
     })
     pause_with_render(DEALER_REVEAL_PAUSE_MS)
 
@@ -892,7 +896,7 @@ local function dealer_phase_and_settle()
     if unresolved and not dealer_bj then
         while hand_total(state.dealer_cards) <= 16 do
             set_center_lines({
-                { text = tr("game.blackjack.msg_dealer_drawing", "Dealer drawing") .. " " .. SPINNER[state.spinner_idx], color = "light_cyan" }
+                { text = tr("game.blackjack.msg_dealer_drawing") .. " " .. SPINNER[state.spinner_idx], color = "light_cyan" }
             })
             state.spinner_idx = state.spinner_idx + 1
             if state.spinner_idx > #SPINNER then state.spinner_idx = 1 end
@@ -903,7 +907,7 @@ local function dealer_phase_and_settle()
     end
 
     set_center_lines({
-        { text = tr("game.blackjack.phase_settle", "Settlement"), color = "rgb(255,165,0)" }
+        { text = tr("game.blackjack.phase_settle"), color = "rgb(255,165,0)" }
     })
     pause_with_render(SETTLE_COMPARE_PAUSE_MS)
 
@@ -926,19 +930,19 @@ local function dealer_phase_and_settle()
 
     state.phase = "settle"
     local lines = {
-        { text = tr("game.blackjack.msg_dealer_points", "Dealer Points") .. ": " .. hand_value_text(state.dealer_cards), color = "rgb(255,165,0)" }
+        { text = tr("game.blackjack.msg_dealer_points") .. ": " .. hand_value_text(state.dealer_cards), color = "rgb(255,165,0)" }
     }
     if state.split_mode then
         lines[#lines + 1] = {
-            text = tr("game.blackjack.msg_left_points", "Left Points") .. ": " .. hand_value_text(state.hands[1].cards) .. "  " .. state.hands[1].result_text,
+            text = tr("game.blackjack.msg_left_points") .. ": " .. hand_value_text(state.hands[1].cards) .. "  " .. state.hands[1].result_text,
             color = state.hands[1].result_color
         }
         lines[#lines + 1] = {
-            text = tr("game.blackjack.msg_right_points", "Right Points") .. ": " .. hand_value_text(state.hands[2].cards) .. "  " .. state.hands[2].result_text,
+            text = tr("game.blackjack.msg_right_points") .. ": " .. hand_value_text(state.hands[2].cards) .. "  " .. state.hands[2].result_text,
             color = state.hands[2].result_color
         }
     else
-        lines[#lines + 1] = { text = tr("game.blackjack.msg_player_points", "Player Points") .. ": " .. hand_value_text(state.hands[1].cards), color = "white" }
+        lines[#lines + 1] = { text = tr("game.blackjack.msg_player_points") .. ": " .. hand_value_text(state.hands[1].cards), color = "white" }
         lines[#lines + 1] = { text = state.hands[1].result_text, color = state.hands[1].result_color }
     end
     set_center_lines(lines)
@@ -976,7 +980,7 @@ end
 local function hit_current()
     local h = state.hands[state.active_hand]
     if not can_hit(h) then
-        add_toast(tr("game.blackjack.action_unavailable", "Action unavailable."), "red")
+        add_toast(tr("game.blackjack.action_unavailable"), "red")
         return
     end
     h.adj_locked = true
@@ -994,7 +998,7 @@ end
 local function stand_current()
     local h = state.hands[state.active_hand]
     if not can_stand(h) then
-        add_toast(tr("game.blackjack.action_unavailable", "Action unavailable."), "red")
+        add_toast(tr("game.blackjack.action_unavailable"), "red")
         return
     end
     h.adj_locked = true
@@ -1011,7 +1015,7 @@ end
 local function double_current()
     local h = state.hands[state.active_hand]
     if not can_double(h) then
-        add_toast(tr("game.blackjack.action_need_funds", "Cannot double right now."), "red")
+        add_toast(tr("game.blackjack.action_need_funds"), "red")
         return
     end
     h.adj_locked = true
@@ -1025,7 +1029,7 @@ end
 
 local function split_current()
     if not can_split() then
-        add_toast(tr("game.blackjack.action_need_funds", "Cannot split right now."), "red")
+        add_toast(tr("game.blackjack.action_need_funds"), "red")
         return
     end
     local h = state.hands[1]
@@ -1045,7 +1049,7 @@ end
 
 local function insurance_current()
     if not can_insurance() then
-        add_toast(tr("game.blackjack.action_unavailable", "Action unavailable."), "red")
+        add_toast(tr("game.blackjack.action_unavailable"), "red")
         return
     end
 
@@ -1182,10 +1186,10 @@ end
 local function draw_terminal_size_warning(term_w, term_h, min_w, min_h)
     clear()
     local lines = {
-        tr("warning.size_title", "Terminal Too Small"),
-        string.format("%s: %dx%d", tr("warning.required", "Required size"), min_w, min_h),
-        string.format("%s: %dx%d", tr("warning.current", "Current size"), term_w, term_h),
-        tr("warning.enlarge_hint", "Please enlarge terminal window to continue.")
+        tr("warning.size_title"),
+        string.format("%s: %dx%d", tr("warning.required"), min_w, min_h),
+        string.format("%s: %dx%d", tr("warning.current"), term_w, term_h),
+        tr("warning.enlarge_hint")
     }
     local top = math.floor((term_h - #lines) / 2)
     if top < 1 then top = 1 end
@@ -1199,20 +1203,18 @@ end
 local function minimum_required_size()
     local controls_w = min_width_for_lines(
         tr(
-            "game.blackjack.controls",
-            "[\u{2190}][\u{2192}] Switch Hand  [Z] Double  [X] Split  [C] Insurance  [Space] Hit  [Enter] Stand  [R] Restart  [Q]/[ESC] Exit"
-        ),
+            "game.blackjack.controls"),
         3,
         40
     )
-    local warning_w = key_width(tr("game.blackjack.warning", "Simulation only. For fun only; stay away from gambling."))
-    local status_w = key_width(tr("game.blackjack.best", "Best Net") .. ": -999999")
+    local warning_w = key_width(tr("game.blackjack.warning"))
+    local status_w = key_width(tr("game.blackjack.best") .. ": -999999")
         + 3
-        + key_width(tr("game.blackjack.net", "Current Net") .. ": -999999")
+        + key_width(tr("game.blackjack.net") .. ": -999999")
     local alert_w = math.max(
-        key_width(tr("game.blackjack.confirm_restart", "Confirm restart? [Y] Yes / [N] No")),
-        key_width(tr("game.blackjack.confirm_exit", "Confirm exit? [Y] Yes / [N] No")),
-        key_width(tr("game.blackjack.msg_bankrupt", "You lost everything, you damned gambler!"))
+        key_width(tr("game.blackjack.confirm_restart")),
+        key_width(tr("game.blackjack.confirm_exit")),
+        key_width(tr("game.blackjack.msg_bankrupt"))
     )
     local min_w = math.max(TABLE_W + 2, controls_w + 2, warning_w + 2, status_w + 2, alert_w + 2)
     local min_h = TABLE_H + 6

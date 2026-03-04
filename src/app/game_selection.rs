@@ -170,8 +170,8 @@ impl GameSelection {
 
         let mut hints = i18n::t("game_selection.hint.controls");
         if self.detail_scroll_available {
-            hints.push_str("  " );
-            hints.push_str(&i18n::t_or("game_selection.hint.detail_scroll", "[W]/[S] Scroll Details"));
+            hints.push_str("  ");
+            hints.push_str(&i18n::t("game_selection.hint.detail_scroll"));
         }
         let hint_widget = Paragraph::new(hints)
             .style(Style::default().fg(Color::DarkGray))

@@ -46,12 +46,21 @@ local S = {
     lmh = 0,
 }
 
-local function tr(k, d)
-    if type(translate) ~= "function" then return d end
-    local ok, v = pcall(translate, k)
-    if (not ok) or v == nil or v == "" or v == k then return d end
-    if type(v) == "string" and string.find(v, "missing-i18n-key", 1, true) then return d end
-    return v
+local function tr(key)
+    if type(translate) ~= "function" then
+        return key
+    end
+
+    local ok, value = pcall(translate, key)
+    if not ok or value == nil or value == "" then
+        return key
+    end
+
+    if type(value) == "string" and string.find(value, "[missing-i18n-key:", 1, true) ~= nil then
+        return key
+    end
+
+    return value
 end
 
 local function key(k)
@@ -123,9 +132,9 @@ local function minw(t, ml, hm)
 end
 
 local function mode_name(m)
-    if m == M_FIXED_NEG then return tr("game.twenty_four.mode.fixed_negative", "Fixed Negative") end
-    if m == M_FLEX_NEG then return tr("game.twenty_four.mode.flex_negative", "Flexible Negative") end
-    return tr("game.twenty_four.mode.classic", "Classic")
+    if m == M_FIXED_NEG then return tr("game.twenty_four.mode.fixed_negative") end
+    if m == M_FLEX_NEG then return tr("game.twenty_four.mode.flex_negative") end
+    return tr("game.twenty_four.mode.classic")
 end
 
 local function active_list()
@@ -269,7 +278,7 @@ end
 
 local function add_pair(l, r)
     if l < 1 or r > 8 or l >= r then
-        S.toast, S.toast_color, S.toast_until = tr("game.twenty_four.err_paren_order", "Use different coordinates: left < right."), "red", S.frame + FPS * 2
+        S.toast, S.toast_color, S.toast_until = tr("game.twenty_four.err_paren_order"), "red", S.frame + FPS * 2
         S.dirty = true; return false
     end
     local nums, ops = 0, 0
@@ -280,17 +289,17 @@ local function add_pair(l, r)
     -- Valid sub-expression must be: number ... number, and numbers = operators + 1.
     local valid_shape = (l % 2 == 1) and (r % 2 == 0) and (nums >= 2) and (ops >= 1) and (nums == ops + 1)
     if not valid_shape then
-        S.toast, S.toast_color, S.toast_until = tr("game.twenty_four.err_paren_single", "Brackets must cover at least two numbers and one operator."), "red", S.frame + FPS * 2
+        S.toast, S.toast_color, S.toast_until = tr("game.twenty_four.err_paren_single"), "red", S.frame + FPS * 2
         S.dirty = true; return false
     end
     for i = 1, 4 do
         local p = S.pairs[i]
         if p and cross(l, r, p.l, p.r) then
-            S.toast, S.toast_color, S.toast_until = tr("game.twenty_four.err_paren_cross", "Crossed brackets are not allowed."), "red", S.frame + FPS * 2
+            S.toast, S.toast_color, S.toast_until = tr("game.twenty_four.err_paren_cross"), "red", S.frame + FPS * 2
             S.dirty = true; return false
         end
         if p and p.l == l and p.r == r then
-            S.toast, S.toast_color, S.toast_until = tr("game.twenty_four.err_paren_duplicate", "Same bracket pair already exists."), "red", S.frame + FPS * 2
+            S.toast, S.toast_color, S.toast_until = tr("game.twenty_four.err_paren_duplicate"), "red", S.frame + FPS * 2
             S.dirty = true; return false
         end
     end
@@ -302,7 +311,7 @@ local function add_pair(l, r)
             return true
         end
     end
-    S.toast, S.toast_color, S.toast_until = tr("game.twenty_four.err_paren_full", "Only 4 bracket colors are available."), "red", S.frame + FPS * 2
+    S.toast, S.toast_color, S.toast_until = tr("game.twenty_four.err_paren_full"), "red", S.frame + FPS * 2
     S.dirty = true
     return false
 end
@@ -357,11 +366,11 @@ local function swap_nums(a, b)
     S.dirty = true
 end
 local function msg()
-    if S.confirm == "restart" then return tr("game.twenty_four.confirm_restart", "Confirm restart? [Y] Yes / [N] No"), "yellow" end
-    if S.confirm == "exit" then return tr("game.twenty_four.confirm_exit", "Confirm exit? [Y] Yes / [N] No"), "yellow" end
+    if S.confirm == "restart" then return tr("game.twenty_four.confirm_restart"), "yellow" end
+    if S.confirm == "exit" then return tr("game.twenty_four.confirm_exit"), "yellow" end
     if S.input_mode == "paren_add" then
         if S.input_buf == "" then
-            return tr("game.twenty_four.prompt_add_paren", "Add brackets: input X Y (1-8), Enter confirm"), "dark_gray"
+            return tr("game.twenty_four.prompt_add_paren"), "dark_gray"
         end
         return S.input_buf, "yellow"
     end
@@ -369,11 +378,11 @@ local function msg()
         return "", "yellow"
     end
     if S.input_mode == "difficulty" then
-        return tr("game.twenty_four.prompt_difficulty", "Set difficulty: 1 Classic / 2 Fixed Negative / 3 Flexible Negative"), "dark_gray"
+        return tr("game.twenty_four.prompt_difficulty"), "dark_gray"
     end
-    if S.win then return tr("game.twenty_four.win_banner", "You found the best expression!") .. "  " .. tr("game.twenty_four.result_controls", "[R] Restart  [Q]/[ESC] Exit"), "green" end
+    if S.win then return tr("game.twenty_four.win_banner") .. "  " .. tr("game.twenty_four.result_controls"), "green" end
     if S.toast and S.frame <= S.toast_until then return S.toast, S.toast_color end
-    return tr("game.twenty_four.ready", "Fill all operators to evaluate."), "dark_gray"
+    return tr("game.twenty_four.ready"), "dark_gray"
 end
 
 local function result_text()
@@ -488,27 +497,27 @@ local function render_mid(y, tw)
 end
 
 local function controls()
-    return tr("game.twenty_four.controls", "[Left]/[Right] Move  [C] Num/Symbol Mode  [Up]/[Down] Reorder (Num Mode)  [1/+][2/-][3/*][4//] Edit  [Space] Clear  [Z] Add Brackets  [X] Remove Brackets  [P] Difficulty  [R] Restart  [Q]/[ESC] Exit")
+    return tr("game.twenty_four.controls")
 end
 
 local function min_size()
     local cw = minw(controls(), 3, 56)
     local mw = math.max(
-        wid(tr("game.twenty_four.confirm_restart", "Confirm restart? [Y] Yes / [N] No")),
-        wid(tr("game.twenty_four.confirm_exit", "Confirm exit? [Y] Yes / [N] No")),
-        wid(tr("game.twenty_four.prompt_difficulty", "Set difficulty: 1 Classic / 2 Fixed Negative / 3 Flexible Negative"))
+        wid(tr("game.twenty_four.confirm_restart")),
+        wid(tr("game.twenty_four.confirm_exit")),
+        wid(tr("game.twenty_four.prompt_difficulty"))
     )
-    local tw = math.max(wid(tr("game.twenty_four.best_time", "Best Time") .. " " .. fmt(0)), wid(tr("game.twenty_four.time", "Time") .. " " .. fmt(0) .. "  " .. tr("game.twenty_four.steps", "Steps") .. " 9999"))
+    local tw = math.max(wid(tr("game.twenty_four.best_time") .. " " .. fmt(0)), wid(tr("game.twenty_four.time") .. " " .. fmt(0) .. "  " .. tr("game.twenty_four.steps") .. " 9999"))
     return math.max(cw, mw, tw, 64) + 2, 13
 end
 
 local function draw_warn(tw, th, mw, mh)
     clear()
     local ls = {
-        tr("warning.size_title", "Terminal Too Small"),
-        string.format("%s: %dx%d", tr("warning.required", "Required size"), mw, mh),
-        string.format("%s: %dx%d", tr("warning.current", "Current size"), tw, th),
-        tr("warning.enlarge_hint", "Please enlarge terminal window to continue.")
+        tr("warning.size_title"),
+        string.format("%s: %dx%d", tr("warning.required"), mw, mh),
+        string.format("%s: %dx%d", tr("warning.current"), tw, th),
+        tr("warning.enlarge_hint")
     }
     local top = math.floor((th - #ls) / 2); if top < 1 then top = 1 end
     for i = 1, #ls do draw_text(cx(ls[i], 1, tw), top + i - 1, ls[i], "white", "black") end
@@ -529,7 +538,7 @@ local function size_ok()
 end
 
 local function status_line_text()
-    return tr("game.twenty_four.time", "Time") .. " " .. fmt(sec()) .. "  " .. tr("game.twenty_four.steps", "Steps") .. " " .. tostring(S.steps)
+    return tr("game.twenty_four.time") .. " " .. fmt(sec()) .. "  " .. tr("game.twenty_four.steps") .. " " .. tostring(S.steps)
 end
 
 local function draw_paren_remove_prompt(y, tw)
@@ -546,7 +555,7 @@ local function draw_paren_remove_prompt(y, tw)
     end
 
     if #segs == 0 then
-        local t = tr("game.twenty_four.no_parens", "No brackets in current expression.")
+        local t = tr("game.twenty_four.no_parens")
         draw_text(cx(t, 1, tw), y, t, "dark_gray", "black")
         return
     end
@@ -563,7 +572,7 @@ local function render()
     local tw, th = ts()
     local lines = wrap(controls(), math.max(20, tw - 2)); if #lines > 3 then lines = { lines[1], lines[2], lines[3] } end
     local top = math.floor((th - 10 - #lines) / 2); if top < 1 then top = 1 end
-    local best = tr("game.twenty_four.best_time", "Best Time") .. "  " .. ((S.best_time > 0) and fmt(S.best_time) or tr("game.twenty_four.none", "--:--:--"))
+    local best = tr("game.twenty_four.best_time") .. "  " .. ((S.best_time > 0) and fmt(S.best_time) or tr("game.twenty_four.none"))
     local stat = status_line_text()
     local m, mc = msg()
     for i = 0, 2 do draw_text(1, top + i, string.rep(" ", tw), "white", "black") end
@@ -621,7 +630,7 @@ local function handle_input_mode(k)
         if k == "enter" then
             local a, b = S.input_buf:match("^(%d+)%s+(%d+)$")
             S.input_mode, S.input_buf = nil, ""
-            if a and b then add_pair(math.min(tonumber(a), tonumber(b)), math.max(tonumber(a), tonumber(b))); eval_expr() else S.toast, S.toast_color, S.toast_until = tr("game.twenty_four.err_input", "Invalid input."), "red", S.frame + FPS * 2 end
+            if a and b then add_pair(math.min(tonumber(a), tonumber(b)), math.max(tonumber(a), tonumber(b))); eval_expr() else S.toast, S.toast_color, S.toast_until = tr("game.twenty_four.err_input"), "red", S.frame + FPS * 2 end
             S.dirty = true
             return "changed"
         end
@@ -636,7 +645,7 @@ local function handle_input_mode(k)
                 eval_expr()
                 S.input_mode, S.input_buf = nil, ""
             else
-                S.toast, S.toast_color, S.toast_until = tr("game.twenty_four.err_remove_paren", "No brackets for this color index."), "red", S.frame + FPS * 2
+                S.toast, S.toast_color, S.toast_until = tr("game.twenty_four.err_remove_paren"), "red", S.frame + FPS * 2
             end
             S.dirty = true
             return "changed"
@@ -703,7 +712,7 @@ local function handle_active(k)
         if has_pair then
             S.input_mode, S.input_buf = "paren_remove", ""
         else
-            S.toast = tr("game.twenty_four.no_parens", "No brackets in current expression.")
+            S.toast = tr("game.twenty_four.no_parens")
             S.toast_color = "dark_gray"
             S.toast_until = S.frame + FPS * 2
         end

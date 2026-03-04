@@ -43,12 +43,21 @@ local S = {
     lmh = 0,
 }
 
-local function tr(k, d)
-    if type(translate) ~= "function" then return d end
-    local ok, v = pcall(translate, k)
-    if (not ok) or v == nil or v == "" or v == k then return d end
-    if type(v) == "string" and string.find(v, "missing-i18n-key", 1, true) then return d end
-    return v
+local function tr(key)
+    if type(translate) ~= "function" then
+        return key
+    end
+
+    local ok, value = pcall(translate, key)
+    if not ok or value == nil or value == "" then
+        return key
+    end
+
+    if type(value) == "string" and string.find(value, "[missing-i18n-key:", 1, true) ~= nil then
+        return key
+    end
+
+    return value
 end
 
 local function key(k)
@@ -220,7 +229,7 @@ local function save_slot()
         won = S.won,
     }
     pcall(save_game_slot, "wordle", payload)
-    S.toast = tr("game.wordle.saved", "Saved.")
+    S.toast = tr("game.wordle.saved")
     S.toast_color = "green"
     S.toast_until = S.frame + FPS * 2
 end
@@ -318,42 +327,42 @@ end
 
 local function status_text()
     if S.confirm == "restart" then
-        return tr("game.wordle.confirm_restart", "Confirm restart? [Y] Yes / [N] No"), "yellow"
+        return tr("game.wordle.confirm_restart"), "yellow"
     end
     if S.confirm == "exit" then
-        return tr("game.wordle.confirm_exit", "Confirm exit? [Y] Yes / [N] No"), "yellow"
+        return tr("game.wordle.confirm_exit"), "yellow"
     end
     if S.settled then
         if S.won then
-            return tr("game.wordle.win", "Guessed the correct word!") .. "  " .. tr("game.wordle.result_controls", "[R] Restart  [Q]/[ESC] Exit"), "green"
+            return tr("game.wordle.win") .. "  " .. tr("game.wordle.result_controls"), "green"
         end
-        return tr("game.wordle.lose", "You did not guess the word.") .. "  " .. tr("game.wordle.result_controls", "[R] Restart  [Q]/[ESC] Exit"), "red"
+        return tr("game.wordle.lose") .. "  " .. tr("game.wordle.result_controls"), "red"
     end
     if S.toast and S.frame <= S.toast_until then
         return S.toast, S.toast_color
     end
     if S.mode == "action" then
-        return tr("game.wordle.mode_action", "Action Mode"), "yellow"
+        return tr("game.wordle.mode_action"), "yellow"
     end
-    return tr("game.wordle.mode_input", "Letter Input Mode"), "dark_gray"
+    return tr("game.wordle.mode_input"), "dark_gray"
 end
 
 local function controls_text()
     if S.settled then
-        return tr("game.wordle.controls_result", "[R] Restart  [Q]/[ESC] Exit")
+        return tr("game.wordle.controls_result")
     end
     if S.mode == "action" then
-        return tr("game.wordle.controls_action", "[Tab] Input Mode  [S] Save  [R] Restart  [Q]/[ESC] Exit")
+        return tr("game.wordle.controls_action")
     end
-    return tr("game.wordle.controls_input", "[A-Z] Input  [Backspace]/[Delete] Remove  [Enter] Submit  [Tab] Action Mode")
+    return tr("game.wordle.controls_input")
 end
 
 local function min_size()
     local cw = wid(controls_text())
     local row_w = wid("-> ") + S.word_len * 2 + 2
     local top_w = math.max(
-        wid(tr("game.wordle.best_time", "Best Time") .. " " .. fmt(0)),
-        wid(tr("game.wordle.time", "Time") .. " " .. fmt(0) .. "  " .. tr("game.wordle.streak", "Streak") .. " 999")
+        wid(tr("game.wordle.best_time") .. " " .. fmt(0)),
+        wid(tr("game.wordle.time") .. " " .. fmt(0) .. "  " .. tr("game.wordle.streak") .. " 999")
     )
     local need_w = math.max(60, cw + 2, row_w + 8, top_w + 2)
     return need_w, 14
@@ -362,10 +371,10 @@ end
 local function draw_warn(tw, th, mw, mh)
     clear()
     local ls = {
-        tr("warning.size_title", "Terminal Too Small"),
-        string.format("%s: %dx%d", tr("warning.required", "Required size"), mw, mh),
-        string.format("%s: %dx%d", tr("warning.current", "Current size"), tw, th),
-        tr("warning.enlarge_hint", "Please enlarge terminal window to continue.")
+        tr("warning.size_title"),
+        string.format("%s: %dx%d", tr("warning.required"), mw, mh),
+        string.format("%s: %dx%d", tr("warning.current"), tw, th),
+        tr("warning.enlarge_hint")
     }
     local top = math.floor((th - #ls) / 2)
     if top < 1 then top = 1 end
@@ -393,7 +402,7 @@ local function size_ok()
 end
 
 local function top_time_line()
-    return tr("game.wordle.time", "Time") .. " " .. fmt(sec()) .. "  " .. tr("game.wordle.streak", "Streak") .. " " .. tostring(S.streak)
+    return tr("game.wordle.time") .. " " .. fmt(sec()) .. "  " .. tr("game.wordle.streak") .. " " .. tostring(S.streak)
 end
 
 local function draw_guess_row(y, tw, idx)
@@ -464,7 +473,7 @@ local function render()
     local top = math.floor((th - 12) / 2)
     if top < 1 then top = 1 end
 
-    local best = tr("game.wordle.best_time", "Best Time") .. " " .. ((S.best_time_sec > 0) and fmt(S.best_time_sec) or tr("game.twenty_four.none", "--:--:--"))
+    local best = tr("game.wordle.best_time") .. " " .. ((S.best_time_sec > 0) and fmt(S.best_time_sec) or tr("game.twenty_four.none"))
     local tline = top_time_line()
     local msg, mc = status_text()
 
@@ -501,7 +510,7 @@ end
 
 local function apply_guess()
     if #S.input ~= S.word_len then
-        S.toast = tr("game.wordle.need_letters", "Not enough letters.")
+        S.toast = tr("game.wordle.need_letters")
         S.toast_color = "red"
         S.toast_until = S.frame + FPS * 2
         S.dirty = true

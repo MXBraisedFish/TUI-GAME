@@ -28,14 +28,20 @@ local state = {
     last_warn_min_h = 0
 }
 
-local function tr(key, fallback)
+local function tr(key)
     if type(translate) ~= "function" then
-        return fallback
+        return key
     end
+
     local ok, value = pcall(translate, key)
-    if not ok or value == nil or value == "" or value == key then
-        return fallback
+    if not ok or value == nil or value == "" then
+        return key
     end
+
+    if type(value) == "string" and string.find(value, "[missing-i18n-key:", 1, true) ~= nil then
+        return key
+    end
+
     return value
 end
 
@@ -142,7 +148,7 @@ local function choice_text(index)
         return "-"
     end
     local info = CHOICES[index]
-    return info.symbol .. " " .. tr(info.key, info.fallback)
+    return info.symbol .. " " .. tr(info.key)
 end
 
 local function resolve_round(player_idx, ai_idx)
@@ -163,22 +169,22 @@ local function play_round(player_idx)
     state.ai_pick = ai_idx
 
     local result = resolve_round(player_idx, ai_idx)
-    local controls = tr("game.rock_paper_scissors.result_controls", "[1][2][3] Next  [R] Restart  [Q]/[ESC] Exit")
+    local controls = tr("game.rock_paper_scissors.result_controls")
     if result > 0 then
         state.current_streak = state.current_streak + 1
         if state.current_streak > state.best_streak then
             state.best_streak = state.current_streak
             save_best()
         end
-        state.message = tr("game.rock_paper_scissors.win_banner", "You win!") .. " " .. controls
+        state.message = tr("game.rock_paper_scissors.win_banner") .. " " .. controls
         state.message_color = "green"
     elseif result < 0 then
         state.current_streak = 0
-        state.message = tr("game.rock_paper_scissors.lose_banner", "You lose!") .. " " .. controls
+        state.message = tr("game.rock_paper_scissors.lose_banner") .. " " .. controls
         state.message_color = "red"
     else
         state.current_streak = 0
-        state.message = tr("game.rock_paper_scissors.draw_banner", "Draw!") .. " " .. controls
+        state.message = tr("game.rock_paper_scissors.draw_banner") .. " " .. controls
         state.message_color = "yellow"
     end
 
@@ -189,22 +195,20 @@ local function reset_round()
     state.player_pick = nil
     state.ai_pick = nil
     state.current_streak = 0
-    state.message = tr("game.rock_paper_scissors.ready_banner", "Make your move.")
+    state.message = tr("game.rock_paper_scissors.ready_banner")
     state.message_color = "dark_gray"
     state.dirty = true
 end
 
 local function minimum_required_size()
-    local top1 = tr("game.rock_paper_scissors.best_streak", "Best Win Streak") .. ": 9999"
-    local top2 = tr("game.rock_paper_scissors.current_streak", "Current Streak") .. ": 9999"
-    local header = tr("game.rock_paper_scissors.player", "Player") .. "   |   " .. tr("game.rock_paper_scissors.system", "System")
-    local picks = "Y " .. tr("game.rock_paper_scissors.choice.scissors", "Scissors") .. "   |   O " .. tr("game.rock_paper_scissors.choice.rock", "Rock")
-    local msg = tr("game.rock_paper_scissors.win_banner", "You win!") .. " "
-        .. tr("game.rock_paper_scissors.result_controls", "[1][2][3] Next  [R] Restart  [Q]/[ESC] Exit")
+    local top1 = tr("game.rock_paper_scissors.best_streak") .. ": 9999"
+    local top2 = tr("game.rock_paper_scissors.current_streak") .. ": 9999"
+    local header = tr("game.rock_paper_scissors.player") .. "   |   " .. tr("game.rock_paper_scissors.system")
+    local picks = "Y " .. tr("game.rock_paper_scissors.choice.scissors") .. "   |   O " .. tr("game.rock_paper_scissors.choice.rock")
+    local msg = tr("game.rock_paper_scissors.win_banner") .. " "
+        .. tr("game.rock_paper_scissors.result_controls")
     local controls = tr(
-        "game.rock_paper_scissors.controls",
-        "[1]=Scissors  [2]=Rock  [3]=Paper  [R] Restart  [Q]/[ESC] Exit"
-    )
+        "game.rock_paper_scissors.controls")
     local controls_w = min_width_for_lines(controls, 3, 24)
     local min_w = math.max(key_width(top1), key_width(top2), key_width(header), key_width(picks), key_width(msg), controls_w) + 2
     local min_h = 10
@@ -213,10 +217,10 @@ end
 
 local function draw_terminal_size_warning(term_w, term_h, min_w, min_h)
     local lines = {
-        tr("warning.size_title", "Terminal Too Small"),
-        string.format("%s: %dx%d", tr("warning.required", "Required size"), min_w, min_h),
-        string.format("%s: %dx%d", tr("warning.current", "Current size"), term_w, term_h),
-        tr("warning.enlarge_hint", "Please enlarge terminal window to continue.")
+        tr("warning.size_title"),
+        string.format("%s: %dx%d", tr("warning.required"), min_w, min_h),
+        string.format("%s: %dx%d", tr("warning.current"), term_w, term_h),
+        tr("warning.enlarge_hint")
     }
     local top = math.floor((term_h - #lines) / 2)
     if top < 1 then top = 1 end
@@ -262,9 +266,7 @@ end
 
 local function draw_controls(y)
     local controls = tr(
-        "game.rock_paper_scissors.controls",
-        "[1]=Scissors  [2]=Rock  [3]=Paper  [R] Restart  [Q]/[ESC] Exit"
-    )
+        "game.rock_paper_scissors.controls")
     local term_w = terminal_size()
     local lines = wrap_words(controls, math.max(10, term_w - 2))
     if #lines > 3 then
@@ -293,8 +295,8 @@ local function render()
 
     clear()
 
-    local top1 = tr("game.rock_paper_scissors.best_streak", "Best Win Streak") .. ": " .. tostring(state.best_streak)
-    local top2 = tr("game.rock_paper_scissors.current_streak", "Current Streak") .. ": " .. tostring(state.current_streak)
+    local top1 = tr("game.rock_paper_scissors.best_streak") .. ": " .. tostring(state.best_streak)
+    local top2 = tr("game.rock_paper_scissors.current_streak") .. ": " .. tostring(state.current_streak)
     draw_text(centered_x(top1, 1, term_w), y0, top1, "dark_gray", "black")
     draw_text(centered_x(top2, 1, term_w), y0 + 1, top2, "light_cyan", "black")
 
@@ -302,7 +304,7 @@ local function render()
         draw_text(centered_x(state.message, 1, term_w), y0 + 2, state.message, state.message_color, "black")
     end
 
-    local header = tr("game.rock_paper_scissors.player", "Player") .. "   |   " .. tr("game.rock_paper_scissors.system", "System")
+    local header = tr("game.rock_paper_scissors.player") .. "   |   " .. tr("game.rock_paper_scissors.system")
     local line = choice_text(state.player_pick) .. "   |   " .. choice_text(state.ai_pick)
     draw_text(centered_x(header, 1, term_w), y0 + 4, header, "white", "black")
     draw_text(centered_x(line, 1, term_w), y0 + 5, line, "white", "black")

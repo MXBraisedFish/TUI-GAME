@@ -53,14 +53,20 @@ local state = {
     last_warn_min_h = 0
 }
 
-local function tr(key, fallback)
+local function tr(key)
     if type(translate) ~= "function" then
-        return fallback
+        return key
     end
+
     local ok, value = pcall(translate, key)
-    if not ok or value == nil or value == "" or value == key then
-        return fallback
+    if not ok or value == nil or value == "" then
+        return key
     end
+
+    if type(value) == "string" and string.find(value, "[missing-i18n-key:", 1, true) ~= nil then
+        return key
+    end
+
     return value
 end
 
@@ -255,23 +261,21 @@ end
 
 local function minimum_required_size()
     local controls = tr(
-        "game.color_memory.controls",
-        "[1][2][3][4] Input Color  [Enter] Submit  [Backspace]/[Delete] Remove  [R] Restart  [Q]/[ESC] Exit"
-    )
+        "game.color_memory.controls")
     local controls_w = min_width_for_lines(controls, 3, 40)
 
-    local best_line = tr("game.color_memory.best_score", "Best Score") .. " 99999  "
-        .. tr("game.color_memory.best_time", "Longest Play") .. " 00:00:00"
-    local curr_line = tr("game.color_memory.time", "Time") .. " 00:00:00  "
-        .. tr("game.color_memory.score", "Score") .. " 99999"
+    local best_line = tr("game.color_memory.best_score") .. " 99999  "
+        .. tr("game.color_memory.best_time") .. " 00:00:00"
+    local curr_line = tr("game.color_memory.time") .. " 00:00:00  "
+        .. tr("game.color_memory.score") .. " 99999"
 
     local info_w = math.max(
-        key_width(tr("game.color_memory.confirm_restart", "Confirm restart? [Y] Yes / [N] No")),
-        key_width(tr("game.color_memory.confirm_exit", "Confirm exit? [Y] Yes / [N] No")),
+        key_width(tr("game.color_memory.confirm_restart")),
+        key_width(tr("game.color_memory.confirm_exit")),
         key_width(
-            tr("game.color_memory.lose_banner", "Wrong color order. Game over!")
+            tr("game.color_memory.lose_banner")
             .. " "
-            .. tr("game.color_memory.lose_controls", "[R] Restart  [Q]/[ESC] Exit")
+            .. tr("game.color_memory.lose_controls")
         )
     )
 
@@ -285,10 +289,10 @@ end
 local function draw_terminal_size_warning(term_w, term_h, min_w, min_h)
     clear()
     local lines = {
-        tr("warning.size_title", "Terminal Too Small"),
-        string.format("%s: %dx%d", tr("warning.required", "Required size"), min_w, min_h),
-        string.format("%s: %dx%d", tr("warning.current", "Current size"), term_w, term_h),
-        tr("warning.enlarge_hint", "Please enlarge terminal window to continue.")
+        tr("warning.size_title"),
+        string.format("%s: %dx%d", tr("warning.required"), min_w, min_h),
+        string.format("%s: %dx%d", tr("warning.current"), term_w, term_h),
+        tr("warning.enlarge_hint")
     }
     local top = math.floor((term_h - #lines) / 2)
     if top < 1 then top = 1 end
@@ -362,7 +366,7 @@ local function game_inner(g)
 end
 
 local function format_round_text()
-    local tmpl = tr("game.color_memory.round", "Round {n}")
+    local tmpl = tr("game.color_memory.round")
     if string.find(tmpl, "{n}", 1, true) ~= nil then
         return string.gsub(tmpl, "{n}", tostring(state.round))
     end
@@ -395,9 +399,9 @@ local function draw_show_section(g)
 
     local status_text = ""
     if state.phase == "show" then
-        status_text = tr("game.color_memory.status_observe", "Drawing colors, watch carefully......")
+        status_text = tr("game.color_memory.status_observe")
     elseif state.phase == "input" then
-        status_text = tr("game.color_memory.status_input", "Please input the color sequence.")
+        status_text = tr("game.color_memory.status_input")
     end
     draw_text(centered_x(status_text, inner_x, inner_x + inner_w - 1), inner_y + 6, status_text, "dark_gray", "black")
 end
@@ -438,26 +442,26 @@ local function draw_header(g)
     fill_line(g.current_y, g.term_w)
     fill_line(g.info_y, g.term_w)
 
-    local best_line = tr("game.color_memory.best_score", "Best Score") .. ": " .. tostring(state.best_score)
+    local best_line = tr("game.color_memory.best_score") .. ": " .. tostring(state.best_score)
         .. "  "
-        .. tr("game.color_memory.best_time", "Longest Play") .. ": " .. format_duration(state.best_time_sec)
+        .. tr("game.color_memory.best_time") .. ": " .. format_duration(state.best_time_sec)
     draw_text(centered_x(best_line, 1, g.term_w), g.best_y, best_line, "dark_gray", "black")
 
-    local current_line = tr("game.color_memory.time", "Time") .. ": " .. format_duration(elapsed_seconds())
+    local current_line = tr("game.color_memory.time") .. ": " .. format_duration(elapsed_seconds())
         .. "  "
-        .. tr("game.color_memory.score", "Score") .. ": " .. tostring(state.score)
+        .. tr("game.color_memory.score") .. ": " .. tostring(state.score)
     draw_text(centered_x(current_line, 1, g.term_w), g.current_y, current_line, "light_cyan", "black")
 
     local info = ""
     local info_color = "yellow"
     if state.confirm_mode == "restart" then
-        info = tr("game.color_memory.confirm_restart", "Confirm restart? [Y] Yes / [N] No")
+        info = tr("game.color_memory.confirm_restart")
     elseif state.confirm_mode == "exit" then
-        info = tr("game.color_memory.confirm_exit", "Confirm exit? [Y] Yes / [N] No")
+        info = tr("game.color_memory.confirm_exit")
     elseif state.lost then
-        info = tr("game.color_memory.lose_banner", "Wrong color order. Game over!")
+        info = tr("game.color_memory.lose_banner")
             .. " "
-            .. tr("game.color_memory.lose_controls", "[R] Restart  [Q]/[ESC] Exit")
+            .. tr("game.color_memory.lose_controls")
         info_color = "red"
     end
     if info ~= "" then
@@ -467,9 +471,7 @@ end
 
 local function draw_controls(g)
     local controls = tr(
-        "game.color_memory.controls",
-        "[1][2][3][4] Input Color  [Enter] Submit  [Backspace]/[Delete] Remove  [R] Restart  [Q]/[ESC] Exit"
-    )
+        "game.color_memory.controls")
     local lines = wrap_words(controls, math.max(10, g.term_w - 2))
     if #lines > 3 then
         lines = { lines[1], lines[2], lines[3] }

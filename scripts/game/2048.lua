@@ -51,14 +51,20 @@ local state = {
     best_time_sec = 0
 }
 
-local function tr(key, fallback)
+local function tr(key)
     if type(translate) ~= "function" then
-        return fallback
+        return key
     end
+
     local ok, value = pcall(translate, key)
-    if not ok or value == nil or value == "" or value == key then
-        return fallback
+    if not ok or value == nil or value == "" then
+        return key
     end
+
+    if type(value) == "string" and string.find(value, "[missing-i18n-key:", 1, true) ~= nil then
+        return key
+    end
+
     return value
 end
 
@@ -467,7 +473,7 @@ local function save_game_state(show_toast)
     if show_toast then
         local key = ok and "game.2048.save_success" or "game.2048.save_unavailable"
         local def = ok and "Save successful!" or "Save API unavailable."
-        state.toast_text = tr(key, def)
+        state.toast_text = tr(key)
         state.toast_until = state.frame + 2 * FPS
         state.dirty = true
     end
@@ -536,17 +542,17 @@ local function board_geometry()
 
     local grid_w = SIZE * CELL_W
     local grid_h = SIZE * CELL_H
-    local status_w = text_width(tr("game.2048.time", "Time") .. " 00:00:00")
+    local status_w = text_width(tr("game.2048.time") .. " 00:00:00")
         + 2
-        + text_width(tr("game.2048.score", "Score") .. " 999999999")
+        + text_width(tr("game.2048.score") .. " 999999999")
     local best_w = text_width(
-        tr("game.2048.best_title", "Best")
+        tr("game.2048.best_title")
             .. "  "
-            .. tr("game.2048.best_score", "Score")
+            .. tr("game.2048.best_score")
             .. " "
             .. tostring(math.max(0, state.best_score))
             .. "  "
-            .. tr("game.2048.best_time", "Time")
+            .. tr("game.2048.best_time")
             .. " "
             .. format_duration(math.max(0, state.best_time_sec))
     )
@@ -604,8 +610,8 @@ end
 
 local function draw_status(x, y, frame_w)
     local elapsed = elapsed_seconds()
-    local left = tr("game.2048.time", "Time") .. " " .. format_duration(elapsed)
-    local right = tr("game.2048.score", "Score") .. " " .. tostring(state.score)
+    local left = tr("game.2048.time") .. " " .. format_duration(elapsed)
+    local right = tr("game.2048.score") .. " " .. tostring(state.score)
     local term_w = terminal_size()
     local right_x = x + frame_w - text_width(right)
     if right_x < 1 then right_x = 1 end
@@ -613,13 +619,13 @@ local function draw_status(x, y, frame_w)
     draw_text(1, y - 3, string.rep(" ", term_w), "white", "black")
     draw_text(1, y - 2, string.rep(" ", term_w), "white", "black")
     draw_text(1, y - 1, string.rep(" ", term_w), "white", "black")
-    local best_line = tr("game.2048.best_title", "Best")
+    local best_line = tr("game.2048.best_title")
         .. "  "
-        .. tr("game.2048.best_score", "Score")
+        .. tr("game.2048.best_score")
         .. " "
         .. tostring(math.max(0, state.best_score))
         .. "  "
-        .. tr("game.2048.best_time", "Time")
+        .. tr("game.2048.best_time")
         .. " "
         .. format_duration(math.max(0, state.best_time_sec))
     draw_text(x, y - 3, best_line, "dark_gray", "black")
@@ -627,15 +633,15 @@ local function draw_status(x, y, frame_w)
     draw_text(right_x, y - 2, right, "light_cyan", "black")
 
     if state.won then
-        local line = tr("game.2048.win_banner", "Beyond machine limits!")
-            .. tr("game.2048.win_controls", "[R] Restart  [Q]/[ESC] Exit")
+        local line = tr("game.2048.win_banner")
+            .. tr("game.2048.win_controls")
         draw_text(x, y - 1, line, "yellow", "black")
     elseif state.confirm_mode == "game_over" then
-        draw_text(x, y - 1, tr("game.2048.game_over", "Game over! [Y] Restart, [N] Back to game list."), "red", "black")
+        draw_text(x, y - 1, tr("game.2048.game_over"), "red", "black")
     elseif state.confirm_mode == "restart" then
-        draw_text(x, y - 1, tr("game.2048.confirm_restart", "Confirm restart? [Y] Yes / [N] No"), "yellow", "black")
+        draw_text(x, y - 1, tr("game.2048.confirm_restart"), "yellow", "black")
     elseif state.confirm_mode == "exit" then
-        draw_text(x, y - 1, tr("game.2048.confirm_exit", "Confirm exit? [Y] Yes / [N] No"), "yellow", "black")
+        draw_text(x, y - 1, tr("game.2048.confirm_exit"), "yellow", "black")
     elseif state.toast_text ~= nil and state.frame <= state.toast_until then
         draw_text(x, y - 1, state.toast_text, "green", "black")
     end
@@ -643,7 +649,7 @@ end
 
 local function draw_controls(x, y, frame_h, frame_w)
     local term_w = terminal_size()
-    local controls = tr("game.2048.controls", "[↑]/[↓]/[←]/[→] Move  [R] Restart  [S] Save  [Q]/[ESC] Exit")
+    local controls = tr("game.2048.controls")
     local max_w = math.max(10, term_w - 2)
     local lines = wrap_words(controls, max_w)
     if #lines > 3 then
@@ -883,29 +889,29 @@ local function minimum_required_size()
     local frame_h = SIZE * CELL_H + 2
 
     local controls_w = min_width_for_lines(
-        tr("game.2048.controls", "[↑]/[↓]/[←]/[→] Move  [R] Restart  [S] Save  [Q]/[ESC] Exit"),
+        tr("game.2048.controls"),
         3,
         24
     )
-    local status_w = text_width(tr("game.2048.time", "Time") .. " 00:00:00")
+    local status_w = text_width(tr("game.2048.time") .. " 00:00:00")
         + 2
-        + text_width(tr("game.2048.score", "Score") .. " 999999999")
+        + text_width(tr("game.2048.score") .. " 999999999")
     local best_w = text_width(
-        tr("game.2048.best_title", "Best")
+        tr("game.2048.best_title")
             .. "  "
-            .. tr("game.2048.best_score", "Score")
+            .. tr("game.2048.best_score")
             .. " 999999999  "
-            .. tr("game.2048.best_time", "Time")
+            .. tr("game.2048.best_time")
             .. " 00:00:00"
     )
     local win_line_w = text_width(
-        tr("game.2048.win_banner", "Beyond machine limits!")
-            .. tr("game.2048.win_controls", "[R] Restart  [Q]/[ESC] Exit")
+        tr("game.2048.win_banner")
+            .. tr("game.2048.win_controls")
     )
     local tip_w = math.max(
-        text_width(tr("game.2048.game_over", "Game over! [Y] Restart, [N] Back to game list.")),
-        text_width(tr("game.2048.confirm_restart", "Confirm restart? [Y] Yes / [N] No")),
-        text_width(tr("game.2048.confirm_exit", "Confirm exit? [Y] Yes / [N] No")),
+        text_width(tr("game.2048.game_over")),
+        text_width(tr("game.2048.confirm_restart")),
+        text_width(tr("game.2048.confirm_exit")),
         win_line_w
     )
 
@@ -918,10 +924,10 @@ end
 
 local function draw_terminal_size_warning(term_w, term_h, min_w, min_h)
     local lines = {
-        tr("warning.size_title", "Terminal Too Small"),
-        string.format("%s: %dx%d", tr("warning.required", "Required size"), min_w, min_h),
-        string.format("%s: %dx%d", tr("warning.current", "Current size"), term_w, term_h),
-        tr("warning.enlarge_hint", "Please enlarge terminal window to continue.")
+        tr("warning.size_title"),
+        string.format("%s: %dx%d", tr("warning.required"), min_w, min_h),
+        string.format("%s: %dx%d", tr("warning.current"), term_w, term_h),
+        tr("warning.enlarge_hint")
     }
 
     local top = math.floor((term_h - #lines) / 2)

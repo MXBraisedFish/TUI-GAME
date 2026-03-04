@@ -63,14 +63,20 @@ local state = {
     last_warn_min_h = 0,
 }
 
-local function tr(key, fallback)
+local function tr(key)
     if type(translate) ~= "function" then
-        return fallback
+        return key
     end
+
     local ok, value = pcall(translate, key)
-    if not ok or value == nil or value == "" or value == key then
-        return fallback
+    if not ok or value == nil or value == "" then
+        return key
     end
+
+    if type(value) == "string" and string.find(value, "[missing-i18n-key:", 1, true) ~= nil then
+        return key
+    end
+
     return value
 end
 
@@ -424,7 +430,7 @@ local function save_game_state(show_toast)
     if show_toast then
         local key = ok and "game.snake.save_success" or "game.snake.save_unavailable"
         local def = ok and "Save successful!" or "Save API unavailable."
-        state.toast_text = tr(key, def)
+        state.toast_text = tr(key)
         state.toast_until = state.frame + 2 * FPS
         state.dirty = true
     end
@@ -549,39 +555,39 @@ local function draw_status(x, y)
         draw_text(x_line, y_line, line, fg, "black")
     end
 
-    local best = tr("game.snake.best_score", "Best Score")
+    local best = tr("game.snake.best_score")
         .. " " .. tostring(state.best_score)
         .. "  "
-        .. tr("game.snake.best_time", "Longest Time")
+        .. tr("game.snake.best_time")
         .. " " .. format_duration(state.best_time_sec)
     draw_centered_line(y - 3, best, "dark_gray")
 
-    local middle = tr("game.snake.time", "Time")
+    local middle = tr("game.snake.time")
         .. " " .. format_duration(elapsed_seconds())
         .. "  "
-        .. tr("game.snake.score", "Score")
+        .. tr("game.snake.score")
         .. " " .. tostring(state.score)
     draw_centered_line(y - 2, middle, "light_cyan")
 
     if state.won then
-        local line = tr("game.snake.win_banner", "Snake rules the world!")
+        local line = tr("game.snake.win_banner")
             .. " "
-            .. tr("game.snake.result_controls", "[R] Restart  [Q]/[ESC] Exit")
+            .. tr("game.snake.result_controls")
         draw_centered_line(y - 1, line, "yellow")
     elseif state.game_over then
-        local line = tr("game.snake.lose_banner", "The snake bit itself.")
+        local line = tr("game.snake.lose_banner")
             .. " "
-            .. tr("game.snake.result_controls", "[R] Restart  [Q]/[ESC] Exit")
+            .. tr("game.snake.result_controls")
         draw_centered_line(y - 1, line, "red")
     elseif state.confirm_mode == "restart" then
-        draw_centered_line(y - 1, tr("game.snake.confirm_restart", "Confirm restart? [Y] Yes / [N] No"), "yellow")
+        draw_centered_line(y - 1, tr("game.snake.confirm_restart"), "yellow")
     elseif state.confirm_mode == "exit" then
-        draw_centered_line(y - 1, tr("game.snake.confirm_exit", "Confirm exit? [Y] Yes / [N] No"), "yellow")
+        draw_centered_line(y - 1, tr("game.snake.confirm_exit"), "yellow")
     elseif state.toast_text ~= nil and state.frame <= state.toast_until then
         draw_centered_line(y - 1, state.toast_text, "green")
     elseif is_boosting() then
         local sec = math.max(0, math.ceil((state.boost_until_frame - state.frame) / FPS))
-        local line = tr("game.snake.boosting", "Speed Boost") .. " " .. tostring(sec) .. "s"
+        local line = tr("game.snake.boosting") .. " " .. tostring(sec) .. "s"
         draw_centered_line(y - 1, line, "light_cyan")
     end
 end
@@ -613,9 +619,7 @@ end
 local function draw_controls(y_bottom)
     local term_w = terminal_size()
     local controls = tr(
-        "game.snake.controls",
-        "[↑]/[↓]/[←]/[→] Move  [S] Save  [R] Restart  [Q]/[ESC] Exit"
-    )
+        "game.snake.controls")
 
     local max_w = math.max(10, term_w - 2)
     local lines = wrap_words(controls, max_w)
@@ -652,30 +656,30 @@ local function minimum_required_size()
     local frame_h = GRID_H + 2
 
     local controls_w = min_width_for_lines(
-        tr("game.snake.controls", "[↑]/[↓]/[←]/[→] Move  [S] Save  [R] Restart  [Q]/[ESC] Exit"),
+        tr("game.snake.controls"),
         3,
         32
     )
 
     local best_w = text_width(
-        tr("game.snake.best_score", "Best Score") .. " 999999"
+        tr("game.snake.best_score") .. " 999999"
             .. "  "
-            .. tr("game.snake.best_time", "Longest Time")
+            .. tr("game.snake.best_time")
             .. " 00:00:00"
     )
 
-    local score_w = text_width(tr("game.snake.time", "Time") .. " 00:00:00")
+    local score_w = text_width(tr("game.snake.time") .. " 00:00:00")
         + 2
-        + text_width(tr("game.snake.score", "Score") .. " 999999")
+        + text_width(tr("game.snake.score") .. " 999999")
 
     local tip_w = math.max(
-        text_width(tr("game.snake.win_banner", "Snake rules the world!") .. " " .. tr("game.snake.result_controls", "[R] Restart  [Q]/[ESC] Exit")),
-        text_width(tr("game.snake.lose_banner", "The snake bit itself.") .. " " .. tr("game.snake.result_controls", "[R] Restart  [Q]/[ESC] Exit")),
-        text_width(tr("game.snake.confirm_restart", "Confirm restart? [Y] Yes / [N] No")),
-        text_width(tr("game.snake.confirm_exit", "Confirm exit? [Y] Yes / [N] No")),
-        text_width(tr("game.snake.save_success", "Save successful!")),
-        text_width(tr("game.snake.save_unavailable", "Save API unavailable.")),
-        text_width(tr("game.snake.boosting", "Speed Boost") .. " 99s")
+        text_width(tr("game.snake.win_banner") .. " " .. tr("game.snake.result_controls")),
+        text_width(tr("game.snake.lose_banner") .. " " .. tr("game.snake.result_controls")),
+        text_width(tr("game.snake.confirm_restart")),
+        text_width(tr("game.snake.confirm_exit")),
+        text_width(tr("game.snake.save_success")),
+        text_width(tr("game.snake.save_unavailable")),
+        text_width(tr("game.snake.boosting") .. " 99s")
     )
 
     local min_w = math.max(frame_w, controls_w, best_w, score_w, tip_w) + 2
@@ -685,10 +689,10 @@ end
 
 local function draw_terminal_size_warning(term_w, term_h, min_w, min_h)
     local lines = {
-        tr("warning.size_title", "Terminal Too Small"),
-        string.format("%s: %dx%d", tr("warning.required", "Required size"), min_w, min_h),
-        string.format("%s: %dx%d", tr("warning.current", "Current size"), term_w, term_h),
-        tr("warning.enlarge_hint", "Please enlarge terminal window to continue.")
+        tr("warning.size_title"),
+        string.format("%s: %dx%d", tr("warning.required"), min_w, min_h),
+        string.format("%s: %dx%d", tr("warning.current"), term_w, term_h),
+        tr("warning.enlarge_hint")
     }
 
     local top = math.floor((term_h - #lines) / 2)

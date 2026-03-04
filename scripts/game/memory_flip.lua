@@ -74,14 +74,20 @@ local state = {
     last_warn_min_h = 0
 }
 
-local function tr(key, fallback)
+local function tr(key)
     if type(translate) ~= "function" then
-        return fallback
+        return key
     end
+
     local ok, value = pcall(translate, key)
-    if not ok or value == nil or value == "" or value == key then
-        return fallback
+    if not ok or value == nil or value == "" then
+        return key
     end
+
+    if type(value) == "string" and string.find(value, "[missing-i18n-key:", 1, true) ~= nil then
+        return key
+    end
+
     return value
 end
 
@@ -320,7 +326,7 @@ local function save_game_state(show_toast)
     if show_toast then
         local key = ok and "game.2048.save_success" or "game.2048.save_unavailable"
         local def = ok and "Save successful!" or "Save API unavailable."
-        state.toast_text = tr(key, def)
+        state.toast_text = tr(key)
         state.toast_until = state.frame + 2 * FPS
         state.dirty = true
     end
@@ -574,12 +580,12 @@ local function board_geometry()
     local grid_w = (state.size - 1) * CELL_STEP_X + CELL_W
     local grid_h = (state.size - 1) * CELL_STEP_Y + CELL_H
 
-    local status_w = key_width(tr("game.memory_flip.time", "Time") .. " 00:00:00")
+    local status_w = key_width(tr("game.memory_flip.time") .. " 00:00:00")
         + 2
-        + key_width(tr("game.memory_flip.steps", "Steps") .. " 9999")
+        + key_width(tr("game.memory_flip.steps") .. " 9999")
     local win_line_w = key_width(
-        tr("game.memory_flip.win_banner", "All cards are paired!")
-            .. tr("game.memory_flip.win_controls", "[R] Restart  [Q]/[ESC] Exit")
+        tr("game.memory_flip.win_banner")
+            .. tr("game.memory_flip.win_controls")
     )
     local content_w = math.max(LABEL_W + grid_w, status_w, win_line_w)
     local content_h = 1 + grid_h
@@ -684,24 +690,24 @@ end
 
 local function best_line()
     if state.best == nil then
-        return tr("game.memory_flip.best_none", "Best: none")
+        return tr("game.memory_flip.best_none")
     end
 
     return string.format(
         "%s %d  %s %d  %s %s",
-        tr("game.memory_flip.best_difficulty", "Difficulty"),
+        tr("game.memory_flip.best_difficulty"),
         state.best.difficulty,
-        tr("game.memory_flip.best_steps", "Steps"),
+        tr("game.memory_flip.best_steps"),
         state.best.min_steps,
-        tr("game.memory_flip.best_time", "Time"),
+        tr("game.memory_flip.best_time"),
         format_duration(state.best.min_time_sec)
     )
 end
 
 local function draw_status(x, y, frame_w)
     local elapsed = elapsed_seconds()
-    local time_text = tr("game.memory_flip.time", "Time") .. " " .. format_duration(elapsed)
-    local steps_text = tr("game.memory_flip.steps", "Steps") .. " " .. tostring(state.steps)
+    local time_text = tr("game.memory_flip.time") .. " " .. format_duration(elapsed)
+    local steps_text = tr("game.memory_flip.steps") .. " " .. tostring(state.steps)
     local term_w = terminal_size()
     local right_x = x + frame_w - key_width(steps_text)
     if right_x < 1 then right_x = 1 end
@@ -719,7 +725,7 @@ local function draw_status(x, y, frame_w)
             draw_text(
                 x,
                 y - 1,
-                tr("game.memory_flip.input_size_hint", "Input 1 / 2 / 3 to change difficulty."),
+                tr("game.memory_flip.input_size_hint"),
                 "dark_gray",
                 "black"
             )
@@ -731,7 +737,7 @@ local function draw_status(x, y, frame_w)
             draw_text(
                 x,
                 y - 1,
-                tr("game.memory_flip.input_jump_hint", "Input xx xx to jump to coordinates."),
+                tr("game.memory_flip.input_jump_hint"),
                 "dark_gray",
                 "black"
             )
@@ -739,13 +745,13 @@ local function draw_status(x, y, frame_w)
             draw_text(x, y - 1, state.input_buffer, "white", "black")
         end
     elseif state.won then
-        local line = tr("game.memory_flip.win_banner", "All cards are paired!")
-            .. tr("game.memory_flip.win_controls", "[R] Restart  [Q]/[ESC] Exit")
+        local line = tr("game.memory_flip.win_banner")
+            .. tr("game.memory_flip.win_controls")
         draw_text(x, y - 1, line, "yellow", "black")
     elseif state.confirm_mode == "restart" then
-        draw_text(x, y - 1, tr("game.2048.confirm_restart", "Confirm restart? [Y] Yes / [N] No"), "yellow", "black")
+        draw_text(x, y - 1, tr("game.2048.confirm_restart"), "yellow", "black")
     elseif state.confirm_mode == "exit" then
-        draw_text(x, y - 1, tr("game.2048.confirm_exit", "Confirm exit? [Y] Yes / [N] No"), "yellow", "black")
+        draw_text(x, y - 1, tr("game.2048.confirm_exit"), "yellow", "black")
     elseif state.toast_text ~= nil and state.frame <= state.toast_until then
         draw_text(x, y - 1, state.toast_text, "green", "black")
     end
@@ -754,9 +760,7 @@ end
 local function draw_controls(x, y, frame_h)
     local term_w = terminal_size()
     local text = tr(
-        "game.memory_flip.controls",
-        "[↑]/[↓]/[←]/[→] Move  [Space] Flip  [P] Difficulty  [D] Jump  [R] Restart  [S] Save  [Q]/[ESC] Exit"
-    )
+        "game.memory_flip.controls")
     local max_w = math.max(10, term_w - 2)
     local lines = wrap_words(text, max_w)
     if #lines > 3 then
@@ -823,22 +827,20 @@ local function minimum_required_size()
 
     local controls_w = min_width_for_lines(
         tr(
-            "game.memory_flip.controls",
-            "[↑]/[↓]/[←]/[→] Move  [Space] Flip  [P] Difficulty  [D] Jump  [R] Restart  [S] Save  [Q]/[ESC] Exit"
-        ),
+            "game.memory_flip.controls"),
         3,
         24
     )
-    local status_w = key_width(tr("game.memory_flip.time", "Time") .. " 00:00:00")
+    local status_w = key_width(tr("game.memory_flip.time") .. " 00:00:00")
         + 2
-        + key_width(tr("game.memory_flip.steps", "Steps") .. " 9999")
+        + key_width(tr("game.memory_flip.steps") .. " 9999")
     local hint_w = math.max(
-        key_width(tr("game.memory_flip.input_size_hint", "Input 1 / 2 / 3 to change difficulty.")),
-        key_width(tr("game.memory_flip.input_jump_hint", "Input xx xx to jump to coordinates."))
+        key_width(tr("game.memory_flip.input_size_hint")),
+        key_width(tr("game.memory_flip.input_jump_hint"))
     )
     local win_w = key_width(
-        tr("game.memory_flip.win_banner", "All cards are paired!")
-            .. tr("game.memory_flip.win_controls", "[R] Restart  [Q]/[ESC] Exit")
+        tr("game.memory_flip.win_banner")
+            .. tr("game.memory_flip.win_controls")
     )
 
     local min_w = math.max(frame_w, controls_w, status_w, hint_w, win_w) + 2
@@ -850,10 +852,10 @@ end
 
 local function draw_terminal_size_warning(term_w, term_h, min_w, min_h)
     local lines = {
-        tr("warning.size_title", "Terminal Too Small"),
-        string.format("%s: %dx%d", tr("warning.required", "Required size"), min_w, min_h),
-        string.format("%s: %dx%d", tr("warning.current", "Current size"), term_w, term_h),
-        tr("warning.enlarge_hint", "Please enlarge terminal window to continue.")
+        tr("warning.size_title"),
+        string.format("%s: %dx%d", tr("warning.required"), min_w, min_h),
+        string.format("%s: %dx%d", tr("warning.current"), term_w, term_h),
+        tr("warning.enlarge_hint")
     }
 
     local top = math.floor((term_h - #lines) / 2)
