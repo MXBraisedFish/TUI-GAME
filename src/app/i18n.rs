@@ -270,74 +270,44 @@ fn save_persisted_language_code(code: &str) -> Result<()> {
 }
 
 fn builtin_english_pack() -> LanguagePack {
+    const US_EN_JSON: &str =
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/lang/us-en.json"));
+
+    let parsed = serde_json::from_str::<Value>(US_EN_JSON)
+        .ok()
+        .and_then(|v| v.as_object().cloned());
+
+    if let Some(map) = parsed {
+        let mut dict = HashMap::new();
+        for (key, value) in map {
+            if let Some(text) = value.as_str() {
+                dict.insert(key, text.to_string());
+            }
+        }
+
+        if REQUIRED_KEYS.iter().all(|k| dict.contains_key(*k)) {
+            let name = dict
+                .get("language_name")
+                .cloned()
+                .unwrap_or_else(|| "English".to_string());
+            return LanguagePack {
+                code: "us-en".to_string(),
+                name,
+                dict,
+            };
+        }
+    }
+
+    minimal_builtin_english_pack()
+}
+
+fn minimal_builtin_english_pack() -> LanguagePack {
     let mut dict = HashMap::new();
     dict.insert("language_name".to_string(), "English".to_string());
     dict.insert("language".to_string(), "Language".to_string());
     dict.insert(
         "confirm_language".to_string(),
-        "[Enter] Confirm language. [ESC] or [Q] Return to main menu".to_string(),
-    );
-    dict.insert("menu.play".to_string(), "Play Game".to_string());
-    dict.insert("menu.continue".to_string(), "Continue".to_string());
-    dict.insert("menu.settings".to_string(), "Settings".to_string());
-    dict.insert("menu.about".to_string(), "About".to_string());
-    dict.insert("menu.quit".to_string(), "Quit".to_string());
-    dict.insert(
-        "settings.hub.language".to_string(),
-        "Language".to_string(),
-    );
-    dict.insert(
-        "settings.hub.uninstall".to_string(),
-        "Uninstall TUI GAME".to_string(),
-    );
-    dict.insert(
-        "settings.hub.back_hint".to_string(),
-        "[ESC]/[Q] Back to main menu".to_string(),
-    );
-    dict.insert(
-        "placeholder.settings".to_string(),
-        "Settings page is under construction. Please check back later.".to_string(),
-    );
-    dict.insert(
-        "placeholder.about".to_string(),
-        "TUI GAME\nAuthor: MXBraisedFish(MXFish)\nGitHub: https://github.com/MXBraisedFish/TUI-GAME".to_string(),
-    );
-    dict.insert(
-        "placeholder.latest_version".to_string(),
-        "Latest version:".to_string(),
-    );
-    dict.insert(
-        "placeholder.continue".to_string(),
-        "Continue feature is not implemented yet.".to_string(),
-    );
-    dict.insert("updater.new_version".to_string(), "New version available".to_string());
-    dict.insert("updater.press_u".to_string(), "Press U to open release page".to_string());
-    dict.insert("updater.no_update".to_string(), "You are up to date".to_string());
-    dict.insert("warning.size_title".to_string(), "Terminal Too Small".to_string());
-    dict.insert("warning.required".to_string(), "Required size".to_string());
-    dict.insert("warning.current".to_string(), "Current size".to_string());
-    dict.insert(
-        "warning.enlarge_hint".to_string(),
-        "Please enlarge terminal window to continue.".to_string(),
-    );
-    dict.insert(
-        "common.back_hint".to_string(),
-        "Press ESC or Q to return to main menu".to_string(),
-    );
-    dict.insert(
-        "confirm.new_game_overwrite".to_string(),
-        "There is a save from {game}. Starting a new game will overwrite it. Continue?"
-            .to_string(),
-    );
-    dict.insert(
-        "confirm.new_game_yes".to_string(),
-        "[Y] Start New Game".to_string(),
-    );
-    dict.insert("confirm.new_game_no".to_string(), "[N] Cancel".to_string());
-    dict.insert("games.empty".to_string(), "No Lua games found in scripts/".to_string());
-    dict.insert(
-        "games.run_pending".to_string(),
-        "Press Enter to run selected game (runtime framework pending)".to_string(),
+        "[Enter] Confirm language [ESC] / [Q] Return to main menu".to_string(),
     );
 
     LanguagePack {
