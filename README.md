@@ -44,6 +44,7 @@ Windows, Linux, MacOS
 - [Tetris](#tetris)
 - [Tic-Tac-Toe](#tic-tac-toe)
 - [24 Points](#24-points)
+- [Wordle](#wordle)
 
 ## Language Support
 
@@ -287,6 +288,10 @@ cargo build --release
 ### 24 Points
 
 ![24 Points](./README-i18n/image/24-points.png)
+
+### Wordle
+
+![Wordle](./README-i18n/image/wordle.png)
 
 ## Support This Project
 

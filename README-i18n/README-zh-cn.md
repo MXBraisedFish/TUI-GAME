@@ -44,6 +44,7 @@ Windows，Linux，MacOS
 - [俄罗斯方块](#俄罗斯方块)
 - [井字棋](#井字棋)
 - [24点](#24点)
+- [Wordle](#wordle)
 
 ## 语言支持
 
@@ -287,6 +288,10 @@ cargo build --release
 ### 24点
 
 ![24点](./image/24-points-zh-cn.png)
+
+### Wordle
+
+![Wordle](./image/wordle-zh-cn.png)
 
 ## 支持本项目
 
