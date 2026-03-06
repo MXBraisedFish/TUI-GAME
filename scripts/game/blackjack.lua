@@ -1,51 +1,61 @@
-﻿GAME_META = {
+﻿-- 21点游戏元数据
+GAME_META = {
     name = "Blackjack",
     description = "Play against the dealer and manage your bets to win with 21."
 }
 
-local STARTING_FUNDS = 1000
-local BASE_BET = 100
-local FPS = 60
-local FRAME_MS = 16
-local DEALER_REVEAL_PAUSE_MS = 500
-local DEALER_DRAW_PAUSE_MS = 500
-local SETTLE_COMPARE_PAUSE_MS = 1000
+-- 游戏常量定义
+local STARTING_FUNDS = 1000          -- 初始资金
+local BASE_BET = 100                 -- 基础赌注
+local FPS = 60                       -- 目标帧率
+local FRAME_MS = 16                  -- 每帧毫秒数
+local DEALER_REVEAL_PAUSE_MS = 500   -- 庄家亮牌暂停时间
+local DEALER_DRAW_PAUSE_MS = 500     -- 庄家抽牌暂停时间
+local SETTLE_COMPARE_PAUSE_MS = 1000 -- 结算比较暂停时间
 
-local TABLE_W = 108
-local TABLE_H = 24
-local CARD_W = 5
-local CARD_H = 3
-local SPINNER = { "|", "/", "-", "\\" }
+-- 界面尺寸常量
+local TABLE_W = 108                     -- 桌子宽度
+local TABLE_H = 24                      -- 桌子高度
+local CARD_W = 5                        -- 卡片宽度
+local CARD_H = 3                        -- 卡片高度
+local SPINNER = { "|", "/", "-", "\\" } -- 旋转动画
 
+-- 游戏状态表
 local state = {
-    funds = STARTING_FUNDS,
-    initial_funds = STARTING_FUNDS,
-    best_net = 0,
+    -- 资金相关
+    funds = STARTING_FUNDS,          -- 当前资金
+    initial_funds = STARTING_FU - NDS, -- 初始资金（用于计算净收益）
+    best_net = 0,                    -- 历史最佳净收益
 
-    dealer_cards = {},
-    dealer_hidden = true,
-    hands = {},
-    split_mode = false,
-    active_hand = 1,
-    insurance = false,
-    force_double_next_round = false,
-    first_action_done = false,
+    -- 牌局状态
+    dealer_cards = {},               -- 庄家手牌
+    dealer_hidden = true,            -- 庄家第二张牌是否隐藏
+    hands = {},                      -- 玩家手牌数组（支持分牌）
+    split_mode = false,              -- 是否处于分牌模式
+    active_hand = 1,                 -- 当前活跃的手牌索引
+    insurance = false,               -- 是否购买保险
+    force_double_next_round = false, -- 下轮强制加倍
+    first_action_done = false,       -- 是否已执行首次操作（用于保险判断）
 
-    phase = "player",
-    center_lines = {},
-    confirm_mode = nil,
-    await_next_round = false,
-    bet_multiplier = 1.0,
+    -- 游戏流程
+    phase = "player",         -- 当前阶段：player/dealer/settle
+    center_lines = {},        -- 中央提示信息
+    confirm_mode = nil,       -- 确认模式：nil/restart/exit
+    await_next_round = false, -- 是否等待下一轮
+    bet_multiplier = 1.0,     -- 赌注倍数
 
-    toast_text = nil,
-    toast_color = "yellow",
-    toast_until = 0,
+    -- 提示信息
+    toast_text = nil,       -- 提示文本
+    toast_color = "yellow", -- 提示颜色
+    toast_until = 0,        -- 提示显示截止帧
 
-    bankrupt = false,
-    spinner_idx = 1,
-    frame = 0,
-    dirty = true,
+    -- 状态标志
+    bankrupt = false, -- 是否破产
+    spinner_idx = 1,  -- 旋转动画索引
+    frame = 0,        -- 当前帧计数
+    dirty = true,     -- 是否需要重新渲染
 
+    -- 终端尺寸警告相关
     size_warning_active = false,
     last_warn_term_w = 0,
     last_warn_term_h = 0,
@@ -55,6 +65,7 @@ local state = {
     last_term_h = 0
 }
 
+-- 翻译函数（安全调用）
 local function tr(key)
     if type(translate) ~= "function" then
         return key
@@ -72,6 +83,7 @@ local function tr(key)
     return value
 end
 
+-- 获取文本显示宽度
 local function key_width(text)
     if type(get_text_width) == "function" then
         local ok, w = pcall(get_text_width, text)
@@ -82,6 +94,7 @@ local function key_width(text)
     return #text
 end
 
+-- 按单词换行（保持单词完整性）
 local function wrap_words(text, max_width)
     if max_width <= 1 then
         return { text }
@@ -114,6 +127,7 @@ local function wrap_words(text, max_width)
     return lines
 end
 
+-- 计算在给定最大行数下所需的最小宽度
 local function min_width_for_lines(text, max_lines, hard_min)
     local full = key_width(text)
     local width = hard_min
@@ -126,6 +140,7 @@ local function min_width_for_lines(text, max_lines, hard_min)
     return full
 end
 
+-- 获取终端尺寸
 local function terminal_size()
     local w, h = 120, 40
     if type(get_terminal_size) == "function" then
@@ -137,6 +152,7 @@ local function terminal_size()
     return w, h
 end
 
+-- 规范化按键值
 local function normalize_key(key)
     if key == nil then
         return ""
@@ -150,16 +166,19 @@ local function normalize_key(key)
     return tostring(key):lower()
 end
 
+-- 清空输入缓冲区
 local function flush_input_buffer()
     if type(clear_input_buffer) == "function" then
         pcall(clear_input_buffer)
     end
 end
 
+-- 填充整行（用于清空行）
 local function fill_line(y, width)
     draw_text(1, y, string.rep(" ", width), "white", "black")
 end
 
+-- 随机生成牌面
 local function random_rank()
     local n = random(13) + 1
     if n == 1 then return "A" end
@@ -169,12 +188,14 @@ local function random_rank()
     return tostring(n)
 end
 
+-- 计算单张牌的点数
 local function card_value(rank)
     if rank == "A" then return 11 end
     if rank == "J" or rank == "Q" or rank == "K" then return 10 end
     return tonumber(rank) or 0
 end
 
+-- 计算一手牌的总点数（处理Ace的软硬转换）
 local function hand_total(cards)
     local total = 0
     local aces = 0
@@ -186,12 +207,13 @@ local function hand_total(cards)
         end
     end
     while total > 21 and aces > 0 do
-        total = total - 10
+        total = total - 10 -- Ace从11转为1
         aces = aces - 1
     end
     return total
 end
 
+-- 判断是否为黑杰克（21点）
 local function is_blackjack(cards)
     if #cards ~= 2 then
         return false
@@ -206,6 +228,7 @@ local function is_blackjack(cards)
     return has_a and has_ten
 end
 
+-- 获取手牌点数文本（黑杰克显示特殊文本）
 local function hand_value_text(cards)
     if is_blackjack(cards) then
         return tr("game.blackjack.value_blackjack")
@@ -213,6 +236,7 @@ local function hand_value_text(cards)
     return tostring(hand_total(cards))
 end
 
+-- 创建一手牌
 local function make_hand(cards, bet, adj_mult)
     local h = {
         cards = cards,
@@ -241,6 +265,7 @@ local function make_hand(cards, bet, adj_mult)
     return h
 end
 
+-- 更新手牌状态（抽牌后调用）
 local function update_hand_state(h)
     local total = hand_total(h.cards)
     h.bust = total > 21
@@ -250,10 +275,12 @@ local function update_hand_state(h)
     end
 end
 
+-- 计算净收益
 local function net_value()
     return state.funds - state.initial_funds
 end
 
+-- 计算已下注总额
 local function committed_bets_total()
     if state.hands == nil then
         return 0
@@ -268,10 +295,12 @@ local function committed_bets_total()
     return total
 end
 
+-- 计算可用资金（扣除已下注）
 local function available_funds()
     return state.funds - committed_bets_total()
 end
 
+-- 加载最佳记录
 local function load_best_record()
     state.best_net = 0
     if type(load_data) ~= "function" then
@@ -288,12 +317,14 @@ local function load_best_record()
     end
 end
 
+-- 保存最佳记录
 local function save_best_record()
     if type(save_data) == "function" then
         pcall(save_data, "blackjack_best_net", { value = state.best_net })
     end
 end
 
+-- 退出时提交最佳记录
 local function maybe_commit_best_on_exit()
     if state.bankrupt then
         return
@@ -311,10 +342,12 @@ local function maybe_commit_best_on_exit()
     end
 end
 
+-- 设置中央提示信息
 local function set_center_lines(lines)
     state.center_lines = lines
 end
 
+-- 添加提示消息
 local function add_toast(text, color)
     state.toast_text = text
     state.toast_color = color or "yellow"
@@ -322,6 +355,7 @@ local function add_toast(text, color)
     state.dirty = true
 end
 
+-- 获取卡片内文字（处理10需要两个字符）
 local function card_inner(rank)
     if rank == "10" then
         return " 10"
@@ -329,23 +363,27 @@ local function card_inner(rank)
     return " " .. rank .. " "
 end
 
+-- 判断是否可以要牌
 local function can_hit(h)
     if h == nil or h.resolved or h.stood or h.bust or h.blackjack then return false end
     if h.doubled and h.has_hit then return false end
     return hand_total(h.cards) < 21
 end
 
+-- 判断是否可以停牌
 local function can_stand(h)
     if h == nil or h.resolved then return false end
     return not h.stood
 end
 
+-- 判断是否可以加倍
 local function can_double(h)
     if h == nil or h.resolved or h.stood or h.bust then return false end
     if h.has_hit or h.doubled then return false end
     return true
 end
 
+-- 判断是否可以分牌
 local function can_split()
     if state.split_mode then return false end
     local h = state.hands[1]
@@ -358,6 +396,7 @@ local function can_split()
     return available_funds() >= h.bet
 end
 
+-- 判断是否可以购买保险
 local function can_insurance()
     if state.insurance then return false end
     if state.phase ~= "player" then return false end
@@ -370,8 +409,10 @@ local function can_insurance()
     return hand_total(h.cards) < 17
 end
 
+-- 前向声明（因为后面会引用）
 local update_player_prompt
 
+-- 获取当前活跃的手牌
 local function active_hand_ref()
     if state.split_mode then
         return state.hands[state.active_hand]
@@ -379,11 +420,13 @@ local function active_hand_ref()
     return state.hands[1]
 end
 
+-- 判断是否可以调整倍数
 local function can_adjust_multiplier(h)
     if h == nil or h.resolved or h.stood or h.bust then return false end
     return not h.adj_locked
 end
 
+-- 计算有效倍数（考虑手牌倍数和调整倍数）
 local function effective_mult(h)
     local hand_mult = 1.0
     if h ~= nil and type(h.mult) == "number" then
@@ -396,6 +439,7 @@ local function effective_mult(h)
     return adjust_mult * hand_mult
 end
 
+-- 计算结算因子（用于显示实际赔率）
 local function settlement_factor(h)
     if h == nil or not h.resolved then
         return 1.0
@@ -409,6 +453,7 @@ local function settlement_factor(h)
     return 1.0
 end
 
+-- 获取倍数显示文本
 local function multiplier_display_text(h)
     local base = effective_mult(h)
     local settle = settlement_factor(h)
@@ -418,6 +463,7 @@ local function multiplier_display_text(h)
     return string.format("%.1fx", base)
 end
 
+-- 调整赌注倍数
 local function adjust_bet_multiplier(delta)
     local h = active_hand_ref()
     if not can_adjust_multiplier(h) then
@@ -429,7 +475,7 @@ local function adjust_bet_multiplier(delta)
     local next_mult = current_mult + delta
     if next_mult < 0.5 then next_mult = 0.5 end
     if next_mult > 3.0 then next_mult = 3.0 end
-    next_mult = math.floor(next_mult * 2 + 0.5) / 2
+    next_mult = math.floor(next_mult * 2 + 0.5) / 2 -- 四舍五入到0.5
     if math.abs(next_mult - current_mult) < 0.001 then
         return
     end
@@ -453,6 +499,7 @@ local function adjust_bet_multiplier(delta)
     state.dirty = true
 end
 
+-- 获取手牌可用操作文本
 local function hand_actions_text(h)
     if h.stood or h.resolved or h.bust then
         return {
@@ -472,6 +519,7 @@ local function hand_actions_text(h)
     return { text = table.concat(ops, "  "), color = "white" }
 end
 
+-- 更新玩家提示信息
 update_player_prompt = function()
     local lines = {}
     if state.split_mode then
@@ -491,6 +539,7 @@ update_player_prompt = function()
     set_center_lines(lines)
 end
 
+-- 开始新的一轮
 local function begin_round()
     if state.funds <= 0 then
         state.bankrupt = true
@@ -535,10 +584,13 @@ local function begin_round()
     flush_input_buffer()
 end
 
+-- 绘制一张牌
 local function draw_card(x, y, rank, hidden, border_fg, text_fg)
     local bfg = border_fg or "white"
     local tfg = text_fg or border_fg or "white"
+    -- 牌的上边框
     draw_text(x, y, "\u{250C}\u{2500}\u{2500}\u{2500}\u{2510}", bfg, "black")
+    -- 牌的中部（显示牌面或隐藏）
     if hidden then
         draw_text(x, y + 1, "\u{2502}XXX\u{2502}", bfg, "black")
     else
@@ -546,9 +598,11 @@ local function draw_card(x, y, rank, hidden, border_fg, text_fg)
         draw_text(x + 1, y + 1, card_inner(rank), tfg, "black")
         draw_text(x + CARD_W - 1, y + 1, "\u{2502}", bfg, "black")
     end
+    -- 牌的下边框
     draw_text(x, y + 2, "\u{2514}\u{2500}\u{2500}\u{2500}\u{2518}", bfg, "black")
 end
 
+-- 结算手牌结果
 local function resolve_hand(h, outcome, payout_mult, text_key, fallback, color)
     h.resolved = true
     h.outcome = outcome
@@ -557,11 +611,11 @@ local function resolve_hand(h, outcome, payout_mult, text_key, fallback, color)
     h.result_color = color
 end
 
+-- 渲染函数（完整绘制一次）
 local function render_once()
     clear()
     local w, h = terminal_size()
-    local controls = tr(
-        "game.blackjack.controls")
+    local controls = tr("game.blackjack.controls")
     local ctrl_lines = wrap_words(controls, math.max(10, w - 2))
     if #ctrl_lines > 3 then
         ctrl_lines = { ctrl_lines[1], ctrl_lines[2], ctrl_lines[3] }
@@ -569,6 +623,7 @@ local function render_once()
     local ctrl_h = #ctrl_lines
     if ctrl_h < 1 then ctrl_h = 1 end
 
+    -- 计算布局位置
     local block_h = TABLE_H + 3 + ctrl_h
     local top_y = math.floor((h - block_h) / 2) + 1
     if top_y < 1 then top_y = 1 end
@@ -583,6 +638,7 @@ local function render_once()
     if table_x < 1 then table_x = 1 end
     local table_right = table_x + TABLE_W - 1
 
+    -- 居中计算辅助函数
     local function centered_x(text, left_x, right_x)
         local width = key_width(text)
         local cx = left_x + math.floor(((right_x - left_x + 1) - width) / 2)
@@ -593,6 +649,7 @@ local function render_once()
         return cx
     end
 
+    -- 绘制状态行（最佳记录和净收益）
     local best_text = tr("game.blackjack.best") .. ": " .. tostring(state.best_net)
     local net = net_value()
     local net_color = "dark_gray"
@@ -611,6 +668,7 @@ local function render_once()
     draw_text(sx, status_y, best_text, "dark_gray", "black")
     draw_text(sx + best_w + sep_w, status_y, net_text, net_color, "black")
 
+    -- 绘制提示行（确认信息、提示消息等）
     fill_line(alert_y, w)
     local alert_text = ""
     local alert_color = "red"
@@ -637,34 +695,42 @@ local function render_once()
         draw_text(ax, alert_y, alert_text, alert_color, "black")
     end
 
+    -- 绘制桌子边框
     draw_text(table_x, table_y, "\u{2554}" .. string.rep("\u{2550}", TABLE_W - 2) .. "\u{2557}", "white", "black")
     for i = 1, TABLE_H - 2 do
         draw_text(table_x, table_y + i, "\u{2551}", "white", "black")
         draw_text(table_x + TABLE_W - 1, table_y + i, "\u{2551}", "white", "black")
     end
-    draw_text(table_x, table_y + TABLE_H - 1, "\u{255A}" .. string.rep("\u{2550}", TABLE_W - 2) .. "\u{255D}", "white", "black")
+    draw_text(table_x, table_y + TABLE_H - 1, "\u{255A}" .. string.rep("\u{2550}", TABLE_W - 2) .. "\u{255D}", "white",
+        "black")
 
+    -- 绘制标签
     local dealer_label = " " .. tr("game.blackjack.dealer_cards") .. " "
     local player_label = " " .. tr("game.blackjack.player_cards") .. " "
     draw_text(centered_x(dealer_label, table_x + 2, table_right - 2), table_y, dealer_label, "white", "black")
-    draw_text(centered_x(player_label, table_x + 2, table_right - 2), table_y + TABLE_H - 1, player_label, "white", "black")
+    draw_text(centered_x(player_label, table_x + 2, table_right - 2), table_y + TABLE_H - 1, player_label, "white",
+        "black")
 
+    -- 内部区域
     local inner_left = table_x + 2
     local inner_right = table_right - 2
     local inner_w = inner_right - inner_left + 1
     local table_bottom = table_y + TABLE_H - 1
 
+    -- 计算卡片组宽度
     local function card_group_width(count)
         if count <= 0 then return 0 end
         return count * CARD_W + (count - 1)
     end
 
+    -- 绘制点数行
     local function draw_points_line(text, y, color)
         if y <= table_y or y >= table_bottom then return end
         local x = centered_x(text, inner_left, inner_right)
         draw_text(x, y, text, color, "black")
     end
 
+    -- 绘制庄家手牌
     local dealer_group_w = card_group_width(#state.dealer_cards)
     local dealer_x = inner_left + math.floor((inner_w - dealer_group_w) / 2)
     local dealer_y = table_y + 2
@@ -679,18 +745,24 @@ local function render_once()
         )
     end
 
+    -- 显示庄家点数
     local dealer_points = "?"
     if not state.dealer_hidden then
         dealer_points = hand_value_text(state.dealer_cards)
     end
     draw_points_line(tr("game.blackjack.msg_dealer_points") .. ": " .. dealer_points, dealer_y + CARD_H, "dark_gray")
 
+    -- 绘制牌堆装饰
     local deck_x = table_x + TABLE_W - 16
     local deck_y = table_y + math.floor(TABLE_H / 2) - 2
-    draw_text(deck_x, deck_y + 1, "\u{250C}\u{2500}\u{250C}\u{250C}\u{250C}\u{250C}\u{250C}\u{250C}\u{250C}\u{250C}", "white", "black")
-    draw_text(deck_x, deck_y + 2, "\u{2502}X\u{2502}\u{2502}\u{2502}\u{2502}\u{2502}\u{2502}\u{2502}\u{2502}", "white", "black")
-    draw_text(deck_x, deck_y + 3, "\u{2514}\u{2500}\u{2514}\u{2514}\u{2514}\u{2514}\u{2514}\u{2514}\u{2514}\u{2514}", "white", "black")
+    draw_text(deck_x, deck_y + 1, "\u{250C}\u{2500}\u{250C}\u{250C}\u{250C}\u{250C}\u{250C}\u{250C}\u{250C}\u{250C}",
+        "white", "black")
+    draw_text(deck_x, deck_y + 2, "\u{2502}X\u{2502}\u{2502}\u{2502}\u{2502}\u{2502}\u{2502}\u{2502}\u{2502}", "white",
+        "black")
+    draw_text(deck_x, deck_y + 3, "\u{2514}\u{2500}\u{2514}\u{2514}\u{2514}\u{2514}\u{2514}\u{2514}\u{2514}\u{2514}",
+        "white", "black")
 
+    -- 绘制资金和赌注信息
     local info_x = table_x + 3
     local info_y = table_y + math.floor(TABLE_H / 2) - 1
     draw_text(info_x, info_y, "[$] " .. tostring(state.funds), "white", "black")
@@ -698,14 +770,16 @@ local function render_once()
         draw_text(
             info_x,
             info_y + 1,
-            tr("game.blackjack.bet_round_left") .. " -[$] " .. tostring(state.hands[1].bet) .. " " .. multiplier_display_text(state.hands[1]),
+            tr("game.blackjack.bet_round_left") ..
+            " -[$] " .. tostring(state.hands[1].bet) .. " " .. multiplier_display_text(state.hands[1]),
             "white",
             "black"
         )
         draw_text(
             info_x,
             info_y + 2,
-            tr("game.blackjack.bet_round_right") .. " -[$] " .. tostring(state.hands[2].bet) .. " " .. multiplier_display_text(state.hands[2]),
+            tr("game.blackjack.bet_round_right") ..
+            " -[$] " .. tostring(state.hands[2].bet) .. " " .. multiplier_display_text(state.hands[2]),
             "white",
             "black"
         )
@@ -719,6 +793,7 @@ local function render_once()
         )
     end
 
+    -- 中央信息区域
     local phase_key = "game.blackjack.phase_player"
     local phase_color = "yellow"
     if state.phase == "dealer" then
@@ -742,11 +817,13 @@ local function render_once()
         center_bottom = center_top
     end
 
+    -- 清空中央区域
     local center_w = center_right - center_left + 1
     for y = center_top, center_bottom do
         draw_text(center_left, y, string.rep(" ", center_w), "white", "black")
     end
 
+    -- 绘制中央信息
     local lines_to_draw = { { text = tr(phase_key), color = phase_color } }
     for i = 1, #state.center_lines do
         lines_to_draw[#lines_to_draw + 1] = state.center_lines[i]
@@ -763,6 +840,7 @@ local function render_once()
         draw_text(lx, first_y + i - 1, txt, clr, "black")
     end
 
+    -- 绘制玩家手牌
     if state.split_mode then
         local mid_x = table_x + math.floor(TABLE_W / 2)
         local left_zone_l = inner_left
@@ -789,6 +867,7 @@ local function render_once()
             player_points_y + 1,
             "dark_gray"
         )
+        -- 绘制当前活跃手牌的指示线
         local indicator_y = player_cards_y + CARD_H
         if state.active_hand == 1 then
             draw_text(left_x, indicator_y, string.rep("\u{2500}", math.max(5, left_w)), "green", "black")
@@ -808,11 +887,13 @@ local function render_once()
         )
     end
 
+    -- 绘制警告信息
     fill_line(warn_y, w)
     local warning = tr("game.blackjack.warning")
     local wx = centered_x(warning, 1, w)
     draw_text(wx, warn_y, warning, "dark_gray", "black")
 
+    -- 绘制控制说明
     for i = 0, 2 do
         fill_line(controls_y + i, w)
     end
@@ -824,6 +905,7 @@ local function render_once()
     end
 end
 
+-- 暂停并重新渲染
 local function pause_with_render(ms)
     state.dirty = true
     if state.dirty then
@@ -833,6 +915,7 @@ local function pause_with_render(ms)
     sleep(ms)
 end
 
+-- 检查所有玩家手牌是否都已停牌
 local function all_player_hands_done()
     for i = 1, #state.hands do
         local h = state.hands[i]
@@ -843,6 +926,7 @@ local function all_player_hands_done()
     return true
 end
 
+-- 确保活跃手牌有效
 local function ensure_active_hand()
     if not state.split_mode then
         state.active_hand = 1
@@ -858,6 +942,7 @@ local function ensure_active_hand()
     end
 end
 
+-- 庄家阶段和结算
 local function dealer_phase_and_settle()
     state.phase = "dealer"
     state.await_next_round = false
@@ -867,6 +952,7 @@ local function dealer_phase_and_settle()
     })
     pause_with_render(DEALER_REVEAL_PAUSE_MS)
 
+    -- 先处理黑杰克情况
     local dealer_bj = is_blackjack(state.dealer_cards)
     for i = 1, #state.hands do
         local h = state.hands[i]
@@ -874,10 +960,12 @@ local function dealer_phase_and_settle()
         if h.bust then
             resolve_hand(h, "lose", 0, "game.blackjack.msg_player_bust", "Player bust! Lose bet.", "red")
         elseif h.insured_skip and (not dealer_bj) then
-            resolve_hand(h, "push", 0, "game.blackjack.msg_insurance_skip_round", "Player insurance: round skipped.", "light_cyan")
+            resolve_hand(h, "push", 0, "game.blackjack.msg_insurance_skip_round", "Player insurance: round skipped.",
+                "light_cyan")
         elseif player_bj and not dealer_bj then
             if state.insurance then
-                resolve_hand(h, "win", 2.0, "game.blackjack.msg_player_blackjack_insured", "Player blackjack with insurance! Win bet.", "green")
+                resolve_hand(h, "win", 2.0, "game.blackjack.msg_player_blackjack_insured",
+                    "Player blackjack with insurance! Win bet.", "green")
             else
                 resolve_hand(h, "win", 1.5, "game.blackjack.msg_player_blackjack", "Player blackjack! Win bet.", "green")
             end
@@ -888,9 +976,13 @@ local function dealer_phase_and_settle()
         end
     end
 
+    -- 庄家抽牌（如果还有未结算的手牌且庄家没有黑杰克）
     local unresolved = false
     for i = 1, #state.hands do
-        if not state.hands[i].resolved then unresolved = true break end
+        if not state.hands[i].resolved then
+            unresolved = true
+            break
+        end
     end
 
     if unresolved and not dealer_bj then
@@ -906,6 +998,7 @@ local function dealer_phase_and_settle()
         end
     end
 
+    -- 结算阶段
     set_center_lines({
         { text = tr("game.blackjack.phase_settle"), color = "rgb(255,165,0)" }
     })
@@ -934,26 +1027,30 @@ local function dealer_phase_and_settle()
     }
     if state.split_mode then
         lines[#lines + 1] = {
-            text = tr("game.blackjack.msg_left_points") .. ": " .. hand_value_text(state.hands[1].cards) .. "  " .. state.hands[1].result_text,
+            text = tr("game.blackjack.msg_left_points") ..
+            ": " .. hand_value_text(state.hands[1].cards) .. "  " .. state.hands[1].result_text,
             color = state.hands[1].result_color
         }
         lines[#lines + 1] = {
-            text = tr("game.blackjack.msg_right_points") .. ": " .. hand_value_text(state.hands[2].cards) .. "  " .. state.hands[2].result_text,
+            text = tr("game.blackjack.msg_right_points") ..
+            ": " .. hand_value_text(state.hands[2].cards) .. "  " .. state.hands[2].result_text,
             color = state.hands[2].result_color
         }
     else
-        lines[#lines + 1] = { text = tr("game.blackjack.msg_player_points") .. ": " .. hand_value_text(state.hands[1].cards), color = "white" }
+        lines[#lines + 1] = { text = tr("game.blackjack.msg_player_points") ..
+        ": " .. hand_value_text(state.hands[1].cards), color = "white" }
         lines[#lines + 1] = { text = state.hands[1].result_text, color = state.hands[1].result_color }
     end
     set_center_lines(lines)
 
+    -- 结算资金
     for i = 1, #state.hands do
         local h = state.hands[i]
         if h.outcome == "win" then
             local gain = math.floor(h.bet * h.payout_mult + 0.5)
             state.funds = state.funds + gain
         elseif h.outcome == "push" then
-            -- no balance change
+            -- 平局不改变资金
         elseif h.outcome == "lose" and h.payout_mult < 0 then
             state.funds = state.funds - h.bet
             local extra = math.floor(h.bet * math.abs(h.payout_mult) + 0.5)
@@ -977,6 +1074,7 @@ local function dealer_phase_and_settle()
     end
 end
 
+-- 当前手牌要牌
 local function hit_current()
     local h = state.hands[state.active_hand]
     if not can_hit(h) then
@@ -995,6 +1093,7 @@ local function hit_current()
     end
 end
 
+-- 当前手牌停牌
 local function stand_current()
     local h = state.hands[state.active_hand]
     if not can_stand(h) then
@@ -1012,6 +1111,7 @@ local function stand_current()
     end
 end
 
+-- 当前手牌加倍
 local function double_current()
     local h = state.hands[state.active_hand]
     if not can_double(h) then
@@ -1027,6 +1127,7 @@ local function double_current()
     state.dirty = true
 end
 
+-- 分牌
 local function split_current()
     if not can_split() then
         add_toast(tr("game.blackjack.action_need_funds"), "red")
@@ -1047,6 +1148,7 @@ local function split_current()
     end
 end
 
+-- 购买保险
 local function insurance_current()
     if not can_insurance() then
         add_toast(tr("game.blackjack.action_unavailable"), "red")
@@ -1068,6 +1170,7 @@ local function insurance_current()
     dealer_phase_and_settle()
 end
 
+-- 重新开始游戏
 local function restart_session()
     state.funds = STARTING_FUNDS
     state.initial_funds = STARTING_FUNDS
@@ -1083,6 +1186,7 @@ local function restart_session()
     begin_round()
 end
 
+-- 处理确认模式下的按键
 local function handle_confirm_key(key)
     if key == "y" or key == "enter" then
         if state.confirm_mode == "restart" then
@@ -1102,13 +1206,16 @@ local function handle_confirm_key(key)
     return "none"
 end
 
+-- 主输入处理函数
 local function handle_input(key)
     if key == nil or key == "" then return "none" end
 
+    -- 确认模式
     if state.confirm_mode ~= nil then
         return handle_confirm_key(key)
     end
 
+    -- 破产状态
     if state.bankrupt then
         if key == "r" then
             restart_session()
@@ -1121,6 +1228,7 @@ local function handle_input(key)
         return "none"
     end
 
+    -- 全局功能键
     if key == "q" or key == "esc" then
         state.confirm_mode = "exit"
         state.dirty = true
@@ -1133,6 +1241,7 @@ local function handle_input(key)
         return "changed"
     end
 
+    -- 等待下一轮状态
     if state.await_next_round then
         if key == "enter" then
             begin_round()
@@ -1141,10 +1250,12 @@ local function handle_input(key)
         return "none"
     end
 
+    -- 非玩家阶段不能操作
     if state.bankrupt or state.phase ~= "player" then
         return "none"
     end
 
+    -- 调整赌注倍数
     if key == "+" or key == "=" or key == "add" then
         adjust_bet_multiplier(0.5)
         return "changed"
@@ -1154,6 +1265,7 @@ local function handle_input(key)
         return "changed"
     end
 
+    -- 分牌模式切换活跃手牌
     if key == "left" and state.split_mode then
         state.active_hand = 1
         update_player_prompt()
@@ -1167,14 +1279,26 @@ local function handle_input(key)
         return "changed"
     end
 
-    if key == "space" then hit_current(); return "changed" end
-    if key == "enter" then stand_current(); return "changed" end
-    if key == "z" then double_current(); return "changed" end
-    if key == "x" then split_current(); return "changed" end
-    if key == "c" then insurance_current(); return "changed" end
+    -- 游戏操作
+    if key == "space" then
+        hit_current(); return "changed"
+    end
+    if key == "enter" then
+        stand_current(); return "changed"
+    end
+    if key == "z" then
+        double_current(); return "changed"
+    end
+    if key == "x" then
+        split_current(); return "changed"
+    end
+    if key == "c" then
+        insurance_current(); return "changed"
+    end
     return "none"
 end
 
+-- 刷新脏标记
 local function refresh_dirty_flags()
     local toast_visible = state.toast_text ~= nil and state.frame <= state.toast_until
     if not toast_visible and state.toast_text ~= nil then
@@ -1183,6 +1307,7 @@ local function refresh_dirty_flags()
     end
 end
 
+-- 绘制终端尺寸警告
 local function draw_terminal_size_warning(term_w, term_h, min_w, min_h)
     clear()
     local lines = {
@@ -1200,13 +1325,9 @@ local function draw_terminal_size_warning(term_w, term_h, min_w, min_h)
     end
 end
 
+-- 计算最小所需终端尺寸
 local function minimum_required_size()
-    local controls_w = min_width_for_lines(
-        tr(
-            "game.blackjack.controls"),
-        3,
-        40
-    )
+    local controls_w = min_width_for_lines(tr("game.blackjack.controls"), 3, 40)
     local warning_w = key_width(tr("game.blackjack.warning"))
     local status_w = key_width(tr("game.blackjack.best") .. ": -999999")
         + 3
@@ -1221,6 +1342,7 @@ local function minimum_required_size()
     return min_w, min_h
 end
 
+-- 确保终端尺寸足够
 local function ensure_terminal_size_ok()
     local term_w, term_h = terminal_size()
     local min_w, min_h = minimum_required_size()
@@ -1256,6 +1378,7 @@ local function ensure_terminal_size_ok()
     return false
 end
 
+-- 游戏初始化
 local function init_game()
     clear()
     flush_input_buffer()
@@ -1263,6 +1386,7 @@ local function init_game()
     restart_session()
 end
 
+-- 主游戏循环
 local function game_loop()
     while true do
         local key = normalize_key(get_key(false))
@@ -1272,6 +1396,7 @@ local function game_loop()
                 return
             end
 
+            -- 自动进入庄家阶段（如果所有玩家手牌都已停牌）
             if (not state.bankrupt)
                 and state.confirm_mode == nil
                 and (not state.await_next_round)
@@ -1296,6 +1421,6 @@ local function game_loop()
     end
 end
 
+-- 启动游戏
 init_game()
 game_loop()
-

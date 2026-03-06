@@ -1,51 +1,64 @@
+-- 颜色记忆游戏元数据
 GAME_META = {
     name = "Color Memory",
     description = "Repeat the color sequence exactly as the system presents it."
 }
 
-local FPS = 60
-local FRAME_MS = 16
-local SHOW_ON_MS = 1200
-local SHOW_OFF_MS = 800
+-- 游戏常量定义
+local FPS = 60          -- 目标帧率
+local FRAME_MS = 16     -- 每帧毫秒数
+local SHOW_ON_MS = 1200 -- 颜色高亮显示时间（1.2秒）
+local SHOW_OFF_MS = 800 -- 颜色熄灭间隔时间（0.8秒）
 
-local BOX_W = 4
-local BOX_H = 3
-local BOX_GAP = 3
-local INPUT_GAP = 1
-local FRAME_H = 12
+-- 界面尺寸常量
+local BOX_W = 4     -- 颜色方块宽度
+local BOX_H = 3     -- 颜色方块高度
+local BOX_GAP = 3   -- 颜色方块间距
+local INPUT_GAP = 1 -- 输入区域方块间距
+local FRAME_H = 12  -- 游戏主框架高度
 
+-- 颜色定义（四种颜色）
 local COLORS = {
-    { bg = "rgb(255,0,0)" },
-    { bg = "rgb(255,255,0)" },
-    { bg = "rgb(0,120,255)" },
-    { bg = "rgb(0,200,0)" }
+    { bg = "rgb(255,0,0)" },   -- 红色
+    { bg = "rgb(255,255,0)" }, -- 黄色
+    { bg = "rgb(0,120,255)" }, -- 蓝色
+    { bg = "rgb(0,200,0)" }    -- 绿色
 }
 
+-- 游戏状态表
 local state = {
-    score = 0,
-    round = 1,
-    sequence = {},
-    input_colors = {},
-    highlight_idx = 0,
+    -- 游戏进度
+    score = 0,         -- 当前得分
+    round = 1,         -- 当前回合数
+    sequence = {},     -- 系统生成的顺序序列
+    input_colors = {}, -- 玩家输入的颜色序列
+    highlight_idx = 0, -- 当前高亮的颜色索引
 
-    best_score = 0,
-    best_time_sec = 0,
+    -- 最佳记录
+    best_score = 0,    -- 历史最高分
+    best_time_sec = 0, -- 历史最长游戏时间
 
-    phase = "input",
-    lost = false,
-    confirm_mode = nil,
-    committed = false,
+    -- 游戏状态
+    phase = "input",    -- 当前阶段：show/input/lost
+    lost = false,       -- 是否失败
+    confirm_mode = nil, -- 确认模式：nil/restart/exit
+    committed = false,  -- 是否已提交统计
 
-    frame = 0,
-    start_frame = 0,
-    end_frame = nil,
-    running = true,
-    dirty = true,
+    -- 帧相关
+    frame = 0,       -- 当前帧计数
+    start_frame = 0, -- 游戏开始的帧计数
+    end_frame = nil, -- 游戏结束的帧计数
+    running = true,  -- 是否运行中
+    dirty = true,    -- 是否需要重新渲染
 
-    last_elapsed_sec = -1,
-    last_term_w = 0,
-    last_term_h = 0,
+    -- 时间相关
+    last_elapsed_sec = -1, -- 上次记录的已过秒数
 
+    -- 终端尺寸相关
+    last_term_w = 0, -- 上次记录的终端宽度
+    last_term_h = 0, -- 上次记录的终端高度
+
+    -- 尺寸警告相关
     size_warning_active = false,
     last_warn_term_w = 0,
     last_warn_term_h = 0,
@@ -53,6 +66,7 @@ local state = {
     last_warn_min_h = 0
 }
 
+-- 翻译函数（安全调用）
 local function tr(key)
     if type(translate) ~= "function" then
         return key
@@ -70,6 +84,7 @@ local function tr(key)
     return value
 end
 
+-- 获取文本显示宽度
 local function key_width(text)
     if type(get_text_width) == "function" then
         local ok, w = pcall(get_text_width, text)
@@ -80,6 +95,7 @@ local function key_width(text)
     return #text
 end
 
+-- 按单词换行（保持单词完整性）
 local function wrap_words(text, max_width)
     if max_width <= 1 then
         return { text }
@@ -112,6 +128,7 @@ local function wrap_words(text, max_width)
     return lines
 end
 
+-- 计算在给定最大行数下所需的最小宽度
 local function min_width_for_lines(text, max_lines, hard_min)
     local full = key_width(text)
     local width = hard_min
@@ -124,6 +141,7 @@ local function min_width_for_lines(text, max_lines, hard_min)
     return full
 end
 
+-- 获取终端尺寸
 local function terminal_size()
     local w, h = 120, 40
     if type(get_terminal_size) == "function" then
@@ -135,18 +153,21 @@ local function terminal_size()
     return w, h
 end
 
+-- 规范化按键值
 local function normalize_key(key)
     if key == nil then return "" end
     if type(key) == "string" then return string.lower(key) end
     return tostring(key):lower()
 end
 
+-- 清空输入缓冲区
 local function flush_input_buffer()
     if type(clear_input_buffer) == "function" then
         pcall(clear_input_buffer)
     end
 end
 
+-- 计算已过秒数
 local function elapsed_seconds()
     local end_frame = state.end_frame
     if end_frame == nil then
@@ -155,6 +176,7 @@ local function elapsed_seconds()
     return math.floor((end_frame - state.start_frame) / FPS)
 end
 
+-- 格式化持续时间（秒转为 HH:MM:SS）
 local function format_duration(sec)
     local h = math.floor(sec / 3600)
     local m = math.floor((sec % 3600) / 60)
@@ -162,10 +184,12 @@ local function format_duration(sec)
     return string.format("%02d:%02d:%02d", h, m, s)
 end
 
+-- 填充整行（用于清空行）
 local function fill_line(y, width)
     draw_text(1, y, string.rep(" ", width), "white", "black")
 end
 
+-- 填充矩形区域
 local function fill_rect(x, y, w, h, bg)
     if w <= 0 or h <= 0 then return end
     local line = string.rep(" ", w)
@@ -174,6 +198,7 @@ local function fill_rect(x, y, w, h, bg)
     end
 end
 
+-- 绘制外边框
 local function draw_outer_frame(x, y, w, h)
     draw_text(x, y, "╔" .. string.rep("═", w - 2) .. "╗", "white", "black")
     for i = 1, h - 2 do
@@ -183,12 +208,14 @@ local function draw_outer_frame(x, y, w, h)
     draw_text(x, y + h - 1, "╚" .. string.rep("═", w - 2) .. "╝", "white", "black")
 end
 
+-- 绘制颜色填充方块（无边框）
 local function draw_color_fill_slot(x, y, color_idx)
     local bg = COLORS[color_idx].bg
     fill_rect(x, y, BOX_W, BOX_H, "black")
     draw_text(x + 1, y + 1, "  ", "white", bg)
 end
 
+-- 绘制高亮方块（带边框）
 local function draw_highlight_box(x, y, color_idx)
     local bg = COLORS[color_idx].bg
     draw_text(x, y, "┌──┐", "white", "black")
@@ -198,6 +225,7 @@ local function draw_highlight_box(x, y, color_idx)
     draw_text(x, y + 2, "└──┘", "white", "black")
 end
 
+-- 加载最佳记录
 local function load_best_record()
     if type(load_data) ~= "function" then
         return
@@ -216,6 +244,7 @@ local function load_best_record()
     end
 end
 
+-- 保存最佳记录
 local function save_best_record()
     if type(save_data) ~= "function" then
         return
@@ -226,6 +255,7 @@ local function save_best_record()
     })
 end
 
+-- 提交游戏统计
 local function commit_stats_if_needed()
     if state.committed then
         return
@@ -244,11 +274,13 @@ local function commit_stats_if_needed()
     state.committed = true
 end
 
+-- 推进时间帧
 local function advance_time(ms)
     local delta = math.max(1, math.floor(ms / FRAME_MS))
     state.frame = state.frame + delta
 end
 
+-- 计算文本居中位置
 local function centered_x(text, left_x, right_x)
     local width = key_width(text)
     local x = left_x + math.floor(((right_x - left_x + 1) - width) / 2)
@@ -259,9 +291,9 @@ local function centered_x(text, left_x, right_x)
     return x
 end
 
+-- 计算最小所需终端尺寸
 local function minimum_required_size()
-    local controls = tr(
-        "game.color_memory.controls")
+    local controls = tr("game.color_memory.controls")
     local controls_w = min_width_for_lines(controls, 3, 40)
 
     local best_line = tr("game.color_memory.best_score") .. " 99999  "
@@ -286,6 +318,7 @@ local function minimum_required_size()
     return min_w, min_h
 end
 
+-- 绘制终端尺寸警告
 local function draw_terminal_size_warning(term_w, term_h, min_w, min_h)
     clear()
     local lines = {
@@ -303,6 +336,7 @@ local function draw_terminal_size_warning(term_w, term_h, min_w, min_h)
     end
 end
 
+-- 确保终端尺寸足够
 local function ensure_terminal_size_ok()
     local term_w, term_h = terminal_size()
     local min_w, min_h = minimum_required_size()
@@ -335,6 +369,7 @@ local function ensure_terminal_size_ok()
     return false
 end
 
+-- 计算游戏框架几何布局
 local function frame_geometry()
     local term_w, term_h = terminal_size()
     local frame_w = math.max(48, 4 * BOX_W + 3 * BOX_GAP + 10)
@@ -349,22 +384,24 @@ local function frame_geometry()
     if x < 1 then x = 1 end
 
     return {
-        best_y = top,
-        current_y = top + 1,
-        info_y = top + 2,
-        game_x = x,
-        game_y = top + 3,
-        frame_w = frame_w,
-        frame_h = FRAME_H,
-        controls_y = top + 3 + FRAME_H + 1,
-        term_w = term_w
+        best_y = top,                       -- 最佳记录行Y坐标
+        current_y = top + 1,                -- 当前信息行Y坐标
+        info_y = top + 2,                   -- 提示信息行Y坐标
+        game_x = x,                         -- 游戏框架X坐标
+        game_y = top + 3,                   -- 游戏框架Y坐标
+        frame_w = frame_w,                  -- 游戏框架宽度
+        frame_h = FRAME_H,                  -- 游戏框架高度
+        controls_y = top + 3 + FRAME_H + 1, -- 控制说明Y坐标
+        term_w = term_w                     -- 终端宽度
     }
 end
 
+-- 获取游戏框架内部区域
 local function game_inner(g)
     return g.game_x + 1, g.game_y + 1, g.frame_w - 2
 end
 
+-- 格式化回合文本（处理语言差异）
 local function format_round_text()
     local tmpl = tr("game.color_memory.round")
     if string.find(tmpl, "{n}", 1, true) ~= nil then
@@ -376,15 +413,18 @@ local function format_round_text()
     return tmpl .. " " .. tostring(state.round)
 end
 
+-- 绘制显示区域（上方的高亮演示区）
 local function draw_show_section(g)
     local inner_x = g.game_x + 1
     local inner_y = g.game_y + 1
     local inner_w = g.frame_w - 2
     fill_rect(inner_x, inner_y, inner_w, 7, "black")
 
+    -- 显示当前回合数
     local round_text = format_round_text()
     draw_text(centered_x(round_text, inner_x, inner_x + inner_w - 1), inner_y, round_text, "yellow", "black")
 
+    -- 绘制四个颜色方块
     local total_boxes_w = 4 * BOX_W + 3 * BOX_GAP
     local row_x = inner_x + math.floor((inner_w - total_boxes_w) / 2)
     local show_y = inner_y + 2
@@ -397,6 +437,7 @@ local function draw_show_section(g)
         end
     end
 
+    -- 显示当前阶段状态
     local status_text = ""
     if state.phase == "show" then
         status_text = tr("game.color_memory.status_observe")
@@ -406,6 +447,7 @@ local function draw_show_section(g)
     draw_text(centered_x(status_text, inner_x, inner_x + inner_w - 1), inner_y + 6, status_text, "dark_gray", "black")
 end
 
+-- 绘制输入区域（下方的玩家输入区）
 local function draw_input_section(g)
     local inner_x = g.game_x + 1
     local inner_y = g.game_y + 1
@@ -413,6 +455,7 @@ local function draw_input_section(g)
     local input_y = inner_y + 7
     fill_rect(inner_x, input_y, inner_w, 3, "black")
 
+    -- 计算可见的输入方块（最近输入的优先显示）
     local max_slots = math.max(1, math.floor((inner_w + INPUT_GAP) / (BOX_W + INPUT_GAP)))
     local start_idx = 1
     if #state.input_colors > max_slots then
@@ -421,13 +464,15 @@ local function draw_input_section(g)
     local visible = #state.input_colors - start_idx + 1
     local input_w = visible * BOX_W + math.max(0, visible - 1) * INPUT_GAP
     local input_x = inner_x + math.floor((inner_w - input_w) / 2)
+
+    -- 绘制输入方块
     for i = start_idx, #state.input_colors do
         local slot = i - start_idx
         local bx = input_x + slot * (BOX_W + INPUT_GAP)
         draw_color_fill_slot(bx, input_y, state.input_colors[i])
     end
 
-    -- Keep the bottom double-line border intact during partial redraws.
+    -- 保持底部边框完整（部分重绘时确保边框不被覆盖）
     draw_text(
         g.game_x,
         g.game_y + g.frame_h - 1,
@@ -437,21 +482,25 @@ local function draw_input_section(g)
     )
 end
 
+-- 绘制头部信息（最佳记录、当前时间/分数、提示）
 local function draw_header(g)
     fill_line(g.best_y, g.term_w)
     fill_line(g.current_y, g.term_w)
     fill_line(g.info_y, g.term_w)
 
+    -- 显示最佳记录
     local best_line = tr("game.color_memory.best_score") .. ": " .. tostring(state.best_score)
         .. "  "
         .. tr("game.color_memory.best_time") .. ": " .. format_duration(state.best_time_sec)
     draw_text(centered_x(best_line, 1, g.term_w), g.best_y, best_line, "dark_gray", "black")
 
+    -- 显示当前时间和分数
     local current_line = tr("game.color_memory.time") .. ": " .. format_duration(elapsed_seconds())
         .. "  "
         .. tr("game.color_memory.score") .. ": " .. tostring(state.score)
     draw_text(centered_x(current_line, 1, g.term_w), g.current_y, current_line, "light_cyan", "black")
 
+    -- 显示提示信息（确认或失败）
     local info = ""
     local info_color = "yellow"
     if state.confirm_mode == "restart" then
@@ -469,9 +518,9 @@ local function draw_header(g)
     end
 end
 
+-- 绘制控制说明
 local function draw_controls(g)
-    local controls = tr(
-        "game.color_memory.controls")
+    local controls = tr("game.color_memory.controls")
     local lines = wrap_words(controls, math.max(10, g.term_w - 2))
     if #lines > 3 then
         lines = { lines[1], lines[2], lines[3] }
@@ -492,6 +541,7 @@ local function draw_controls(g)
     end
 end
 
+-- 完整渲染
 local function render_full(g)
     draw_header(g)
     draw_outer_frame(g.game_x, g.game_y, g.frame_w, g.frame_h)
@@ -502,6 +552,7 @@ local function render_full(g)
     draw_controls(g)
 end
 
+-- 只更新头部（用于时间刷新）
 local function render_header_only()
     if not ensure_terminal_size_ok() then
         return
@@ -516,6 +567,7 @@ local function render_header_only()
     draw_header(g)
 end
 
+-- 只更新显示区域（用于序列演示）
 local function render_show_only()
     if not ensure_terminal_size_ok() then
         return
@@ -530,6 +582,7 @@ local function render_show_only()
     draw_show_section(g)
 end
 
+-- 只更新输入区域（用于玩家输入）
 local function render_input_only()
     if not ensure_terminal_size_ok() then
         return
@@ -544,6 +597,7 @@ local function render_input_only()
     draw_input_section(g)
 end
 
+-- 按需渲染
 local function render_if_needed(force)
     if not ensure_terminal_size_ok() then
         return
@@ -555,6 +609,7 @@ local function render_if_needed(force)
     end
 end
 
+-- 暂停并渲染（用于序列演示的间隔）
 local function pause_with_render(ms)
     render_show_only()
     sleep(ms)
@@ -562,14 +617,16 @@ local function pause_with_render(ms)
     render_header_only()
 end
 
+-- 生成随机颜色序列
 local function generate_sequence(round_no)
     local out = {}
     for _ = 1, round_no do
-        out[#out + 1] = random(4) + 1
+        out[#out + 1] = random(4) + 1 -- 生成1-4的随机数
     end
     return out
 end
 
+-- 演示序列（阻塞式动画）
 local function show_sequence_blocking()
     state.phase = "show"
     state.highlight_idx = 0
@@ -590,6 +647,7 @@ local function show_sequence_blocking()
     render_show_only()
 end
 
+-- 开始下一回合
 local function start_next_round()
     state.input_colors = {}
     render_input_only()
@@ -597,6 +655,7 @@ local function start_next_round()
     show_sequence_blocking()
 end
 
+-- 开始新游戏
 local function start_new_run()
     state.score = 0
     state.round = 1
@@ -616,6 +675,7 @@ local function start_new_run()
     start_next_round()
 end
 
+-- 标记游戏失败
 local function mark_lost()
     if state.lost then
         return
@@ -628,12 +688,14 @@ local function mark_lost()
     state.dirty = true
 end
 
+-- 回合成功处理
 local function on_round_success()
     state.score = state.score + state.round
     state.round = state.round + 1
     start_next_round()
 end
 
+-- 刷新脏标记（检查时间变化）
 local function refresh_dirty_flags()
     local elapsed = elapsed_seconds()
     if elapsed ~= state.last_elapsed_sec then
@@ -642,6 +704,7 @@ local function refresh_dirty_flags()
     end
 end
 
+-- 处理确认模式下的按键
 local function handle_confirm_key(key)
     if key == "y" or key == "enter" then
         if state.confirm_mode == "restart" then
@@ -661,15 +724,18 @@ local function handle_confirm_key(key)
     return "none"
 end
 
+-- 主输入处理函数
 local function handle_input(key)
     if key == nil or key == "" then
         return "none"
     end
 
+    -- 确认模式
     if state.confirm_mode ~= nil then
         return handle_confirm_key(key)
     end
 
+    -- 失败状态
     if state.lost then
         if key == "r" then
             start_new_run()
@@ -682,6 +748,7 @@ local function handle_input(key)
         return "none"
     end
 
+    -- 全局功能键
     if key == "q" or key == "esc" then
         state.confirm_mode = "exit"
         state.dirty = true
@@ -693,10 +760,12 @@ local function handle_input(key)
         return "changed"
     end
 
+    -- 非输入阶段不能操作
     if state.phase ~= "input" then
         return "none"
     end
 
+    -- 退格/删除：移除上一个输入
     if key == "backspace" or key == "delete" then
         if #state.input_colors > 0 then
             table.remove(state.input_colors)
@@ -705,6 +774,7 @@ local function handle_input(key)
         return "changed"
     end
 
+    -- 数字键1-4：输入颜色
     local color_idx = nil
     if key == "1" then color_idx = 1 end
     if key == "2" then color_idx = 2 end
@@ -717,6 +787,7 @@ local function handle_input(key)
         return "changed"
     end
 
+    -- 回车：提交答案
     if key == "enter" then
         local ok = #state.input_colors == #state.sequence
         if ok then
@@ -739,6 +810,7 @@ local function handle_input(key)
     return "none"
 end
 
+-- 游戏初始化
 local function init_game()
     clear()
     flush_input_buffer()
@@ -748,6 +820,7 @@ local function init_game()
     start_new_run()
 end
 
+-- 主游戏循环
 local function game_loop()
     while state.running do
         local key = normalize_key(get_key(false))
@@ -764,5 +837,6 @@ local function game_loop()
     end
 end
 
+-- 启动游戏
 init_game()
 game_loop()

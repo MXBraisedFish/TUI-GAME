@@ -2,6 +2,8 @@
 use ratatui::text::{Line, Span};
 use unicode_width::UnicodeWidthChar;
 
+use crate::app::i18n;
+
 #[derive(Clone)]
 struct StyledChar {
     ch: char,
@@ -65,7 +67,7 @@ pub fn parse_rich_text_wrapped(text: &str, width: usize, base: Style) -> Vec<Lin
         if ch == '{' {
             if let Some((block, consumed)) = read_block(&chars[i..]) {
                 if block.trim().is_empty() {
-                    push_error(&mut out, "空指令", base);
+                    push_error(&mut out, &rt("rich_text.error.empty_command"), base);
                     reset_to_default(&mut state);
                     i += consumed;
                     continue;
@@ -75,7 +77,7 @@ pub fn parse_rich_text_wrapped(text: &str, width: usize, base: Style) -> Vec<Lin
                 match apply_block(&block, &mut state, rest) {
                     Ok(()) => {}
                     Err(msg) => {
-                        push_error(&mut out, msg, base);
+                        push_error(&mut out, &msg, base);
                         reset_to_default(&mut state);
                     }
                 }
@@ -84,14 +86,14 @@ pub fn parse_rich_text_wrapped(text: &str, width: usize, base: Style) -> Vec<Lin
                 continue;
             }
 
-            push_error(&mut out, "指令未闭合", base);
+            push_error(&mut out, &rt("rich_text.error.unclosed_command"), base);
             reset_to_default(&mut state);
             i += 1;
             continue;
         }
 
         if ch == '}' {
-            push_error(&mut out, "指令未闭合", base);
+            push_error(&mut out, &rt("rich_text.error.unclosed_command"), base);
             reset_to_default(&mut state);
             i += 1;
             continue;
@@ -102,7 +104,7 @@ pub fn parse_rich_text_wrapped(text: &str, width: usize, base: Style) -> Vec<Lin
     }
 
     if state.fg_need_clear || state.bg_need_clear {
-        push_error(&mut out, "样式未终止", base);
+        push_error(&mut out, &rt("rich_text.error.unterminated_style"), base);
         reset_to_default(&mut state);
     }
 
@@ -176,19 +178,19 @@ fn split_unescaped(input: &str, sep: char) -> Vec<String> {
     out
 }
 
-fn apply_block(block: &str, state: &mut StyleState, rest: &[char]) -> Result<(), &'static str> {
+fn apply_block(block: &str, state: &mut StyleState, rest: &[char]) -> Result<(), String> {
     let commands = split_unescaped(block, '|');
     if commands.is_empty() {
-        return Err("空指令");
+        return Err(rt("rich_text.error.empty_command"));
     }
 
     for command in commands {
         if command.trim().is_empty() {
-            return Err("空指令");
+            return Err(rt("rich_text.error.empty_command"));
         }
         let pair = split_unescaped(&command, ':');
         if pair.len() != 2 {
-            return Err("参数无效");
+            return Err(rt("rich_text.error.invalid_param"));
         }
 
         let cmd = pair[0].trim().to_ascii_lowercase();
@@ -197,7 +199,7 @@ fn apply_block(block: &str, state: &mut StyleState, rest: &[char]) -> Result<(),
         match cmd.as_str() {
             "tc" => apply_color_command(params, true, state, rest)?,
             "bg" => apply_color_command(params, false, state, rest)?,
-            _ => return Err("指令无效"),
+            _ => return Err(rt("rich_text.error.invalid_command")),
         }
     }
 
@@ -209,16 +211,16 @@ fn apply_color_command(
     is_fg: bool,
     state: &mut StyleState,
     rest: &[char],
-) -> Result<(), &'static str> {
+) -> Result<(), String> {
     if params.is_empty() || params[0].is_empty() {
-        return Err("参数无效");
+        return Err(rt("rich_text.error.invalid_param"));
     }
 
     let cmd_name = if is_fg { "tc" } else { "bg" };
 
     if params[0].eq_ignore_ascii_case("clear") {
         if params.len() != 1 {
-            return Err("参数无效");
+            return Err(rt("rich_text.error.invalid_param"));
         }
         if is_fg {
             state.fg = state.default_fg;
@@ -233,24 +235,24 @@ fn apply_color_command(
     }
 
     let Some(color) = parse_color(&params[0]) else {
-        return Err("参数无效");
+        return Err(rt("rich_text.error.invalid_param"));
     };
 
     let count = if params.len() >= 2 && !params[1].trim().is_empty() {
         match params[1].trim().parse::<usize>() {
             Ok(v) if v > 0 => Some(v),
-            _ => return Err("参数无效"),
+            _ => return Err(rt("rich_text.error.invalid_param")),
         }
     } else {
         None
     };
 
     if params.len() > 2 {
-        return Err("参数无效");
+        return Err(rt("rich_text.error.invalid_param"));
     }
 
     if count.is_none() && !has_future_clear(rest, cmd_name) {
-        return Err("样式未终止");
+        return Err(rt("rich_text.error.unterminated_style"));
     }
 
     if is_fg {
@@ -319,6 +321,10 @@ fn push_char(out: &mut Vec<StyledChar>, ch: char, state: &mut StyleState, base: 
             state.bg_count = Some(rem - 1);
         }
     }
+}
+
+fn rt(key: &str) -> String {
+    i18n::t(key).to_string()
 }
 
 fn push_error(out: &mut Vec<StyledChar>, msg: &str, base: Style) {

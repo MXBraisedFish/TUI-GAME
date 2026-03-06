@@ -286,6 +286,10 @@ struct TextCommandResult {
     count: Option<usize>,  // 颜色生效的字符数（None表示无限）
 }
 
+fn rich_text_error(key: &str) -> String {
+    i18n::t(key).to_string()
+}
+
 // 加载并注册所有文本命令函数
 fn load_text_functions(lua: &Lua, script_path: &Path) -> mlua::Result<()> {
     // 获取Lua的全局环境
@@ -446,7 +450,7 @@ fn draw_text_rich_impl(
             if let Some((inner, consumed)) = read_command_block(body, i)? {
                 // 如果为空则抛出异常
                 if inner.trim().is_empty() {
-                    push_error(&mut chunks, "空指令");
+                    push_error(&mut chunks, &rich_text_error("rich_text.error.empty_command"));
                     i += consumed;
                     continue;
                 }
@@ -462,14 +466,20 @@ fn draw_text_rich_impl(
             }
 
             // 如果没有}就抛出异常
-            push_error(&mut chunks, "指令未闭合");
+            push_error(
+                &mut chunks,
+                &rich_text_error("rich_text.error.unclosed_command"),
+            );
             i += ch_len;
             continue;
         }
 
         // 如果只有}就抛出异常
         if ch == '}' {
-            push_error(&mut chunks, "指令未闭合");
+            push_error(
+                &mut chunks,
+                &rich_text_error("rich_text.error.unclosed_command"),
+            );
             i += ch_len;
             continue;
         }
@@ -481,7 +491,10 @@ fn draw_text_rich_impl(
 
     // 检查未被清理的样式，未被清理的抛出异常
     if state.fg_need_clear || state.bg_need_clear {
-        push_error(&mut chunks, "样式未终止");
+        push_error(
+            &mut chunks,
+            &rich_text_error("rich_text.error.unterminated_style"),
+        );
     }
 
     // 绘制
@@ -574,13 +587,17 @@ fn apply_command_block(lua: &Lua, block: &str, state: &mut RichStyleState) -> ml
     for entry in entries {
         // 跳过空指令
         if entry.trim().is_empty() {
-            return Err(mlua::Error::external("空指令"));
+            return Err(mlua::Error::external(rich_text_error(
+                "rich_text.error.empty_command",
+            )));
         }
 
         // 按照 : 分割指令和参数
         let mut parts = split_unescaped(&entry, ':');
         if parts.len() != 2 {
-            return Err(mlua::Error::external("缺少指令或参数"));
+            return Err(mlua::Error::external(rich_text_error(
+                "rich_text.error.missing_command_or_param",
+            )));
         }
 
         // 提取指令
@@ -592,7 +609,9 @@ fn apply_command_block(lua: &Lua, block: &str, state: &mut RichStyleState) -> ml
 
         // 为空就报错
         if cmd.is_empty() {
-            return Err(mlua::Error::external("缺少指令或参数"));
+            return Err(mlua::Error::external(rich_text_error(
+                "rich_text.error.missing_command_or_param",
+            )));
         }
 
         // 执行指令
@@ -618,14 +637,18 @@ fn apply_single_command(
     // 内部指令解析器(一个备用方案)
     // 检查参数是否为空
     if params.is_empty() || params[0].trim().is_empty() {
-        return Err(mlua::Error::external("缺少参数"));
+        return Err(mlua::Error::external(rich_text_error(
+            "rich_text.error.missing_param",
+        )));
     }
 
     // 处理clear参数
     let first = params[0].trim();
     if first.eq_ignore_ascii_case("clear") {
         if params.len() != 1 {
-            return Err(mlua::Error::external("样式未终止"));
+            return Err(mlua::Error::external(rich_text_error(
+                "rich_text.error.unterminated_style",
+            )));
         }
         return Ok(TextCommandResult {
             clear: true,
@@ -636,7 +659,9 @@ fn apply_single_command(
 
     // 检查颜色代码是否符合标准
     if parse_color(Some(first)).is_none() {
-        return Err(mlua::Error::external("参数无效"));
+        return Err(mlua::Error::external(rich_text_error(
+            "rich_text.error.invalid_param",
+        )));
     }
 
     // 第二参数数字有效性
@@ -644,9 +669,11 @@ fn apply_single_command(
         let raw = params[1]
             .trim()
             .parse::<usize>()
-            .map_err(|_| mlua::Error::external("参数无效"))?;
+            .map_err(|_| mlua::Error::external(rich_text_error("rich_text.error.invalid_param")))?;
         if raw == 0 {
-            return Err(mlua::Error::external("参数无效"));
+            return Err(mlua::Error::external(rich_text_error(
+                "rich_text.error.invalid_param",
+            )));
         }
         Some(raw)
     } else {
@@ -655,7 +682,9 @@ fn apply_single_command(
 
     // 检查是否有多余参数
     if params.len() > 2 {
-        return Err(mlua::Error::external("参数无效"));
+        return Err(mlua::Error::external(rich_text_error(
+            "rich_text.error.invalid_param",
+        )));
     }
 
     // 返回结构
@@ -696,13 +725,19 @@ fn apply_command_via_lua(
     // 验证返回值是否是一个表
     let t = match ret {
         Value::Table(t) => t,
-        _ => return Err(mlua::Error::external("返回值必须是一个表")),
+        _ => {
+            return Err(mlua::Error::external(rich_text_error(
+                "rich_text.error.invalid_return_value",
+            )));
+        }
     };
 
     // 检查是否有错误
     if let Ok(msg) = t.get::<String>("error") {
         if !msg.trim().is_empty() {
-            return Err(mlua::Error::external("自定义指令无效"));
+            return Err(mlua::Error::external(rich_text_error(
+                "rich_text.error.invalid_custom_command",
+            )));
         }
     }
 
@@ -718,10 +753,14 @@ fn apply_command_via_lua(
     if !clear {
         if let Some(c) = color.as_deref() {
             if parse_color(Some(c)).is_none() {
-                return Err(mlua::Error::external("参数无效"));
+                return Err(mlua::Error::external(rich_text_error(
+                    "rich_text.error.invalid_param",
+                )));
             }
         } else {
-            return Err(mlua::Error::external("参数无效"));
+            return Err(mlua::Error::external(rich_text_error(
+                "rich_text.error.invalid_param",
+            )));
         }
     }
 
@@ -751,7 +790,9 @@ fn apply_command_result(
             // 设置新的文字颜色
             let color = result
                 .color
-                .ok_or_else(|| mlua::Error::external("缺少参数"))?;
+                .ok_or_else(|| {
+                    mlua::Error::external(rich_text_error("rich_text.error.missing_param"))
+                })?;
             state.fg = Some(color);
             state.fg_count = result.count;
             // 如果没有指定第二参数,标记需要后续自动清理
@@ -771,14 +812,18 @@ fn apply_command_result(
             // 设置新的背景色
             let color = result
                 .color
-                .ok_or_else(|| mlua::Error::external("缺少参数"))?;
+                .ok_or_else(|| {
+                    mlua::Error::external(rich_text_error("rich_text.error.missing_param"))
+                })?;
             state.bg = Some(color);
             state.bg_count = result.count;
             // 如果没有指定第二参数,标记需要后续自动清理
             state.bg_need_clear = result.count.is_none();
             Ok(())
         }
-        _ => Err(mlua::Error::external("未知指令")),
+        _ => Err(mlua::Error::external(rich_text_error(
+            "rich_text.error.unknown_command",
+        ))),
     }
 }
 
