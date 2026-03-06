@@ -22,7 +22,7 @@ const FALLBACK_RELEASE_URL: &str =
 // 这里是开发者测试防止限制API
 pub const GITHUB_TOKEN: &str = "";
 // 硬编码版本,避免文件被篡改导致错误(记的更新啊!)
-pub const CURRENT_VERSION_TAG: &str = "0.10.2";
+pub const CURRENT_VERSION_TAG: &str = "0.10.3";
 
 // 派生宏,实话说我没搞明白,但AI告诉我这么写合适就这么写了
 
