@@ -10,27 +10,34 @@ pub fn project_root() -> Result<PathBuf> {
 
 // 运行目录
 pub fn runtime_dir() -> Result<PathBuf> {
+    // 尝试获取可执行文件路径
     if let Ok(exe) = std::env::current_exe() {
+        // 获取可执行文件所在目录
         if let Some(parent) = exe.parent() {
             return Ok(parent.to_path_buf());
         }
     }
+    // 失败则回退到项目根目录
     project_root()
 }
 
 // 程序可执行文件附近的程序数据目录
 pub fn app_data_dir() -> Result<PathBuf> {
+    // 在运行时目录下创建tui-game-data子目录
     let dir = runtime_dir()?.join("tui-game-data");
+    // 自动创建目录
     fs::create_dir_all(&dir)?;
     Ok(dir)
 }
 
 // 脚本目录
 pub fn scripts_dir() -> Result<PathBuf> {
+    // 优先检查运行时目录下的scripts
     let runtime_scripts = runtime_dir()?.join("scripts");
     if runtime_scripts.exists() {
         return Ok(runtime_scripts);
     }
+    // 不存在则使用项目根目录下的scripts
     Ok(project_root()?.join("scripts"))
 }
 

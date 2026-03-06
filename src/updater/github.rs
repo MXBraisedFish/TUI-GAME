@@ -16,6 +16,7 @@ use crate::utils::path_utils;
 // github的release的地址API
 const GITHUB_API_LATEST: &str =
     "https://api.github.com/repos/MXBraisedFish/TUI-GAME/releases/latest";
+// 备用URL
 const FALLBACK_RELEASE_URL: &str =
     "https://api.github.com/repos/MXBraisedFish/TUI-GAME/releases/latest";
 // 这里是开发者测试防止限制API
@@ -25,46 +26,55 @@ pub const CURRENT_VERSION_TAG: &str = "0.10.2";
 
 // 派生宏,实话说我没搞明白,但AI告诉我这么写合适就这么写了
 
-// 定义版本数据结构体
+// 更新通知
 #[derive(Clone, Debug)]
 pub struct UpdateNotification {
-    pub latest_version: String,
-    pub release_url: String,
+    pub latest_version: String, // 最新版本号
+    pub release_url: String, // 发布页面URL
 }
 
-// 枚举更新状态
+// 更新器主体
 #[derive(Clone, Debug)]
 pub enum UpdaterEvent {
-    LatestVersion(UpdateNotification),
-    NewVersion(UpdateNotification),
-    NoUpdate,
+    LatestVersion(UpdateNotification), // 当前已是最新版本
+    NewVersion(UpdateNotification), // 发现新版本
+    NoUpdate, // 没有更新
 }
 
 // 接收更新事件
 #[derive(Debug)]
 pub struct Updater {
-    receiver: Receiver<UpdaterEvent>,
+    receiver: Receiver<UpdaterEvent>, // 接收更新事件的通道
 }
 
-// 解析github的响应数据结构体
+// GitHub API 响应结构
 #[derive(Clone, Debug, Deserialize)]
 struct ReleaseResponse {
-    tag_name: String,
-    html_url: Option<String>,
+    tag_name: String, // 发布的标签名
+    html_url: Option<String>, // 发布页面的 URL
 }
 
 // 版本更新主体
 impl Updater {
     /// Starts a background updater check thread.
     pub fn spawn(current_version: &str) -> Self {
+        // 创建通道
         let (tx, rx) = mpsc::channel();
+
+        // 规范化当前版本
         let current = normalize_tag(current_version);
+
+        // 写入缓存文件
         let _ = write_current_version_cache(&current);
 
+        // 启动后台线程检查更新
         thread::spawn(move || {
             if let Ok(result) = fetch_latest_release() {
                 if let Some(latest) = result {
+                    // 发送LatestVersion事件
                     let _ = tx.send(UpdaterEvent::LatestVersion(latest.clone()));
+
+                    // 判断是否有新版本
                     if is_version_newer(&latest.latest_version, &current) {
                         let _ = tx.send(UpdaterEvent::NewVersion(latest));
                     } else {
@@ -77,7 +87,7 @@ impl Updater {
         Self { receiver: rx }
     }
 
-    // 防止阻塞
+    // 非阻塞接收事
     pub fn try_recv(&self) -> Option<UpdaterEvent> {
         self.receiver.try_recv().ok()
     }
@@ -85,23 +95,29 @@ impl Updater {
 
 // 获取最后一个release
 fn fetch_latest_release() -> Result<Option<UpdateNotification>> {
+    // 创建HTTP客户端(8秒后超时)
     let client = Client::builder().timeout(Duration::from_secs(8)).build()?;
+
+    // 构建请求
     let mut req = client
         .get(GITHUB_API_LATEST)
         .header(USER_AGENT, "tui-game-updater")
         .header(ACCEPT, "application/vnd.github+json");
 
+        // 如果有token,添加到请求头(开发者提高API限流)
     if !GITHUB_TOKEN.is_empty() {
         req = req.header(AUTHORIZATION, format!("Bearer {}", GITHUB_TOKEN));
     }
 
+    // 发送请求
     let response = match req.send() {
         Ok(r) => r,
-        Err(_) => return Ok(None),
+        Err(_) => return Ok(None), // 网络错误返回None
     };
 
+    // 检查HTTP状态码
     if !response.status().is_success() {
-        return Ok(None);
+        return Ok(None); // API错误返回None
     }
 
     let payload: ReleaseResponse = match response.json() {
@@ -109,6 +125,7 @@ fn fetch_latest_release() -> Result<Option<UpdateNotification>> {
         Err(_) => return Ok(None),
     };
 
+    // 构造UpdateNotification
     let latest_tag = normalize_tag(&payload.tag_name);
     let release_url = payload
         .html_url
@@ -131,9 +148,13 @@ fn write_current_version_cache(current_version: &str) -> Result<()> {
 // 版本格式化
 fn normalize_tag(raw: &str) -> String {
     let trimmed = raw.trim();
+
+    // 空字符串处理
     if trimmed.is_empty() {
         return format!("v{}", CURRENT_VERSION_TAG.trim_start_matches(['v', 'V']));
     }
+
+    // 是否处理添加v符号
     if trimmed.starts_with('v') || trimmed.starts_with('V') {
         format!("v{}", trimmed[1..].trim())
     } else {
