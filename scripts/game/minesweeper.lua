@@ -1,14 +1,17 @@
-﻿GAME_META = {
+﻿-- 扫雷游戏元数据
+GAME_META = {
     name = "Minesweeper",
     description = "Reveal safe cells and mark all hidden mines."
 }
 
+-- 官方标准难度配置
 local OFFICIAL = {
-    [1] = { rows = 9, cols = 9, mines = 10 },
-    [2] = { rows = 16, cols = 16, mines = 40 },
-    [3] = { rows = 16, cols = 30, mines = 99 }
+    [1] = { rows = 9, cols = 9, mines = 10 },   -- 初级
+    [2] = { rows = 16, cols = 16, mines = 40 }, -- 中级
+    [3] = { rows = 16, cols = 30, mines = 99 }  -- 高级
 }
 
+-- 难度范围
 local MIN_DIFFICULTY = 1
 local MAX_DIFFICULTY = 3
 local MAX_ROWS = 22
@@ -16,44 +19,55 @@ local MAX_COLS = 32
 local MIN_ROWS = 2
 local MIN_COLS = 2
 
+-- 帧率控制
 local FPS = 60
 local FRAME_MS = 16
-local ROW_LABEL_W = 4
-local FACE_ACTION_FRAMES = 18
+local ROW_LABEL_W = 4         -- 行标签宽度
+local FACE_ACTION_FRAMES = 18 -- 表情动作持续帧数
 
-local COLOR_HIDDEN = "white"
-local COLOR_FLAG = "rgb(255,165,0)"
-local COLOR_QUESTION = "rgb(0,140,255)"
-local COLOR_MINE = "rgb(255,0,0)"
-local COLOR_EMPTY = "rgb(180,180,180)"
-local COLOR_CURSOR = "yellow"
+-- 颜色常量
+local COLOR_HIDDEN = "white"            -- 未翻开格子
+local COLOR_FLAG = "rgb(255,165,0)"     -- 旗子标记
+local COLOR_QUESTION = "rgb(0,140,255)" -- 问号标记
+local COLOR_MINE = "rgb(255,0,0)"       -- 地雷
+local COLOR_EMPTY = "rgb(180,180,180)"  -- 空格
+local COLOR_CURSOR = "yellow"           -- 光标颜色
 
+-- 数字颜色映射
 local NUMBER_COLORS = {
-    [1] = "rgb(0,0,255)",
-    [2] = "rgb(0,130,0)",
-    [3] = "rgb(255,0,0)",
-    [4] = "rgb(0,0,132)",
-    [5] = "rgb(132,0,0)",
-    [6] = "rgb(0,130,132)",
-    [7] = "rgb(105,105,105)",
-    [8] = "rgb(128,128,128)"
+    [1] = "rgb(0,0,255)",     -- 1: 蓝色
+    [2] = "rgb(0,130,0)",     -- 2: 绿色
+    [3] = "rgb(255,0,0)",     -- 3: 红色
+    [4] = "rgb(0,0,132)",     -- 4: 深蓝
+    [5] = "rgb(132,0,0)",     -- 5: 深红
+    [6] = "rgb(0,130,132)",   -- 6: 青绿
+    [7] = "rgb(105,105,105)", -- 7: 深灰
+    [8] = "rgb(128,128,128)"  -- 8: 灰色
 }
 
+-- 游戏状态表
 local state = {
+    -- 棋盘配置
     rows = OFFICIAL[1].rows,
     cols = OFFICIAL[1].cols,
     mines = OFFICIAL[1].mines,
     difficulty = 1,
-    mine_map = {},
-    adj = {},
-    revealed = {},
-    marks = {},
-    mines_placed = false,
-    first_move = true,
+
+    -- 核心数据
+    mine_map = {}, -- 地雷位置 true=有雷
+    adj = {},      -- 相邻地雷数
+    revealed = {}, -- 是否已翻开
+    marks = {},    -- 标记状态 0=无,1=旗,2=问号
+
+    -- 游戏状态
+    mines_placed = false, -- 是否已放置地雷（首次点击后才放置）
+    first_move = true,    -- 是否第一次移动
     cursor_r = 1,
     cursor_c = 1,
     won = false,
     lost = false,
+
+    -- 帧相关
     frame = 0,
     start_frame = 0,
     end_frame = nil,
@@ -70,9 +84,15 @@ local state = {
     last_key_frame = -100,
     launch_mode = "new",
     last_area = nil,
+
+    -- 最佳记录
     best = {},
     best_committed = false,
+
+    -- 表情动画
     action_face_until = 0,
+
+    -- 终端尺寸
     last_term_w = 0,
     last_term_h = 0,
     size_warning_active = false,
@@ -82,6 +102,7 @@ local state = {
     last_warn_min_h = 0
 }
 
+-- 翻译函数（安全调用）
 local function tr(key)
     if type(translate) ~= "function" then
         return key
@@ -99,6 +120,7 @@ local function tr(key)
     return value
 end
 
+-- 获取文本显示宽度
 local function key_width(text)
     if type(get_text_width) == "function" then
         local ok, w = pcall(get_text_width, text)
@@ -109,12 +131,14 @@ local function key_width(text)
     return #text
 end
 
+-- 数值限幅
 local function clamp(v, lo, hi)
     if v < lo then return lo end
     if v > hi then return hi end
     return v
 end
 
+-- 读取启动模式
 local function read_launch_mode()
     if type(get_launch_mode) ~= "function" then
         return "new"
@@ -130,12 +154,14 @@ local function read_launch_mode()
     return "new"
 end
 
+-- 规范化按键
 local function normalize_key(key)
     if key == nil then return "" end
     if type(key) == "string" then return string.lower(key) end
     return tostring(key):lower()
 end
 
+-- 按单词换行
 local function wrap_words(text, max_width)
     if max_width <= 1 then
         return { text }
@@ -168,6 +194,7 @@ local function wrap_words(text, max_width)
     return lines
 end
 
+-- 计算最小宽度
 local function min_width_for_lines(text, max_lines, hard_min)
     local full = key_width(text)
     local width = hard_min
@@ -180,6 +207,7 @@ local function min_width_for_lines(text, max_lines, hard_min)
     return full
 end
 
+-- 创建布尔矩阵
 local function new_bool_matrix(rows, cols, value)
     local m = {}
     for r = 1, rows do
@@ -191,6 +219,7 @@ local function new_bool_matrix(rows, cols, value)
     return m
 end
 
+-- 创建数字矩阵
 local function new_num_matrix(rows, cols, value)
     local m = {}
     for r = 1, rows do
@@ -202,6 +231,7 @@ local function new_num_matrix(rows, cols, value)
     return m
 end
 
+-- 复制矩阵
 local function copy_matrix(matrix, rows, cols)
     local out = {}
     for r = 1, rows do
@@ -213,6 +243,7 @@ local function copy_matrix(matrix, rows, cols)
     return out
 end
 
+-- 计算已过秒数
 local function elapsed_seconds()
     local end_frame = state.end_frame
     if end_frame == nil then
@@ -221,6 +252,7 @@ local function elapsed_seconds()
     return math.floor((end_frame - state.start_frame) / FPS)
 end
 
+-- 格式化持续时间
 local function format_duration(sec)
     local h = math.floor(sec / 3600)
     local m = math.floor((sec % 3600) / 60)
@@ -228,6 +260,7 @@ local function format_duration(sec)
     return string.format("%02d:%02d:%02d", h, m, s)
 end
 
+-- 统计旗子数量
 local function count_flags()
     local total = 0
     for r = 1, state.rows do
@@ -240,23 +273,26 @@ local function count_flags()
     return total
 end
 
+-- 获取表情文字
 local function face_text()
     if state.won then
-        return "$o$"
+        return "$o$" -- 胜利表情
     end
     if state.lost then
-        return "X_X"
+        return "X_X" -- 失败表情
     end
     if state.frame <= state.action_face_until then
-        return "oOo"
+        return "oOo" -- 动作表情
     end
-    return "ovo"
+    return "ovo"     -- 普通表情
 end
 
+-- 触发动作表情
 local function trigger_action_face()
     state.action_face_until = state.frame + FACE_ACTION_FRAMES
 end
 
+-- 加载最佳记录
 local function load_best_record()
     if type(load_data) ~= "function" then
         return {}
@@ -276,6 +312,7 @@ local function load_best_record()
     return out
 end
 
+-- 保存最佳记录
 local function save_best_record()
     if type(save_data) ~= "function" then
         return
@@ -289,6 +326,7 @@ local function save_best_record()
     pcall(save_data, "minesweeper_best", payload)
 end
 
+-- 提交最佳记录
 local function commit_best_if_needed()
     if state.best_committed then
         return
@@ -304,6 +342,7 @@ local function commit_best_if_needed()
     state.best_committed = true
 end
 
+-- 获取最佳记录显示文本
 local function best_line()
     local d1 = state.best[1]
     local d2 = state.best[2]
@@ -322,6 +361,7 @@ local function best_line()
     )
 end
 
+-- 创建游戏快照
 local function make_snapshot()
     return {
         rows = state.rows,
@@ -343,6 +383,7 @@ local function make_snapshot()
     }
 end
 
+-- 保存游戏状态
 local function save_game_state(show_toast)
     local ok = false
     local snapshot = make_snapshot()
@@ -362,6 +403,8 @@ local function save_game_state(show_toast)
         state.dirty = true
     end
 end
+
+-- 恢复游戏快照
 local function restore_snapshot(snapshot)
     if type(snapshot) ~= "table" then
         return false
@@ -436,6 +479,7 @@ local function restore_snapshot(snapshot)
     return true
 end
 
+-- 加载游戏状态
 local function load_game_state()
     local ok = false
     local snapshot = nil
@@ -454,6 +498,7 @@ local function load_game_state()
     return false
 end
 
+-- 重置游戏（自定义参数）
 local function reset_game(rows, cols, mines, difficulty)
     state.rows = clamp(rows, MIN_ROWS, MAX_ROWS)
     state.cols = clamp(cols, MIN_COLS, MAX_COLS)
@@ -483,12 +528,14 @@ local function reset_game(rows, cols, mines, difficulty)
     state.dirty = true
 end
 
+-- 重置为官方难度
 local function reset_official(difficulty)
     local d = clamp(difficulty, MIN_DIFFICULTY, MAX_DIFFICULTY)
     local cfg = OFFICIAL[d]
     reset_game(cfg.rows, cfg.cols, cfg.mines, d)
 end
 
+-- 游戏初始化
 local function init_game()
     clear()
     local w, h = 120, 40
@@ -510,6 +557,7 @@ local function init_game()
     end
 end
 
+-- 获取终端尺寸
 local function terminal_size()
     local w, h = 120, 40
     if type(get_terminal_size) == "function" then
@@ -521,6 +569,7 @@ local function terminal_size()
     return w, h
 end
 
+-- 获取行列标记位置（只显示首、中、尾）
 local function marker_positions(n)
     local a = 1
     local b = math.floor((n + 1) / 2)
@@ -536,6 +585,7 @@ local function marker_positions(n)
     return out, seen
 end
 
+-- 计算棋盘几何布局
 local function board_geometry()
     local w, h = terminal_size()
     local grid_w = ROW_LABEL_W + state.cols
@@ -553,8 +603,7 @@ local function board_geometry()
         key_width(tr("game.minesweeper.input_jump_hint"))
     )
 
-    local controls_text = tr(
-        "game.minesweeper.controls")
+    local controls_text = tr("game.minesweeper.controls")
     local controls_w = min_width_for_lines(controls_text, 3, 26)
 
     local frame_w = math.max(grid_w, status_w, message_w, controls_w, key_width(best_line())) + 2
@@ -566,6 +615,7 @@ local function board_geometry()
     return x, y, frame_w, frame_h
 end
 
+-- 填充矩形区域
 local function fill_rect(x, y, w, h, bg)
     if w <= 0 or h <= 0 then
         return
@@ -576,6 +626,7 @@ local function fill_rect(x, y, w, h, bg)
     end
 end
 
+-- 绘制外边框
 local function draw_outer_frame(x, y, frame_w, frame_h)
     draw_text(x, y, "╔" .. string.rep("═", frame_w - 2) .. "╗", "white", "black")
     for i = 1, frame_h - 2 do
@@ -585,6 +636,7 @@ local function draw_outer_frame(x, y, frame_w, frame_h)
     draw_text(x, y + frame_h - 1, "╚" .. string.rep("═", frame_w - 2) .. "╝", "white", "black")
 end
 
+-- 获取单元格字符和样式
 local function cell_char_and_style(r, c)
     local is_cursor = (r == state.cursor_r and c == state.cursor_c)
     local char = "#"
@@ -625,12 +677,13 @@ local function cell_char_and_style(r, c)
     if is_cursor then
         bg = COLOR_CURSOR
         if char == "!" or char == "#" then
-            fg = "black"
+            fg = "black" -- 光标下让旗子和未翻开格子文字变黑以提高对比度
         end
     end
     return char, fg, bg
 end
 
+-- 绘制棋盘
 local function draw_board(x, y, frame_w, frame_h)
     draw_outer_frame(x, y, frame_w, frame_h)
 
@@ -642,12 +695,15 @@ local function draw_board(x, y, frame_w, frame_h)
     if pad_x < 0 then pad_x = 0 end
     local base_x = inner_x + pad_x
 
+    -- 获取行列标记位置
     local col_markers = marker_positions(state.cols)
     local _, row_mark_set = marker_positions(state.rows)
 
+    -- 清空标头区域
     draw_text(base_x, inner_y, string.rep(" ", ROW_LABEL_W + state.cols), "dark_gray", "black")
     draw_text(base_x, inner_y + 1, string.rep(" ", ROW_LABEL_W + state.cols), "dark_gray", "black")
 
+    -- 绘制列号
     for _, c in ipairs(col_markers) do
         local text = tostring(c)
         local text_x = base_x + ROW_LABEL_W + c - math.floor(#text / 2) - 1
@@ -655,6 +711,7 @@ local function draw_board(x, y, frame_w, frame_h)
         draw_text(base_x + ROW_LABEL_W + c - 1, inner_y + 1, "|", "dark_gray", "black")
     end
 
+    -- 绘制行号和棋盘格子
     for r = 1, state.rows do
         local row_y = inner_y + 1 + r
         if row_mark_set[r] then
@@ -669,16 +726,21 @@ local function draw_board(x, y, frame_w, frame_h)
         end
     end
 end
+
+-- 绘制状态栏
 local function draw_status(x, y, frame_w)
     local elapsed = elapsed_seconds()
     local term_w = terminal_size()
     local left = tr("game.minesweeper.time") .. " " .. format_duration(elapsed)
     local center = face_text()
     local right = tr("game.minesweeper.mines_left") .. " " .. tostring(state.mines - count_flags())
+
+    -- 清空状态区域
     draw_text(1, y - 3, string.rep(" ", term_w), "white", "black")
     draw_text(1, y - 2, string.rep(" ", term_w), "white", "black")
     draw_text(1, y - 1, string.rep(" ", term_w), "white", "black")
 
+    -- 计算位置（避免重叠）
     local left_x = x
     local center_x = x + math.floor((frame_w - key_width(center)) / 2)
     local right_x = x + frame_w - key_width(right)
@@ -689,11 +751,13 @@ local function draw_status(x, y, frame_w)
         right_x = center_x + key_width(center) + 1
     end
 
+    -- 绘制信息
     draw_text(x, y - 3, best_line(), "dark_gray", "black")
     draw_text(left_x, y - 2, left, "light_cyan", "black")
     draw_text(center_x, y - 2, center, "yellow", "black")
     draw_text(right_x, y - 2, right, "light_cyan", "black")
 
+    -- 显示输入提示或状态信息
     if state.input_mode == "config" then
         if state.input_buffer == "" then
             draw_text(x, y - 1, tr("game.minesweeper.input_config_hint"), "dark_gray", "black")
@@ -723,9 +787,9 @@ local function draw_status(x, y, frame_w)
     end
 end
 
+-- 绘制控制说明
 local function draw_controls(x, y, frame_h)
-    local text = tr(
-        "game.minesweeper.controls")
+    local text = tr("game.minesweeper.controls")
     local term_w = terminal_size()
     local max_w = math.max(10, term_w - 2)
     local lines = wrap_words(text, max_w)
@@ -733,14 +797,18 @@ local function draw_controls(x, y, frame_h)
         lines = { lines[1], lines[2], lines[3] }
     end
 
+    -- 清空控制区域
     for i = 1, 3 do
         draw_text(1, y + frame_h + i, string.rep(" ", term_w), "white", "black")
     end
 
+    -- 垂直居中
     local offset = 0
     if #lines < 3 then
         offset = math.floor((3 - #lines) / 2)
     end
+
+    -- 绘制控制说明
     for i = 1, #lines do
         local line = lines[i]
         local line_x = math.floor((term_w - key_width(line)) / 2)
@@ -749,6 +817,7 @@ local function draw_controls(x, y, frame_h)
     end
 end
 
+-- 清除上次渲染的区域
 local function clear_last_area()
     if state.last_area == nil then
         return
@@ -756,16 +825,19 @@ local function clear_last_area()
     fill_rect(state.last_area.x, state.last_area.y, state.last_area.w, state.last_area.h, "black")
 end
 
+-- 强制完全刷新
 local function force_full_refresh()
     clear()
     state.last_area = nil
     state.dirty = true
 end
 
+-- 主渲染函数
 local function render()
     local x, y, frame_w, frame_h = board_geometry()
     local area = { x = x, y = y - 3, w = frame_w, h = frame_h + 7 }
 
+    -- 如果渲染区域变化，清除旧区域
     if state.last_area == nil then
         fill_rect(area.x, area.y, area.w, area.h, "black")
     elseif state.last_area.x ~= area.x or state.last_area.y ~= area.y or
@@ -775,11 +847,13 @@ local function render()
     end
     state.last_area = area
 
+    -- 绘制各组件
     draw_status(x, y, frame_w)
     draw_board(x, y, frame_w, frame_h)
     draw_controls(x, y, frame_h)
 end
 
+-- 同步终端尺寸变化
 local function sync_terminal_resize()
     local w, h = terminal_size()
     if w ~= state.last_term_w or h ~= state.last_term_h then
@@ -791,14 +865,14 @@ local function sync_terminal_resize()
     end
 end
 
+-- 计算最小所需终端尺寸
 local function minimum_required_size()
     local grid_w = ROW_LABEL_W + state.cols
     local grid_h = 2 + state.rows
     local frame_w = grid_w + 2
     local frame_h = grid_h + 2
 
-    local controls_text = tr(
-        "game.minesweeper.controls")
+    local controls_text = tr("game.minesweeper.controls")
     local controls_w = min_width_for_lines(controls_text, 3, 26)
     local status_w = key_width(tr("game.minesweeper.time") .. " 00:00:00")
         + 2 + key_width("ovo")
@@ -813,12 +887,13 @@ local function minimum_required_size()
     )
 
     local min_w = math.max(frame_w, controls_w, status_w, hint_w) + 2
-    -- Render range is [y-3, y+frame_h+3], and y is clamped to >= 6.
-    -- So minimum height must be at least frame_h + 9.
+    -- 渲染范围是 [y-3, y+frame_h+3]，且 y 最小为6
+    -- 所以最小高度至少 frame_h + 9
     local min_h = frame_h + 9
     return min_w, min_h
 end
 
+-- 绘制终端尺寸警告
 local function draw_terminal_size_warning(term_w, term_h, min_w, min_h)
     local lines = {
         tr("warning.size_title"),
@@ -838,6 +913,7 @@ local function draw_terminal_size_warning(term_w, term_h, min_w, min_h)
     end
 end
 
+-- 确保终端尺寸足够
 local function ensure_terminal_size_ok()
     local term_w, term_h = terminal_size()
     local min_w, min_h = minimum_required_size()
@@ -870,7 +946,10 @@ local function ensure_terminal_size_ok()
     state.size_warning_active = true
     return false
 end
+
+-- 放置地雷（首次点击后调用，确保第一次点击不是雷）
 local function place_mines(exclude_r, exclude_c)
+    -- 收集所有可放置位置（排除首次点击的格子）
     local candidates = {}
     for r = 1, state.rows do
         for c = 1, state.cols do
@@ -880,16 +959,19 @@ local function place_mines(exclude_r, exclude_c)
         end
     end
 
+    -- 随机打乱
     for i = #candidates, 2, -1 do
         local j = random(i) + 1
         candidates[i], candidates[j] = candidates[j], candidates[i]
     end
 
+    -- 放置地雷
     for i = 1, state.mines do
         local pick = candidates[i]
         state.mine_map[pick.r][pick.c] = true
     end
 
+    -- 计算相邻地雷数
     state.adj = new_num_matrix(state.rows, state.cols, 0)
     for r = 1, state.rows do
         for c = 1, state.cols do
@@ -913,6 +995,7 @@ local function place_mines(exclude_r, exclude_c)
     state.first_move = false
 end
 
+-- 检查所有非雷格子是否都已翻开
 local function all_non_mines_revealed()
     local need = state.rows * state.cols - state.mines
     local opened = 0
@@ -926,6 +1009,7 @@ local function all_non_mines_revealed()
     return opened == need
 end
 
+-- 检查所有地雷是否都被正确标记
 local function all_mines_flagged()
     if count_flags() ~= state.mines then
         return false
@@ -940,6 +1024,7 @@ local function all_mines_flagged()
     return true
 end
 
+-- 检查是否胜利
 local function check_victory()
     if state.won or state.lost then
         return false
@@ -958,6 +1043,7 @@ local function check_victory()
     return false
 end
 
+-- 洪水填充翻开空白区域
 local function reveal_flood(start_r, start_c)
     local q_r = { start_r }
     local q_c = { start_c }
@@ -992,6 +1078,7 @@ local function reveal_flood(start_r, start_c)
     end
 end
 
+-- 翻开当前格子
 local function open_current_cell()
     local r = state.cursor_r
     local c = state.cursor_c
@@ -1023,6 +1110,7 @@ local function open_current_cell()
     return "changed"
 end
 
+-- 解析数字输入
 local function parse_numbers(input)
     local nums = {}
     for token in string.gmatch(input, "%d+") do
@@ -1031,6 +1119,7 @@ local function parse_numbers(input)
     return nums
 end
 
+-- 处理配置输入
 local function handle_config_input()
     local nums = parse_numbers(state.input_buffer)
     if #nums == 1 then
@@ -1061,6 +1150,7 @@ local function handle_config_input()
     return false
 end
 
+-- 解析跳转输入
 local function parse_jump_input()
     local nums = parse_numbers(state.input_buffer)
     if #nums ~= 2 then
@@ -1074,12 +1164,14 @@ local function parse_jump_input()
     return r, c
 end
 
+-- 进入输入模式
 local function start_input_mode(mode)
     state.input_mode = mode
     state.input_buffer = ""
     state.dirty = true
 end
 
+-- 处理输入模式下的按键
 local function handle_input_mode_key(key)
     if key == "esc" or key == "q" then
         state.input_mode = nil
@@ -1135,6 +1227,7 @@ local function handle_input_mode_key(key)
     return "none"
 end
 
+-- 处理确认模式下的按键
 local function handle_confirm_key(key)
     if key == "y" or key == "enter" then
         if state.confirm_mode == "restart" then
@@ -1158,6 +1251,7 @@ local function handle_confirm_key(key)
     return "none"
 end
 
+-- 防抖处理
 local function should_debounce(key)
     if not (key == "up" or key == "down" or key == "left" or key == "right") then
         return false
@@ -1169,6 +1263,8 @@ local function should_debounce(key)
     state.last_key_frame = state.frame
     return false
 end
+
+-- 主输入处理函数
 local function handle_input(key)
     if key == nil or key == "" then
         return "none"
@@ -1177,14 +1273,17 @@ local function handle_input(key)
         return "none"
     end
 
+    -- 输入模式
     if state.input_mode ~= nil then
         return handle_input_mode_key(key)
     end
 
+    -- 确认模式
     if state.confirm_mode ~= nil then
         return handle_confirm_key(key)
     end
 
+    -- 胜利/失败状态
     if state.won or state.lost then
         if key == "r" then
             if state.difficulty >= 1 and state.difficulty <= 3 then
@@ -1200,6 +1299,7 @@ local function handle_input(key)
         return "none"
     end
 
+    -- 功能键
     if key == "r" then
         state.confirm_mode = "restart"
         state.dirty = true
@@ -1223,6 +1323,7 @@ local function handle_input(key)
         return "changed"
     end
 
+    -- 光标移动
     if key == "up" then
         state.cursor_r = clamp(state.cursor_r - 1, 1, state.rows)
         state.dirty = true
@@ -1247,14 +1348,17 @@ local function handle_input(key)
     local r = state.cursor_r
     local c = state.cursor_c
 
+    -- 空格翻开
     if key == "space" then
         return open_current_cell()
     end
 
+    -- 未翻开的格子才能标记
     if state.revealed[r][c] then
         return "none"
     end
 
+    -- 旗子标记
     if key == "z" then
         if state.marks[r][c] == 1 then
             state.marks[r][c] = 0
@@ -1267,6 +1371,7 @@ local function handle_input(key)
         return "changed"
     end
 
+    -- 问号标记
     if key == "x" then
         if state.marks[r][c] == 2 then
             state.marks[r][c] = 0
@@ -1282,6 +1387,7 @@ local function handle_input(key)
     return "none"
 end
 
+-- 自动保存
 local function auto_save_if_needed()
     if state.won or state.lost then
         return
@@ -1293,6 +1399,7 @@ local function auto_save_if_needed()
     end
 end
 
+-- 刷新脏标记
 local function refresh_dirty_flags()
     local elapsed = elapsed_seconds()
     if elapsed ~= state.last_elapsed_sec then
@@ -1307,6 +1414,7 @@ local function refresh_dirty_flags()
     end
 end
 
+-- 主游戏循环
 local function game_loop()
     while true do
         local key = normalize_key(get_key(false))
@@ -1337,5 +1445,6 @@ local function game_loop()
     end
 end
 
+-- 启动游戏
 init_game()
 game_loop()

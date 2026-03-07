@@ -1,26 +1,39 @@
+-- 石头剪刀布游戏元数据
 GAME_META = {
     name = "Rock Paper Scissors",
     description = "Challenge the computer in classic rock-paper-scissors rounds."
 }
 
+-- 帧率控制
 local FRAME_MS = 16
 
+-- 选项定义
 local CHOICES = {
-    [1] = { symbol = "Y", key = "game.rock_paper_scissors.choice.scissors", fallback = "Scissors" },
-    [2] = { symbol = "O", key = "game.rock_paper_scissors.choice.rock", fallback = "Rock" },
-    [3] = { symbol = "U", key = "game.rock_paper_scissors.choice.paper", fallback = "Paper" }
+    [1] = { symbol = "Y", key = "game.rock_paper_scissors.choice.scissors", fallback = "Scissors" }, -- 剪刀
+    [2] = { symbol = "O", key = "game.rock_paper_scissors.choice.rock", fallback = "Rock" },        -- 石头
+    [3] = { symbol = "U", key = "game.rock_paper_scissors.choice.paper", fallback = "Paper" }       -- 布
 }
 
+-- 游戏状态表
 local state = {
-    player_pick = nil,
-    ai_pick = nil,
-    current_streak = 0,
-    best_streak = 0,
-    message = "",
+    -- 当前回合
+    player_pick = nil,      -- 玩家选择（1-3）
+    ai_pick = nil,          -- AI选择（1-3）
+
+    -- 连胜记录
+    current_streak = 0,     -- 当前连胜数
+    best_streak = 0,        -- 历史最佳连胜
+
+    -- 消息显示
+    message = "",           -- 提示消息
     message_color = "dark_gray",
+
+    -- 渲染相关
     dirty = true,
     last_term_w = 0,
     last_term_h = 0,
+
+    -- 尺寸警告
     size_warning_active = false,
     last_warn_term_w = 0,
     last_warn_term_h = 0,
@@ -28,6 +41,7 @@ local state = {
     last_warn_min_h = 0
 }
 
+-- 翻译函数（安全调用）
 local function tr(key)
     if type(translate) ~= "function" then
         return key
@@ -45,6 +59,7 @@ local function tr(key)
     return value
 end
 
+-- 获取文本显示宽度
 local function key_width(text)
     if type(get_text_width) == "function" then
         local ok, w = pcall(get_text_width, text)
@@ -55,12 +70,14 @@ local function key_width(text)
     return #text
 end
 
+-- 规范化按键
 local function normalize_key(key)
     if key == nil then return "" end
     if type(key) == "string" then return string.lower(key) end
     return tostring(key):lower()
 end
 
+-- 获取终端尺寸
 local function terminal_size()
     local w, h = 120, 40
     if type(get_terminal_size) == "function" then
@@ -72,6 +89,7 @@ local function terminal_size()
     return w, h
 end
 
+-- 按单词换行
 local function wrap_words(text, max_width)
     if max_width <= 1 then
         return { text }
@@ -102,6 +120,7 @@ local function wrap_words(text, max_width)
     return lines
 end
 
+-- 计算最小宽度
 local function min_width_for_lines(text, max_lines, hard_min)
     local full = key_width(text)
     local width = hard_min
@@ -114,12 +133,14 @@ local function min_width_for_lines(text, max_lines, hard_min)
     return full
 end
 
+-- 计算文本居中位置
 local function centered_x(text, area_x, area_w)
     local x = area_x + math.floor((area_w - key_width(text)) / 2)
     if x < area_x then x = area_x end
     return x
 end
 
+-- 保存最佳记录
 local function save_best()
     if type(save_data) == "function" then
         pcall(save_data, "rock_paper_scissors_best", { best_streak = state.best_streak })
@@ -129,6 +150,7 @@ local function save_best()
     end
 end
 
+-- 加载最佳记录
 local function load_best()
     if type(load_data) ~= "function" then
         return
@@ -143,6 +165,7 @@ local function load_best()
     end
 end
 
+-- 获取选项文本（符号+名称）
 local function choice_text(index)
     if index == nil or CHOICES[index] == nil then
         return "-"
@@ -151,10 +174,15 @@ local function choice_text(index)
     return info.symbol .. " " .. tr(info.key)
 end
 
+-- 判定回合结果
+-- 返回值：1=玩家胜，0=平局，-1=AI胜
 local function resolve_round(player_idx, ai_idx)
     if player_idx == ai_idx then
         return 0
     end
+    -- 剪刀(1)胜布(3)
+    -- 石头(2)胜剪刀(1)
+    -- 布(3)胜石头(2)
     if (player_idx == 1 and ai_idx == 3)
         or (player_idx == 2 and ai_idx == 1)
         or (player_idx == 3 and ai_idx == 2) then
@@ -163,7 +191,9 @@ local function resolve_round(player_idx, ai_idx)
     return -1
 end
 
+-- 进行一回合
 local function play_round(player_idx)
+    -- AI随机选择
     local ai_idx = random(3) + 1
     state.player_pick = player_idx
     state.ai_pick = ai_idx
@@ -171,6 +201,7 @@ local function play_round(player_idx)
     local result = resolve_round(player_idx, ai_idx)
     local controls = tr("game.rock_paper_scissors.result_controls")
     if result > 0 then
+        -- 玩家胜
         state.current_streak = state.current_streak + 1
         if state.current_streak > state.best_streak then
             state.best_streak = state.current_streak
@@ -179,10 +210,12 @@ local function play_round(player_idx)
         state.message = tr("game.rock_paper_scissors.win_banner") .. " " .. controls
         state.message_color = "green"
     elseif result < 0 then
+        -- AI胜
         state.current_streak = 0
         state.message = tr("game.rock_paper_scissors.lose_banner") .. " " .. controls
         state.message_color = "red"
     else
+        -- 平局
         state.current_streak = 0
         state.message = tr("game.rock_paper_scissors.draw_banner") .. " " .. controls
         state.message_color = "yellow"
@@ -191,6 +224,7 @@ local function play_round(player_idx)
     state.dirty = true
 end
 
+-- 重置回合（清空选择）
 local function reset_round()
     state.player_pick = nil
     state.ai_pick = nil
@@ -200,6 +234,7 @@ local function reset_round()
     state.dirty = true
 end
 
+-- 计算最小所需终端尺寸
 local function minimum_required_size()
     local top1 = tr("game.rock_paper_scissors.best_streak") .. ": 9999"
     local top2 = tr("game.rock_paper_scissors.current_streak") .. ": 9999"
@@ -207,14 +242,14 @@ local function minimum_required_size()
     local picks = "Y " .. tr("game.rock_paper_scissors.choice.scissors") .. "   |   O " .. tr("game.rock_paper_scissors.choice.rock")
     local msg = tr("game.rock_paper_scissors.win_banner") .. " "
         .. tr("game.rock_paper_scissors.result_controls")
-    local controls = tr(
-        "game.rock_paper_scissors.controls")
+    local controls = tr("game.rock_paper_scissors.controls")
     local controls_w = min_width_for_lines(controls, 3, 24)
     local min_w = math.max(key_width(top1), key_width(top2), key_width(header), key_width(picks), key_width(msg), controls_w) + 2
     local min_h = 10
     return min_w, min_h
 end
 
+-- 绘制终端尺寸警告
 local function draw_terminal_size_warning(term_w, term_h, min_w, min_h)
     local lines = {
         tr("warning.size_title"),
@@ -232,6 +267,7 @@ local function draw_terminal_size_warning(term_w, term_h, min_w, min_h)
     end
 end
 
+-- 确保终端尺寸足够
 local function ensure_terminal_size_ok()
     local term_w, term_h = terminal_size()
     local min_w, min_h = minimum_required_size()
@@ -264,21 +300,27 @@ local function ensure_terminal_size_ok()
     return false
 end
 
+-- 绘制控制说明
 local function draw_controls(y)
-    local controls = tr(
-        "game.rock_paper_scissors.controls")
+    local controls = tr("game.rock_paper_scissors.controls")
     local term_w = terminal_size()
     local lines = wrap_words(controls, math.max(10, term_w - 2))
     if #lines > 3 then
         lines = { lines[1], lines[2], lines[3] }
     end
+
+    -- 清空控制区域
     for i = 1, 3 do
         draw_text(1, y + i - 1, string.rep(" ", term_w), "white", "black")
     end
+
+    -- 垂直居中
     local offset = 0
     if #lines < 3 then
         offset = math.floor((3 - #lines) / 2)
     end
+
+    -- 绘制控制说明
     for i = 1, #lines do
         local line = lines[i]
         local x = math.floor((term_w - key_width(line)) / 2)
@@ -287,6 +329,7 @@ local function draw_controls(y)
     end
 end
 
+-- 主渲染函数
 local function render()
     local term_w, term_h = terminal_size()
     local total_h = 8
@@ -295,41 +338,54 @@ local function render()
 
     clear()
 
+    -- 显示连胜记录
     local top1 = tr("game.rock_paper_scissors.best_streak") .. ": " .. tostring(state.best_streak)
     local top2 = tr("game.rock_paper_scissors.current_streak") .. ": " .. tostring(state.current_streak)
     draw_text(centered_x(top1, 1, term_w), y0, top1, "dark_gray", "black")
     draw_text(centered_x(top2, 1, term_w), y0 + 1, top2, "light_cyan", "black")
 
+    -- 显示提示消息
     if state.message ~= "" then
         draw_text(centered_x(state.message, 1, term_w), y0 + 2, state.message, state.message_color, "black")
     end
 
+    -- 显示双方选择
     local header = tr("game.rock_paper_scissors.player") .. "   |   " .. tr("game.rock_paper_scissors.system")
     local line = choice_text(state.player_pick) .. "   |   " .. choice_text(state.ai_pick)
     draw_text(centered_x(header, 1, term_w), y0 + 4, header, "white", "black")
     draw_text(centered_x(line, 1, term_w), y0 + 5, line, "white", "black")
 
+    -- 绘制控制说明
     draw_controls(y0 + 7)
 end
 
+-- 主输入处理函数
 local function handle_input(key)
     if key == nil or key == "" then
         return "none"
     end
+
+    -- 退出
     if key == "q" or key == "esc" then
         return "exit"
     end
+
+    -- 重置
     if key == "r" then
         reset_round()
         return "changed"
     end
+
+    -- 选择 1-3
     if key == "1" or key == "2" or key == "3" then
         play_round(tonumber(key))
         return "changed"
     end
+
     return "none"
 end
 
+-- 游戏初始化
 local function init_game()
     local w, h = terminal_size()
     state.last_term_w = w
@@ -341,6 +397,7 @@ local function init_game()
     end
 end
 
+-- 同步终端尺寸变化
 local function sync_terminal_resize()
     local w, h = terminal_size()
     if w ~= state.last_term_w or h ~= state.last_term_h then
@@ -350,15 +407,18 @@ local function sync_terminal_resize()
     end
 end
 
+-- 主游戏循环
 local function game_loop()
     while true do
         local key = normalize_key(get_key(false))
+
         if ensure_terminal_size_ok() then
             local action = handle_input(key)
             if action == "exit" then
                 save_best()
                 return
             end
+
             sync_terminal_resize()
             if state.dirty then
                 render()
@@ -370,9 +430,11 @@ local function game_loop()
                 return
             end
         end
+
         sleep(FRAME_MS)
     end
 end
 
+-- 启动游戏
 init_game()
 game_loop()

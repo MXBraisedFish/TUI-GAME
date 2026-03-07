@@ -23,9 +23,9 @@ local SPINNER = { "|", "/", "-", "\\" } -- 旋转动画
 -- 游戏状态表
 local state = {
     -- 资金相关
-    funds = STARTING_FUNDS,          -- 当前资金
-    initial_funds = STARTING_FU - NDS, -- 初始资金（用于计算净收益）
-    best_net = 0,                    -- 历史最佳净收益
+    funds = STARTING_FUNDS,            -- 当前资金
+    initial_funds = STARTING_FUNDS, -- 初始资金（用于计算净收益）
+    best_net = 0,                      -- 历史最佳净收益
 
     -- 牌局状态
     dealer_cards = {},               -- 庄家手牌
@@ -1028,17 +1028,20 @@ local function dealer_phase_and_settle()
     if state.split_mode then
         lines[#lines + 1] = {
             text = tr("game.blackjack.msg_left_points") ..
-            ": " .. hand_value_text(state.hands[1].cards) .. "  " .. state.hands[1].result_text,
+                ": " .. hand_value_text(state.hands[1].cards) .. "  " .. state.hands[1].result_text,
             color = state.hands[1].result_color
         }
         lines[#lines + 1] = {
             text = tr("game.blackjack.msg_right_points") ..
-            ": " .. hand_value_text(state.hands[2].cards) .. "  " .. state.hands[2].result_text,
+                ": " .. hand_value_text(state.hands[2].cards) .. "  " .. state.hands[2].result_text,
             color = state.hands[2].result_color
         }
     else
-        lines[#lines + 1] = { text = tr("game.blackjack.msg_player_points") ..
-        ": " .. hand_value_text(state.hands[1].cards), color = "white" }
+        lines[#lines + 1] = {
+            text = tr("game.blackjack.msg_player_points") ..
+            ": " .. hand_value_text(state.hands[1].cards),
+            color = "white"
+        }
         lines[#lines + 1] = { text = state.hands[1].result_text, color = state.hands[1].result_color }
     end
     set_center_lines(lines)

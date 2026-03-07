@@ -5,70 +5,70 @@ GAME_META = {
 }
 
 -- 游戏常量定义
-local DEFAULT_SIZE = 5           -- 默认棋盘大小 5x5
-local MIN_SIZE = 2               -- 最小棋盘大小
-local MAX_SIZE = 10              -- 最大棋盘大小
+local DEFAULT_SIZE = 5 -- 默认棋盘大小 5x5
+local MIN_SIZE = 2     -- 最小棋盘大小
+local MAX_SIZE = 10    -- 最大棋盘大小
 
-local FPS = 60                   -- 目标帧率
-local FRAME_MS = 16              -- 每帧毫秒数
+local FPS = 60         -- 目标帧率
+local FRAME_MS = 16    -- 每帧毫秒数
 
 -- 界面尺寸常量
-local CELL_W = 4                 -- 单元格宽度
-local CELL_H = 3                 -- 单元格高度
-local CELL_STEP_X = 5            -- 水平步进（包含间距）
-local CELL_STEP_Y = 2            -- 垂直步进（包含间距）
-local LABEL_W = 3                -- 行列标签宽度
+local CELL_W = 4      -- 单元格宽度
+local CELL_H = 3      -- 单元格高度
+local CELL_STEP_X = 5 -- 水平步进（包含间距）
+local CELL_STEP_Y = 2 -- 垂直步进（包含间距）
+local LABEL_W = 3     -- 行列标签宽度
 
 -- 游戏状态表
 local state = {
     -- 棋盘状态
-    size = DEFAULT_SIZE,          -- 当前棋盘大小
-    board = {},                   -- 二维布尔数组，true=亮，false=灭
-    cursor_r = 1,                 -- 光标行位置
-    cursor_c = 1,                 -- 光标列位置
-    steps = 0,                    -- 已走步数
+    size = DEFAULT_SIZE, -- 当前棋盘大小
+    board = {},          -- 二维布尔数组，true=亮，false=灭
+    cursor_r = 1,        -- 光标行位置
+    cursor_c = 1,        -- 光标列位置
+    steps = 0,           -- 已走步数
 
     -- 帧相关
-    frame = 0,                    -- 当前帧计数
-    start_frame = 0,              -- 游戏开始帧
-    end_frame = nil,              -- 游戏结束帧
-    won = false,                  -- 是否胜利
-    confirm_mode = nil,           -- 确认模式：nil/restart/exit
-    input_mode = nil,             -- 输入模式：nil/size/jump
-    input_buffer = "",            -- 输入缓冲区
+    frame = 0,          -- 当前帧计数
+    start_frame = 0,    -- 游戏开始帧
+    end_frame = nil,    -- 游戏结束帧
+    won = false,        -- 是否胜利
+    confirm_mode = nil, -- 确认模式：nil/restart/exit
+    input_mode = nil,   -- 输入模式：nil/size/jump
+    input_buffer = "",  -- 输入缓冲区
 
     -- 提示信息
-    toast_text = nil,             -- 提示文本
-    toast_until = 0,              -- 提示显示截止帧
+    toast_text = nil, -- 提示文本
+    toast_until = 0,  -- 提示显示截止帧
 
     -- 自动保存
-    last_auto_save_sec = 0,       -- 上次自动保存秒数
+    last_auto_save_sec = 0, -- 上次自动保存秒数
 
     -- 渲染相关
-    dirty = true,                 -- 是否需要重新渲染
-    last_elapsed_sec = -1,        -- 上次记录的已过秒数
-    last_toast_visible = false,   -- 上次提示是否可见
+    dirty = true,               -- 是否需要重新渲染
+    last_elapsed_sec = -1,      -- 上次记录的已过秒数
+    last_toast_visible = false, -- 上次提示是否可见
 
     -- 输入防抖
-    last_key = "",                -- 上次按键
-    last_key_frame = -100,        -- 上次按键帧号
+    last_key = "",         -- 上次按键
+    last_key_frame = -100, -- 上次按键帧号
 
     -- 启动模式
-    launch_mode = "new",          -- 启动模式：new/continue
-    last_area = nil,              -- 上次渲染区域
+    launch_mode = "new", -- 启动模式：new/continue
+    last_area = nil,     -- 上次渲染区域
 
     -- 最佳记录
-    best = nil,                   -- 最佳记录 {max_size, min_steps, min_time_sec}
-    best_committed = false,       -- 是否已提交最佳记录
+    best = nil,             -- 最佳记录 {max_size, min_steps, min_time_sec}
+    best_committed = false, -- 是否已提交最佳记录
 
     -- 终端尺寸
-    last_term_w = 0,              -- 上次终端宽度
-    last_term_h = 0,              -- 上次终端高度
-    size_warning_active = false,  -- 是否显示尺寸警告
-    last_warn_term_w = 0,         -- 上次警告时的宽度
-    last_warn_term_h = 0,         -- 上次警告时的高度
-    last_warn_min_w = 0,          -- 上次警告时的最小要求宽度
-    last_warn_min_h = 0           -- 上次警告时的最小要求高度
+    last_term_w = 0,             -- 上次终端宽度
+    last_term_h = 0,             -- 上次终端高度
+    size_warning_active = false, -- 是否显示尺寸警告
+    last_warn_term_w = 0,        -- 上次警告时的宽度
+    last_warn_term_h = 0,        -- 上次警告时的高度
+    last_warn_min_w = 0,         -- 上次警告时的最小要求宽度
+    last_warn_min_h = 0          -- 上次警告时的最小要求高度
 }
 
 -- 翻译函数（安全调用）
@@ -232,11 +232,11 @@ end
 
 -- 切换十字形（上下左右中）
 local function toggle_cross_on(board, size, r, c)
-    toggle_cell(board, size, r, c)       -- 中心
-    toggle_cell(board, size, r - 1, c)   -- 上
-    toggle_cell(board, size, r + 1, c)   -- 下
-    toggle_cell(board, size, r, c - 1)   -- 左
-    toggle_cell(board, size, r, c + 1)   -- 右
+    toggle_cell(board, size, r, c)     -- 中心
+    toggle_cell(board, size, r - 1, c) -- 上
+    toggle_cell(board, size, r + 1, c) -- 下
+    toggle_cell(board, size, r, c - 1) -- 左
+    toggle_cell(board, size, r, c + 1) -- 右
 end
 
 -- 随机生成棋盘（确保不是全亮）
@@ -389,7 +389,7 @@ local function restore_snapshot(snapshot)
             return false
         end
         for c = 1, size do
-            board[r][c] = not not snapshot.board[r][c]  -- 确保是布尔值
+            board[r][c] = not not snapshot.board[r][c] -- 确保是布尔值
         end
     end
 
@@ -510,7 +510,7 @@ local function board_geometry()
         + key_width(tr("game.lights_out.steps") .. " 9999")
     local win_line_w = key_width(
         tr("game.lights_out.win_banner")
-            .. tr("game.lights_out.win_controls")
+        .. tr("game.lights_out.win_controls")
     )
     local content_w = math.max(LABEL_W + grid_w, status_w, win_line_w)
     local content_h = 1 + grid_h
@@ -548,7 +548,7 @@ end
 
 -- 绘制单个灯泡
 local function draw_lamp(x, y, lit, selected)
-    local lamp_color = lit and "rgb(255,255,0)" or "rgb(210,210,210)"  -- 亮黄色，灭灰色
+    local lamp_color = lit and "rgb(255,255,0)" or "rgb(210,210,210)" -- 亮黄色，灭灰色
 
     if selected then
         -- 选中状态：带绿色边框
@@ -579,7 +579,7 @@ local function draw_board(x, y, frame_w, frame_h)
     if pad_x < 0 then pad_x = 0 end
     local grid_block_x = inner_x + pad_x
     local grid_x = grid_block_x + LABEL_W
-    
+
     -- 绘制列号
     for c = 1, state.size do
         local cx = grid_x + (c - 1) * CELL_STEP_X + 1
@@ -693,7 +693,7 @@ local function draw_controls(x, y, frame_h)
     if #lines < 3 then
         offset = math.floor((3 - #lines) / 2)
     end
-    
+
     -- 绘制控制说明
     for i = 1, #lines do
         local line = lines[i]
