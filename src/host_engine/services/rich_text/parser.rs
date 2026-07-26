@@ -147,6 +147,7 @@ fn resolve_parameter(name: &str, params: Option<&RichTextParams>) -> Option<Stri
     match ns {
       "value" => resolve_value(key, params),
       "key" => resolve_key(key, params),
+      "key_default" => resolve_default_key(key, params),
       _ => None,
     }
   } else {
@@ -160,7 +161,20 @@ fn resolve_value(key: &str, params: Option<&RichTextParams>) -> Option<String> {
 
 fn resolve_key(action: &str, params: Option<&RichTextParams>) -> Option<String> {
   let patterns = params?.key_actions.get(action)?;
-  Some(format_key_display(patterns))
+  Some(format_key_parameter(patterns))
+}
+
+fn resolve_default_key(action: &str, params: Option<&RichTextParams>) -> Option<String> {
+  let patterns = params?.key_default_actions.get(action)?;
+  Some(format_key_parameter(patterns))
+}
+
+fn format_key_parameter(patterns: &[Vec<String>]) -> String {
+  if patterns.is_empty() {
+    "[]".to_string()
+  } else {
+    format_key_display(patterns)
+  }
 }
 
 fn read_tag<I>(chars: &mut std::iter::Peekable<I>) -> TagReadResult
@@ -277,6 +291,7 @@ mod tests {
   ) -> RichTextParams {
     RichTextParams {
       values,
+      key_default_actions: key_actions.clone(),
       key_actions,
     }
   }
@@ -288,6 +303,23 @@ mod tests {
     let params = RichTextParams::from_key_actions(&ka);
     let rt = parse("f%{key:jump}", Some(&params));
     assert_eq!(rt.segments[0].text, "[Shift]");
+  }
+
+  #[test]
+  fn key_and_key_default_use_separate_maps() {
+    let user = HashMap::from([("jump".to_string(), vec![vec!["j".to_string()]])]);
+    let defaults = HashMap::from([("jump".to_string(), vec![vec!["space".to_string()]])]);
+    let params = RichTextParams::from_key_action_maps(&user, &defaults);
+    let rt = parse("f%{key:jump}/{key_default:jump}", Some(&params));
+    assert_eq!(rt.segments[0].text, "[J]/[Space]");
+  }
+
+  #[test]
+  fn empty_key_parameter_is_visible() {
+    let keys = HashMap::from([("optional".to_string(), Vec::new())]);
+    let params = RichTextParams::from_key_actions(&keys);
+    let rt = parse("f%{key:optional}/{key_default:optional}", Some(&params));
+    assert_eq!(rt.segments[0].text, "[]/[]");
   }
 
   #[test]

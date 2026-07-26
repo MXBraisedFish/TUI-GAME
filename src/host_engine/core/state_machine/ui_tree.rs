@@ -18,6 +18,9 @@ pub enum UiNodeKind {
   Root,
   Home,
   Settings,
+  KeyBindings,
+  GlobalKeyBindings,
+  GameKeyBindings,
   DisplaySettings,
   ToolbarCustom,
   ScreensaverList,
@@ -69,6 +72,30 @@ impl UiNodeState {
   pub fn settings() -> Self {
     Self {
       kind: UiNodeKind::Settings,
+      logic: UiNodeLogicState,
+      render: UiNodeRenderState,
+    }
+  }
+
+  pub fn key_bindings() -> Self {
+    Self {
+      kind: UiNodeKind::KeyBindings,
+      logic: UiNodeLogicState,
+      render: UiNodeRenderState,
+    }
+  }
+
+  pub fn global_key_bindings() -> Self {
+    Self {
+      kind: UiNodeKind::GlobalKeyBindings,
+      logic: UiNodeLogicState,
+      render: UiNodeRenderState,
+    }
+  }
+
+  pub fn game_key_bindings() -> Self {
+    Self {
+      kind: UiNodeKind::GameKeyBindings,
       logic: UiNodeLogicState,
       render: UiNodeRenderState,
     }

@@ -1,7 +1,7 @@
 {
   "host_key.screenshot": "Toggle Screenshot Mode",
   "host_key.recording": "Start/Stop Recording",
-  "host_key.recording.pause": "Pause Recording",
+  "host_key.recording.pause": "Pause/Resume Recording",
   "host_key.screensaver": "Toggle Screensaver",
   "host_key.force_stop": "Force Quit",
   "host_key.top_toolbar": "Cycle Toolbar Information",

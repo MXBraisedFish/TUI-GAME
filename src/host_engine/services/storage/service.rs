@@ -105,6 +105,10 @@ impl StorageService {
     self.path(layout::PROFILE_DISPLAY_SETTINGS_FILE)
   }
 
+  pub fn profile_key_bindings_path(&self) -> PathBuf {
+    self.path(layout::PROFILE_KEY_BINDINGS_FILE)
+  }
+
   pub fn language_assets_root_path(&self) -> PathBuf {
     self.path(layout::ASSETS_LANGUAGE_DIR)
   }

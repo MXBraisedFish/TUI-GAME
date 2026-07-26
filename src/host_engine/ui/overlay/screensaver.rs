@@ -22,7 +22,8 @@ impl ScreensaverOverlayUi {
 
   pub fn start(&mut self, entry: &PackageListEntry) {
     self.name = entry.screensaver_name.clone();
-    self.params = RichTextParams::from_key_actions(&entry.key_actions);
+    self.params =
+      RichTextParams::from_key_action_maps(&entry.key_actions, &entry.key_default_actions);
   }
 
   pub fn render(

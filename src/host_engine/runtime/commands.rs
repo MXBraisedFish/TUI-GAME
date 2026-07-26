@@ -74,6 +74,7 @@ pub(super) fn apply_settings_command(
     SettingsUiCommand::OpenLanguageSelect => {
       world.state.enter_ui_node(UiNodeState::language_select())
     }
+    SettingsUiCommand::OpenKeyBindings => world.state.enter_ui_node(UiNodeState::key_bindings()),
     SettingsUiCommand::OpenMods => world.state.enter_ui_node(UiNodeState::mods()),
     SettingsUiCommand::OpenStorageManagement => {
       world.state.enter_ui_node(UiNodeState::storage_management())
@@ -97,6 +98,122 @@ pub(super) fn apply_settings_command(
     SettingsUiCommand::OpenScreenshotRecording => world
       .state
       .enter_ui_node(UiNodeState::screenshot_recording()),
+  }
+}
+
+pub(super) fn apply_key_bindings_command(
+  command: KeyBindingsCommand,
+  settings_ui: &mut SettingsUi,
+  services: &mut EngineServices,
+  world: &mut RuntimeWorld,
+) {
+  match command {
+    KeyBindingsCommand::Back => {
+      world.state.pop_ui_node();
+      let ui = settings_ui.key_bindings_mut();
+      clear_exiting_pool(ui.objects_mut(), services);
+      *ui = KeyBindingsUi::init(
+        &services.hit_area,
+        &services.text_input,
+        &services.scroll_box,
+      );
+    }
+    KeyBindingsCommand::OpenGlobal => {
+      let profile = synchronize_key_bindings_profile(services);
+      let entries = host_key_action_entries_from_profile(services, &profile);
+      settings_ui
+        .key_bindings_mut()
+        .global_mut()
+        .load(entries, profile);
+      world
+        .state
+        .enter_ui_node(UiNodeState::global_key_bindings());
+    }
+    KeyBindingsCommand::OpenGame => {
+      let profile = synchronize_key_bindings_profile(services);
+      let games = services.package.games();
+      settings_ui
+        .key_bindings_mut()
+        .game_mut()
+        .load(games, profile);
+      world.state.enter_ui_node(UiNodeState::game_key_bindings());
+    }
+  }
+}
+
+pub(super) fn apply_global_key_bindings_command(
+  command: GlobalKeyBindingsCommand,
+  _settings_ui: &mut SettingsUi,
+  services: &mut EngineServices,
+  world: &mut RuntimeWorld,
+) {
+  match command {
+    GlobalKeyBindingsCommand::Back(profile) => {
+      if services
+        .storage
+        .write_key_bindings_profile(&profile, &mut services.log)
+        .is_ok()
+      {
+        load_host_key_action_map(services);
+        world.state.pop_ui_node();
+      }
+    }
+    GlobalKeyBindingsCommand::Conflict(mut request) => {
+      request.text = services
+        .i18n
+        .get_runtime_text("key_bindings_global", "key_bindings_global.conflict");
+      services.popup.show(request);
+    }
+    GlobalKeyBindingsCommand::CaptureStarted => {
+      let _ = services.input.enable_raw_key_capture();
+      let _ = services.input.take_raw_key_events();
+    }
+  }
+}
+
+pub(super) fn apply_game_key_bindings_command(
+  command: GameKeyBindingsCommand,
+  settings_ui: &mut SettingsUi,
+  services: &mut EngineServices,
+  world: &mut RuntimeWorld,
+) {
+  match command {
+    GameKeyBindingsCommand::Back(profile) => {
+      if services
+        .storage
+        .write_key_bindings_profile(&profile, &mut services.log)
+        .is_ok()
+      {
+        services
+          .package
+          .set_user_game_key_actions(profile.user.games.clone());
+        world.state.pop_ui_node();
+      }
+    }
+    GameKeyBindingsCommand::Conflict(mut request) => {
+      request.text = services
+        .i18n
+        .get_runtime_text("key_bindings_game", "key_bindings_game.conflict");
+      services.popup.show(request);
+    }
+    GameKeyBindingsCommand::FocusSearch => {
+      let ui = settings_ui.key_bindings_mut().game_mut();
+      let id = ui.search_input();
+      let _ = services.text_input.focus(ui.objects_mut(), id);
+    }
+    GameKeyBindingsCommand::BlurSearch => {
+      let ui = settings_ui.key_bindings_mut().game_mut();
+      let _ = services.text_input.blur(ui.objects_mut());
+    }
+    GameKeyBindingsCommand::CaptureStarted => {
+      let _ = services.input.enable_raw_key_capture();
+      let _ = services.input.take_raw_key_events();
+    }
+    GameKeyBindingsCommand::Scroll(dy) => settings_ui.key_bindings_mut().game_mut().scroll_active(
+      &services.scroll_box,
+      &services.layout,
+      dy,
+    ),
   }
 }
 
@@ -242,12 +359,39 @@ pub(super) fn apply_screenshot_list_command(
       };
       services.screenshot.report_operation(Some(copied), None);
     }
-    ScreenshotListCommand::SaveScreenshot { frame, rect, copy } => {
+    ScreenshotListCommand::SaveScreenshot {
+      source_path,
+      frame,
+      rect,
+      copy,
+    } => {
       let copied = copy.then(|| super::copy_screenshot_text(services, &frame, rect));
       let task_id = super::submit_screenshot_png(services, frame, rect);
+      services
+        .screenshot
+        .register_source_export(task_id, source_path);
       services.screenshot.report_operation(copied, Some(task_id));
     }
     ScreenshotListCommand::ExportRecording { .. } => {}
+    ScreenshotListCommand::RequestDelete { path } => {
+      if services.screenshot.is_source_exporting(&path) {
+        show_delete_blocked_popup(services, "screenshot_list", "screenshot_list.popup.no_del");
+      } else {
+        ui.begin_delete(path);
+      }
+    }
+    ScreenshotListCommand::ConfirmDelete { path } => {
+      if services.screenshot.is_source_exporting(&path) {
+        ui.cancel_delete();
+        show_delete_blocked_popup(services, "screenshot_list", "screenshot_list.popup.no_del");
+      } else if let Err(error) = ui.finish_delete(&path) {
+        ui.cancel_delete();
+        services.log.error(
+          LogSource::Storage,
+          format!("failed to delete screenshot {}: {error}", path.display()),
+        );
+      }
+    }
   }
 }
 
@@ -315,8 +459,49 @@ pub(super) fn apply_recording_list_command(
         );
       }
     }
+    RecordingListCommand::RequestDelete { path } => {
+      if services.video.is_source_exporting(&path) {
+        show_delete_blocked_popup(
+          services,
+          "recording_list",
+          "recording_list_list.popup.no_del",
+        );
+      } else {
+        ui.begin_delete(path);
+      }
+    }
+    RecordingListCommand::ConfirmDelete { path } => {
+      if services.video.is_source_exporting(&path) {
+        ui.cancel_delete();
+        show_delete_blocked_popup(
+          services,
+          "recording_list",
+          "recording_list_list.popup.no_del",
+        );
+      } else if let Err(error) = ui.finish_delete(&path) {
+        ui.cancel_delete();
+        services.log.error(
+          LogSource::Storage,
+          format!("failed to delete recording {}: {error}", path.display()),
+        );
+      }
+    }
     RecordingListCommand::CopyScreenshot { .. } | RecordingListCommand::SaveScreenshot { .. } => {}
   }
+}
+
+fn show_delete_blocked_popup(services: &mut EngineServices, namespace: &str, key: &str) {
+  services.popup.show(PopupRequest {
+    text: services.i18n.get_runtime_text(namespace, key),
+    color: TextColor::Rgb {
+      r: 255,
+      g: 76,
+      b: 76,
+    },
+    duration: Duration::from_secs(2),
+    dismiss_on: Vec::new(),
+    replaceable: true,
+  });
 }
 
 pub(super) fn apply_recording_settings_command(

@@ -25,6 +25,13 @@ pub(super) fn current_objects_mut<'a>(
   match world.state.current_ui_kind() {
     Some(UiNodeKind::Home) => Some(home_ui.objects_mut()),
     Some(UiNodeKind::Settings) => Some(settings_ui.objects_mut()),
+    Some(UiNodeKind::KeyBindings) => Some(settings_ui.key_bindings_mut().objects_mut()),
+    Some(UiNodeKind::GlobalKeyBindings) => {
+      Some(settings_ui.key_bindings_mut().global_mut().objects_mut())
+    }
+    Some(UiNodeKind::GameKeyBindings) => {
+      Some(settings_ui.key_bindings_mut().game_mut().objects_mut())
+    }
     Some(UiNodeKind::DisplaySettings) => Some(display_settings_ui.objects_mut()),
     Some(UiNodeKind::ToolbarCustom) => Some(display_settings_ui.custom_mut().objects_mut()),
     Some(UiNodeKind::ScreensaverList) => Some(screensaver_list_ui.objects_mut()),
@@ -112,6 +119,18 @@ pub(super) fn deactivate_hidden_pools(
   };
   deactivate(UiNodeKind::Home, home_ui.objects_mut());
   deactivate(UiNodeKind::Settings, settings_ui.objects_mut());
+  deactivate(
+    UiNodeKind::KeyBindings,
+    settings_ui.key_bindings_mut().objects_mut(),
+  );
+  deactivate(
+    UiNodeKind::GlobalKeyBindings,
+    settings_ui.key_bindings_mut().global_mut().objects_mut(),
+  );
+  deactivate(
+    UiNodeKind::GameKeyBindings,
+    settings_ui.key_bindings_mut().game_mut().objects_mut(),
+  );
   deactivate(
     UiNodeKind::DisplaySettings,
     display_settings_ui.objects_mut(),
@@ -627,6 +646,13 @@ pub(super) fn route_update(
     Some(UiNodeKind::Settings) => {
       let _ = settings_ui.update(world.clock.delta_time());
     }
+    Some(UiNodeKind::KeyBindings) => {
+      settings_ui
+        .key_bindings_mut()
+        .update(world.clock.delta_time());
+    }
+    Some(UiNodeKind::GlobalKeyBindings) => {}
+    Some(UiNodeKind::GameKeyBindings) => {}
     Some(UiNodeKind::DisplaySettings) => {
       let _ = display_settings_ui.update(world.clock.delta_time());
     }
@@ -1122,6 +1148,29 @@ fn route_input_event(
     Some(UiNodeKind::Settings) => {
       if let Some(command) = settings_ui.handle_event(event) {
         apply_settings_command(command, settings_ui, security_uis, services, world);
+      }
+    }
+    Some(UiNodeKind::KeyBindings) => {
+      if let Some(command) = settings_ui.key_bindings_mut().handle_event(event) {
+        apply_key_bindings_command(command, settings_ui, services, world);
+      }
+    }
+    Some(UiNodeKind::GlobalKeyBindings) => {
+      if let Some(command) = settings_ui
+        .key_bindings_mut()
+        .global_mut()
+        .handle_event(event)
+      {
+        apply_global_key_bindings_command(command, settings_ui, services, world);
+      }
+    }
+    Some(UiNodeKind::GameKeyBindings) => {
+      if let Some(command) = settings_ui
+        .key_bindings_mut()
+        .game_mut()
+        .handle_event(event)
+      {
+        apply_game_key_bindings_command(command, settings_ui, services, world);
       }
     }
     Some(UiNodeKind::DisplaySettings) => {

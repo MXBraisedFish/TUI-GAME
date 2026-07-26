@@ -44,6 +44,8 @@ pub const PROFILE_RECORDING_FILE: &str = "data/profiles/recording_profile.json";
 
 pub const PROFILE_DISPLAY_SETTINGS_FILE: &str = "data/profiles/display_settings.json";
 
+pub const PROFILE_KEY_BINDINGS_FILE: &str = "data/profiles/key_bindings.json";
+
 pub const TUI_LOG_FILE: &str = "data/log/tui_log.txt";
 
 pub const DEFAULT_LANGUAGE_CODE: &str = "en_us";
@@ -85,11 +87,15 @@ pub const DEFAULT_FILES: &[(&str, &str)] = &[
   ),
   (
     PROFILE_RECORDING_FILE,
-    r#"{"popup":"all","auto_recording":"off","auto_split":"minutes10","capture_frame_rate":"fps60","export_frame_rate":"recorded","legacy_frame_rate":30,"quality":"balanced","keyframe_interval_seconds":2,"pixel_scale":"original"}"#,
+    r#"{"popup":"all","auto_recording":"off","auto_split":"minutes10","capture_frame_rate":"fps60","export_frame_rate":"recorded","legacy_frame_rate":30,"quality":"balanced","keyframe_interval_seconds":2,"pixel_scale":"original","gpu_acceleration":"auto"}"#,
   ),
   (
     PROFILE_DISPLAY_SETTINGS_FILE,
     r#"{"logo_mode":"order","logo_sequence_cursor":0,"top_toolbar":true,"top_toolbar_custom_text":"","screensaver_source":"all","screensaver_order":"random","screensaver_sequence_cursor":0,"game_list_source":"all","game_list_warnings":true,"game_list_fps":"fps60"}"#,
+  ),
+  (
+    PROFILE_KEY_BINDINGS_FILE,
+    r#"{"default":{"global":{},"games":{}},"user":{"global":{},"games":{}}}"#,
   ),
   (TUI_LOG_FILE, ""),
   (LANGUAGE_REGISTRY_FILE, "{}"),

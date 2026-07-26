@@ -8,13 +8,23 @@ pub struct RichTextParams {
   pub values: HashMap<String, String>,
 
   pub key_actions: HashMap<String, Vec<Vec<String>>>,
+
+  pub key_default_actions: HashMap<String, Vec<Vec<String>>>,
 }
 
 impl RichTextParams {
   pub fn from_key_actions(key_actions: &HashMap<String, Vec<Vec<String>>>) -> Self {
+    Self::from_key_action_maps(key_actions, key_actions)
+  }
+
+  pub fn from_key_action_maps(
+    key_actions: &HashMap<String, Vec<Vec<String>>>,
+    key_default_actions: &HashMap<String, Vec<Vec<String>>>,
+  ) -> Self {
     Self {
       values: HashMap::new(),
       key_actions: key_actions.clone(),
+      key_default_actions: key_default_actions.clone(),
     }
   }
 
@@ -29,6 +39,7 @@ impl RichTextParams {
     }
     Self {
       values: HashMap::new(),
+      key_default_actions: key_actions.clone(),
       key_actions,
     }
   }

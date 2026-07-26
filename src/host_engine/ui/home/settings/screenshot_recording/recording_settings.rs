@@ -4,15 +4,15 @@ use crate::host_engine::services::{
   ActionMapEntry, AutoRecordingMode, AutoSplitDuration, CanvasService, DrawTextParams,
   HitAreaEvent, HitAreaId, HitAreaOptions, HitAreaService, I18nService, KeyState, LayoutService,
   MouseButton, RecordingExportFrameRate, RecordingExportQuality, RecordingFrameRate,
-  RecordingPixelScale, RecordingPopupMode, RecordingProfile, Rect, RenderService, RichTextParams,
-  RuntimeObjectPool, RuntimeObjectPoolOwner, ScrollBoxService, TextInputService, UiEvent,
-  UiObjectPool, UiObjectPoolOwner,
+  RecordingGpuAcceleration, RecordingPixelScale, RecordingPopupMode, RecordingProfile, Rect,
+  RenderService, RichTextParams, RuntimeObjectPool, RuntimeObjectPoolOwner, ScrollBoxService,
+  TextInputService, UiEvent, UiObjectPool, UiObjectPoolOwner,
 };
 
 use super::fonts_settings::{FontsSettingsCommand, FontsSettingsUi};
 
 const NS: &str = "recording_settings";
-const MENU_LEN: usize = 8;
+const MENU_LEN: usize = 9;
 const LABEL_KEYS: [&str; MENU_LEN] = [
   "recording_settings.fonts",
   "recording_settings.auto_recording",
@@ -22,6 +22,7 @@ const LABEL_KEYS: [&str; MENU_LEN] = [
   "recording_settings.video_resolution",
   "recording_settings.video_fps",
   "recording_settings.video_bitrate",
+  "recording_settings.video_gpu",
 ];
 
 pub struct RecordingSettingsUi {
@@ -135,6 +136,11 @@ impl RecordingSettingsUi {
         "8",
         "Focus export quality",
       ),
+      action(
+        "recording_settings.focus_video_gpu",
+        "9",
+        "Focus GPU acceleration",
+      ),
     ];
     actions.extend(FontsSettingsUi::action_map());
     actions
@@ -194,6 +200,7 @@ impl RecordingSettingsUi {
         "recording_settings.focus_video_resolution" => self.focus(5),
         "recording_settings.focus_video_fps" => self.focus(6),
         "recording_settings.focus_video_bitrate" => self.focus(7),
+        "recording_settings.focus_video_gpu" => self.focus(8),
         _ => None,
       },
       _ => None,
@@ -330,6 +337,7 @@ impl RecordingSettingsUi {
       5 => self.profile.pixel_scale = self.profile.pixel_scale.next(),
       6 => self.profile.export_frame_rate = self.profile.export_frame_rate.next(),
       7 => self.profile.quality = self.profile.quality.next(),
+      8 => self.profile.gpu_acceleration = self.profile.gpu_acceleration.next(),
       _ => return None,
     }
     Some(RecordingSettingsCommand::Changed(self.profile.clone()))
@@ -352,6 +360,7 @@ impl RecordingSettingsUi {
       i18n.get_runtime_text(NS, resolution_key(self.profile.pixel_scale)),
       i18n.get_runtime_text(NS, video_fps_key(self.profile.export_frame_rate)),
       i18n.get_runtime_text(NS, quality_key(self.profile.quality)),
+      i18n.get_runtime_text(NS, gpu_key(self.profile.gpu_acceleration)),
     ];
     let label_width = labels[1..]
       .iter()
@@ -394,6 +403,7 @@ impl RecordingSettingsUi {
       1 => self.profile.auto_recording == AutoRecordingMode::Off,
       2 => self.profile.popup == RecordingPopupMode::Off,
       3 => self.profile.auto_split == AutoSplitDuration::Off,
+      8 => self.profile.gpu_acceleration == RecordingGpuAcceleration::Off,
       _ => false,
     }
   }
@@ -456,7 +466,7 @@ fn recording_fps_key(value: RecordingFrameRate) -> &'static str {
 
 fn video_fps_key(value: RecordingExportFrameRate) -> &'static str {
   match value {
-    RecordingExportFrameRate::Recorded => "recording_settings.video_fps.vidio",
+    RecordingExportFrameRate::Recorded => "recording_settings.video_fps.video",
     RecordingExportFrameRate::Fps30 => "recording_settings.video_fps.30",
     RecordingExportFrameRate::Fps60 => "recording_settings.video_fps.60",
     RecordingExportFrameRate::Fps120 => "recording_settings.video_fps.120",
@@ -476,6 +486,17 @@ fn quality_key(value: RecordingExportQuality) -> &'static str {
     RecordingExportQuality::Compact => "recording_settings.video_bitrate.compact",
     RecordingExportQuality::Balanced => "recording_settings.video_bitrate.balanced",
     RecordingExportQuality::High => "recording_settings.video_bitrate.high",
+  }
+}
+
+fn gpu_key(value: RecordingGpuAcceleration) -> &'static str {
+  match value {
+    RecordingGpuAcceleration::Off => "recording_settings.video_gpu.off",
+    RecordingGpuAcceleration::Auto => "recording_settings.video_gpu_type.auto",
+    RecordingGpuAcceleration::Nvidia => "recording_settings.video_gpu.nvidia",
+    RecordingGpuAcceleration::Amd => "recording_settings.video_gpu.amd",
+    RecordingGpuAcceleration::Intel => "recording_settings.video_gpu.intel",
+    RecordingGpuAcceleration::Apple => "recording_settings.video_gpu.apple",
   }
 }
 

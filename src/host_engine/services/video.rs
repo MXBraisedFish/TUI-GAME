@@ -2,8 +2,9 @@ use std::{
   collections::HashMap,
   fmt, fs,
   fs::File,
-  io::BufWriter,
+  io::{BufWriter, Write},
   path::{Path, PathBuf},
+  process::{Command, Stdio},
 };
 
 use crossbeam_channel::Sender;
@@ -18,8 +19,9 @@ use openh264::{
 };
 
 use crate::host_engine::services::{
-  AsyncRuntime, EngineEvent, EngineTask, RecordingExportQuality, RecordingProfile, ScreenshotRect,
-  StorageService, TaskId, load_recording_playback, screenshot::TerminalFrameRasterizer,
+  AsyncRuntime, EngineEvent, EngineTask, RecordingExportQuality, RecordingGpuAcceleration,
+  RecordingProfile, ScreenshotRect, StorageService, TaskId, load_recording_playback,
+  screenshot::TerminalFrameRasterizer,
 };
 
 #[derive(Clone, Debug)]
@@ -122,6 +124,7 @@ impl std::error::Error for VideoExportError {}
 pub struct VideoService {
   active_exports: HashMap<TaskId, VideoExportStatus>,
   output_paths: HashMap<TaskId, PathBuf>,
+  source_paths: HashMap<TaskId, PathBuf>,
   export_order: Vec<TaskId>,
   pending_submission_feedback: Option<bool>,
   last_failure: Option<(TaskId, VideoExportStatus)>,
@@ -132,6 +135,7 @@ impl VideoService {
     Self {
       active_exports: HashMap::new(),
       output_paths: HashMap::new(),
+      source_paths: HashMap::new(),
       export_order: Vec::new(),
       pending_submission_feedback: None,
       last_failure: None,
@@ -161,7 +165,7 @@ impl VideoService {
         self.output_paths.values(),
       );
       let task_id = async_runtime.submit(EngineTask::Video(VideoExportTask {
-        source_path,
+        source_path: source_path.clone(),
         output_path: output_path.clone(),
         fonts,
         profile,
@@ -170,6 +174,7 @@ impl VideoService {
         .active_exports
         .insert(task_id, VideoExportStatus::Queued);
       self.output_paths.insert(task_id, output_path);
+      self.source_paths.insert(task_id, source_path);
       self.export_order.push(task_id);
       Ok(task_id)
     })();
@@ -193,7 +198,13 @@ impl VideoService {
         completed_frames,
         total_frames,
       } => {
-        let progress = export_progress(*completed_frames, *total_frames);
+        let completed_frames = match self.active_exports.get(task_id) {
+          Some(VideoExportStatus::Encoding(previous)) => {
+            (*completed_frames).max(previous.completed_frames)
+          }
+          _ => *completed_frames,
+        };
+        let progress = export_progress(completed_frames, *total_frames);
         self
           .active_exports
           .insert(*task_id, VideoExportStatus::Encoding(progress));
@@ -206,12 +217,14 @@ impl VideoService {
       VideoAsyncEvent::Saved { task_id, .. } => {
         self.active_exports.remove(task_id);
         self.output_paths.remove(task_id);
+        self.source_paths.remove(task_id);
         self.export_order.retain(|id| id != task_id);
       }
       VideoAsyncEvent::Failed { task_id, error, .. } => {
         self.last_failure = Some((*task_id, VideoExportStatus::Failed(error.clone())));
         self.active_exports.remove(task_id);
         self.output_paths.remove(task_id);
+        self.source_paths.remove(task_id);
         self.export_order.retain(|id| id != task_id);
       }
     }
@@ -241,6 +254,10 @@ impl VideoService {
 
   pub fn active_export_count(&self) -> usize {
     self.active_exports.len()
+  }
+
+  pub fn is_source_exporting(&self, path: &Path) -> bool {
+    self.source_paths.values().any(|source| source == path)
   }
 
   pub fn first_active_progress(&self) -> Option<VideoExportProgress> {
@@ -289,6 +306,21 @@ pub(crate) fn run_video_task(
 }
 
 fn export_recording(
+  task_id: TaskId,
+  task: &VideoExportTask,
+  temporary_path: &Path,
+  event_tx: &Sender<EngineEvent>,
+) -> Result<(), VideoExportError> {
+  if let Some(encoder) = resolve_ffmpeg_encoder(task.profile.gpu_acceleration) {
+    match export_recording_ffmpeg(task_id, task, temporary_path, event_tx, encoder) {
+      Ok(()) => return Ok(()),
+      Err(_) => cleanup_temporary_file(temporary_path),
+    }
+  }
+  export_recording_openh264(task_id, task, temporary_path, event_tx)
+}
+
+fn export_recording_openh264(
   task_id: TaskId,
   task: &VideoExportTask,
   temporary_path: &Path,
@@ -414,6 +446,225 @@ fn export_recording(
     .map_err(|error| VideoExportError::new(VideoExportStage::Mux, error.to_string()))?;
   Ok(())
 }
+
+fn export_recording_ffmpeg(
+  task_id: TaskId,
+  task: &VideoExportTask,
+  temporary_path: &Path,
+  event_tx: &Sender<EngineEvent>,
+  encoder: &'static str,
+) -> Result<(), VideoExportError> {
+  let playback = load_recording_playback(&task.source_path)
+    .ok_or_else(|| VideoExportError::new(VideoExportStage::Parse, "recording JSON is invalid"))?;
+  let metadata = playback.metadata();
+  let frame_rate = task
+    .profile
+    .export_frame_rate
+    .resolve(metadata.frame_rate, task.profile.legacy_frame_rate);
+  let total_frames = sampled_frame_count(metadata.duration_us, frame_rate);
+  let rasterizer = TerminalFrameRasterizer::load(&task.fonts)
+    .map_err(|error| VideoExportError::new(VideoExportStage::Font, error))?;
+  let (width, height) = TerminalFrameRasterizer::dimensions(
+    metadata.max_width,
+    metadata.max_height,
+    task.profile.pixel_scale,
+  );
+  let bitrate = ffmpeg_bitrate(width, height, frame_rate, task.profile.quality);
+  let size = format!("{width}x{height}");
+  let frame_rate_text = frame_rate.to_string();
+  let bitrate_text = bitrate.to_string();
+  let keyframe_interval =
+    (u32::from(frame_rate) * u32::from(task.profile.keyframe_interval_seconds)).to_string();
+
+  let mut command = Command::new("ffmpeg");
+  command.args([
+    "-hide_banner",
+    "-loglevel",
+    "error",
+    "-nostats",
+    "-y",
+    "-f",
+    "rawvideo",
+    "-pixel_format",
+    "rgb24",
+    "-video_size",
+    &size,
+    "-framerate",
+    &frame_rate_text,
+    "-i",
+    "pipe:0",
+    "-an",
+    "-c:v",
+    encoder,
+    "-b:v",
+    &bitrate_text,
+    "-g",
+    &keyframe_interval,
+    "-pix_fmt",
+    "yuv420p",
+    "-f",
+    "mp4",
+  ]);
+  command
+    .arg(temporary_path)
+    .stdin(Stdio::piped())
+    .stdout(Stdio::null())
+    .stderr(Stdio::null());
+  suppress_command_window(&mut command);
+  let mut child = command
+    .spawn()
+    .map_err(|error| VideoExportError::new(VideoExportStage::Encode, error.to_string()))?;
+  let mut stdin = child
+    .stdin
+    .take()
+    .ok_or_else(|| VideoExportError::new(VideoExportStage::Encode, "FFmpeg stdin unavailable"))?;
+
+  let mut frame = playback.initial_frame();
+  let mut previous_frame = None;
+  let mut previous_rgb = None;
+  let mut cursor = 0;
+  let mut last_progress_percent = u64::MAX;
+  for frame_index in 0..total_frames {
+    let time_us = frame_index
+      .saturating_mul(1_000_000)
+      .checked_div(u64::from(frame_rate))
+      .unwrap_or(0);
+    playback.apply_until(&mut frame, &mut cursor, time_us);
+    if previous_frame.as_ref() != Some(&frame) {
+      let image = rasterizer.render(
+        &frame,
+        ScreenshotRect {
+          x: 0,
+          y: 0,
+          width: metadata.max_width,
+          height: metadata.max_height,
+        },
+        task.profile.pixel_scale,
+        |_, _| {},
+      );
+      previous_frame = Some(frame.clone());
+      previous_rgb = Some(rgba_to_rgb(image.into_raw()));
+    }
+    if let Err(error) = stdin.write_all(
+      previous_rgb
+        .as_deref()
+        .expect("the first timeline frame is always rasterized"),
+    ) {
+      drop(stdin);
+      let _ = child.kill();
+      let _ = child.wait();
+      return Err(VideoExportError::new(
+        VideoExportStage::Encode,
+        error.to_string(),
+      ));
+    }
+    send_progress(
+      task_id,
+      frame_index + 1,
+      total_frames,
+      &mut last_progress_percent,
+      event_tx,
+    );
+  }
+  drop(stdin);
+  let status = child
+    .wait()
+    .map_err(|error| VideoExportError::new(VideoExportStage::Encode, error.to_string()))?;
+  if !status.success() {
+    return Err(VideoExportError::new(
+      VideoExportStage::Encode,
+      format!("FFmpeg {encoder} encoder failed with {status}"),
+    ));
+  }
+  let _ = event_tx.send(EngineEvent::Video(VideoAsyncEvent::Finalizing { task_id }));
+  Ok(())
+}
+
+fn resolve_ffmpeg_encoder(mode: RecordingGpuAcceleration) -> Option<&'static str> {
+  if mode == RecordingGpuAcceleration::Off {
+    return None;
+  }
+  let mut command = Command::new("ffmpeg");
+  command.args(["-hide_banner", "-encoders"]);
+  command.stdin(Stdio::null()).stderr(Stdio::null());
+  suppress_command_window(&mut command);
+  let output = command
+    .output()
+    .ok()
+    .filter(|output| output.status.success())?;
+  let encoders = String::from_utf8_lossy(&output.stdout);
+  let requested: &[&str] = match mode {
+    RecordingGpuAcceleration::Off => &[],
+    RecordingGpuAcceleration::Auto => auto_encoder_order(),
+    RecordingGpuAcceleration::Nvidia => &["h264_nvenc"],
+    RecordingGpuAcceleration::Amd => &["h264_amf"],
+    RecordingGpuAcceleration::Intel => &["h264_qsv"],
+    RecordingGpuAcceleration::Apple => &["h264_videotoolbox"],
+  };
+  requested
+    .iter()
+    .copied()
+    .find(|encoder| encoders.contains(encoder))
+}
+
+#[cfg(target_os = "macos")]
+fn auto_encoder_order() -> &'static [&'static str] {
+  &["h264_videotoolbox", "h264_nvenc", "h264_qsv", "h264_amf"]
+}
+
+#[cfg(not(target_os = "macos"))]
+fn auto_encoder_order() -> &'static [&'static str] {
+  &["h264_nvenc", "h264_qsv", "h264_amf", "h264_videotoolbox"]
+}
+
+fn ffmpeg_bitrate(
+  width: u32,
+  height: u32,
+  frame_rate: u16,
+  quality: RecordingExportQuality,
+) -> u64 {
+  let bits_per_pixel = match quality {
+    RecordingExportQuality::Compact => 6u64,
+    RecordingExportQuality::Balanced => 10,
+    RecordingExportQuality::High => 16,
+  };
+  u64::from(width)
+    .saturating_mul(u64::from(height))
+    .saturating_mul(u64::from(frame_rate))
+    .saturating_mul(bits_per_pixel)
+    .checked_div(100)
+    .unwrap_or(0)
+    .clamp(250_000, 80_000_000)
+}
+
+fn send_progress(
+  task_id: TaskId,
+  completed_frames: u64,
+  total_frames: u64,
+  last_progress_percent: &mut u64,
+  event_tx: &Sender<EngineEvent>,
+) {
+  let percent = completed_frames.saturating_mul(100) / total_frames;
+  if percent == *last_progress_percent {
+    return;
+  }
+  *last_progress_percent = percent;
+  let _ = event_tx.send(EngineEvent::Video(VideoAsyncEvent::Progress {
+    task_id,
+    completed_frames,
+    total_frames,
+  }));
+}
+
+#[cfg(windows)]
+fn suppress_command_window(command: &mut Command) {
+  use std::os::windows::process::CommandExt;
+  const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+  command.creation_flags(CREATE_NO_WINDOW);
+}
+
+#[cfg(not(windows))]
+fn suppress_command_window(_command: &mut Command) {}
 
 struct EncodedMp4Frame {
   sequence_parameter_set: Option<Vec<u8>>,
@@ -627,7 +878,7 @@ fn send_failed(
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::host_engine::services::RecordingPixelScale;
+  use crate::host_engine::services::{RecordingGpuAcceleration, RecordingPixelScale};
   use openh264::formats::YUVSource;
   use std::{
     io::BufReader,
@@ -662,6 +913,14 @@ mod tests {
   }
 
   #[test]
+  fn hardware_bitrate_scales_with_quality() {
+    let compact = ffmpeg_bitrate(1920, 1080, 60, RecordingExportQuality::Compact);
+    let balanced = ffmpeg_bitrate(1920, 1080, 60, RecordingExportQuality::Balanced);
+    let high = ffmpeg_bitrate(1920, 1080, 60, RecordingExportQuality::High);
+    assert!(compact < balanced && balanced < high);
+  }
+
+  #[test]
   fn service_progress_is_monotonic_and_terminal_events_leave_the_active_queue() {
     let mut service = VideoService::new();
     let first = TaskId(10);
@@ -672,6 +931,9 @@ mod tests {
     service
       .active_exports
       .insert(second, VideoExportStatus::Queued);
+    service
+      .source_paths
+      .insert(first, PathBuf::from("source.json"));
     service.export_order.extend([first, second]);
     service.handle_engine_event(&VideoAsyncEvent::Progress {
       task_id: first,
@@ -689,6 +951,7 @@ mod tests {
     });
     assert_eq!(service.active_export_count(), 1);
     assert!(service.status(first).is_none());
+    assert!(!service.is_source_exporting(Path::new("source.json")));
   }
 
   #[test]
@@ -751,7 +1014,10 @@ mod tests {
       source_path,
       output_path: directory.join("recording.mp4"),
       fonts: Vec::new(),
-      profile: RecordingProfile::default(),
+      profile: RecordingProfile {
+        gpu_acceleration: RecordingGpuAcceleration::Off,
+        ..Default::default()
+      },
     };
     let (event_tx, _event_rx) = crossbeam_channel::unbounded();
 
@@ -813,7 +1079,10 @@ mod tests {
       source_path,
       output_path: output_path.clone(),
       fonts: Vec::new(),
-      profile: RecordingProfile::default(),
+      profile: RecordingProfile {
+        gpu_acceleration: RecordingGpuAcceleration::Off,
+        ..Default::default()
+      },
     };
     let temporary = temporary_path(&output_path, task_id);
     fs::write(&temporary, b"stale").unwrap();

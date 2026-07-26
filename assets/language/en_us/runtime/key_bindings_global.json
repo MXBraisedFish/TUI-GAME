@@ -1,0 +1,22 @@
+{
+  "key_bindings_global.title": "Global Key Bindings",
+  "key_bindings_global.action": "Action",
+  "key_bindings_global.key1": "Key 1",
+  "key_bindings_global.key2": "Key 2",
+  "key_bindings_global.action.select": "{key:key_bindings_global.focus_up}/{key:key_bindings_global.focus_down} Select",
+  "key_bindings_global.action.key.edit": "{key:key_bindings_global.key_edit_del_1}/{key:key_bindings_global.key_edit_del_2} Add/Edit Key Binding",
+  "key_bindings_global.action.key.del": "{key:key_bindings_global.key_edit_del_1}/{key:key_bindings_global.key_edit_del_2} Remove Key Binding",
+  "key_bindings_global.action.switch": "{key:key_bindings_global.key_switch} Toggle Edit Mode",
+  "key_bindings_global.action.back": "{key:key_bindings_global.back} Back & Save",
+  "key_bindings_global.action.color_doc.in": "{key:key_bindings_global.color_doc} Show Color Guide",
+  "key_bindings_global.action.color_doc.out": "{key:key_bindings_global.color_doc} Hide Color Guide",
+  "key_bindings_global.action.reset.only": "{key:key_bindings_global.reset.only} Reset Current Action",
+  "key_bindings_global.action.reset.all": "{key:key_bindings_global.reset.all} Reset All Key Bindings",
+  "key_bindings_global.action.any": "[Any Key] Press to Bind (press all keys together for key combinations)",
+  "key_bindings_global.color_doc.yellow": "Yellow - Conflicts with one or more game key bindings (Global takes priority)",
+  "key_bindings_global.color_doc.red": "Red - Conflicts within Global key bindings",
+  "key_bindings_global.color_doc.gray": "Gray - This key binding cannot be modified",
+  "key_bindings_global.color_doc.composite": "Yellow/Red + Gray - Conflicting and cannot be modified",
+  "key_bindings_global.color_doc.priority": "Color Priority: Red > Yellow",
+  "key_bindings_global.conflict": "Global key bindings contain conflicts and cannot be saved."
+}

@@ -1,4 +1,7 @@
-use std::{collections::HashMap, fs, io};
+use std::{
+  collections::{BTreeMap, HashMap},
+  fs, io,
+};
 
 use serde::{Deserialize, Deserializer, Serialize, de::DeserializeOwned};
 use serde_json::{Map, Value};
@@ -27,6 +30,61 @@ pub struct PackageStateProfile {
 
   #[serde(default)]
   pub screensavers: HashMap<String, ScreensaverPackageState>,
+}
+
+pub type ActionKeyMap = BTreeMap<String, Vec<Vec<String>>>;
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct KeyBindingMapGroup {
+  #[serde(default)]
+  pub global: ActionKeyMap,
+
+  #[serde(default)]
+  pub games: BTreeMap<String, ActionKeyMap>,
+}
+
+/// 按键映射持久化表。default 保存包或宿主的原始定义，user 保存实际生效的用户映射。
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct KeyBindingsProfile {
+  #[serde(default)]
+  pub default: KeyBindingMapGroup,
+
+  #[serde(default)]
+  pub user: KeyBindingMapGroup,
+}
+
+impl KeyBindingsProfile {
+  pub fn synchronize(
+    &mut self,
+    global: ActionKeyMap,
+    games: BTreeMap<String, ActionKeyMap>,
+  ) -> bool {
+    let previous = self.clone();
+    synchronize_action_map(&mut self.default.global, &mut self.user.global, global);
+
+    for (game, defaults) in games {
+      synchronize_action_map(
+        self.default.games.entry(game.clone()).or_default(),
+        self.user.games.entry(game).or_default(),
+        defaults,
+      );
+    }
+    *self != previous
+  }
+}
+
+fn synchronize_action_map(
+  stored_default: &mut ActionKeyMap,
+  user: &mut ActionKeyMap,
+  current_default: ActionKeyMap,
+) {
+  user.retain(|action, _| current_default.contains_key(action));
+  for (action, keys) in &current_default {
+    if !user.contains_key(action) {
+      user.insert(action.clone(), keys.clone());
+    }
+  }
+  *stored_default = current_default;
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -270,6 +328,31 @@ impl RecordingPixelScale {
   }
 }
 
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RecordingGpuAcceleration {
+  Off,
+  #[default]
+  Auto,
+  Nvidia,
+  Amd,
+  Intel,
+  Apple,
+}
+
+impl RecordingGpuAcceleration {
+  pub fn next(self) -> Self {
+    match self {
+      Self::Off => Self::Auto,
+      Self::Auto => Self::Nvidia,
+      Self::Nvidia => Self::Amd,
+      Self::Amd => Self::Intel,
+      Self::Intel => Self::Apple,
+      Self::Apple => Self::Off,
+    }
+  }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RecordingProfile {
   #[serde(default, deserialize_with = "deserialize_or_default")]
@@ -296,6 +379,8 @@ pub struct RecordingProfile {
   pub keyframe_interval_seconds: u16,
   #[serde(default, deserialize_with = "deserialize_or_default")]
   pub pixel_scale: RecordingPixelScale,
+  #[serde(default, deserialize_with = "deserialize_or_default")]
+  pub gpu_acceleration: RecordingGpuAcceleration,
 }
 
 fn deserialize_or_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
@@ -368,6 +453,7 @@ impl Default for RecordingProfile {
       quality: RecordingExportQuality::default(),
       keyframe_interval_seconds: default_keyframe_interval(),
       pixel_scale: RecordingPixelScale::default(),
+      gpu_acceleration: RecordingGpuAcceleration::default(),
     }
   }
 }
@@ -585,6 +671,42 @@ impl StorageService {
   /// 写入语言代码到配置文件。
   pub fn write_language_code(&self, language_code: &str) -> std::io::Result<()> {
     fs::write(self.profile_language_path(), language_code.trim())
+  }
+
+  pub fn read_key_bindings_profile(&self, log: &mut LogService) -> KeyBindingsProfile {
+    let path = self.profile_key_bindings_path();
+    let content = match fs::read_to_string(&path) {
+      Ok(content) => content,
+      Err(error) => {
+        log.warn(
+          LogSource::Storage,
+          format!("Failed to read key bindings profile: {error}"),
+        );
+        return KeyBindingsProfile::default();
+      }
+    };
+    serde_json::from_str(&content).unwrap_or_else(|error| {
+      log.warn(
+        LogSource::Storage,
+        format!("Failed to parse key bindings profile: {error}"),
+      );
+      KeyBindingsProfile::default()
+    })
+  }
+
+  pub fn write_key_bindings_profile(
+    &self,
+    profile: &KeyBindingsProfile,
+    log: &mut LogService,
+  ) -> io::Result<()> {
+    let json = serde_json::to_string_pretty(profile).map_err(io::Error::other)?;
+    fs::write(self.profile_key_bindings_path(), json).map_err(|error| {
+      log.error(
+        LogSource::Storage,
+        format!("Failed to write key bindings profile: {error}"),
+      );
+      error
+    })
   }
 
   /// 返回默认语言代码。
@@ -932,6 +1054,7 @@ impl StorageService {
       "quality",
       "keyframe_interval_seconds",
       "pixel_scale",
+      "gpu_acceleration",
     ]
     .into_iter()
     .any(|field| original.get(field) != normalized.get(field));
@@ -1180,6 +1303,61 @@ mod tests {
   }
 
   #[test]
+  fn key_bindings_profile_copies_new_defaults_without_overwriting_user_changes() {
+    let mut profile = KeyBindingsProfile::default();
+    let mut global = ActionKeyMap::new();
+    global.insert("one".into(), vec![vec!["a".into()]]);
+    assert!(profile.synchronize(global.clone(), BTreeMap::new()));
+    assert_eq!(profile.default.global, global);
+    assert_eq!(profile.user.global, global);
+
+    profile
+      .user
+      .global
+      .insert("one".into(), vec![vec!["b".into()]]);
+    global.insert("one".into(), vec![vec!["c".into()]]);
+    global.insert("two".into(), Vec::new());
+    assert!(profile.synchronize(global.clone(), BTreeMap::new()));
+    assert_eq!(profile.user.global["one"], vec![vec!["b".to_string()]]);
+    assert!(profile.user.global["two"].is_empty());
+    assert_eq!(profile.default.global, global);
+  }
+
+  #[test]
+  fn key_bindings_profile_seeds_games_and_preserves_user_data_when_package_is_absent() {
+    let mut profile = KeyBindingsProfile::default();
+    let mut game_actions = ActionKeyMap::new();
+    game_actions.insert("jump".into(), vec![vec!["space".into()]]);
+    let mut games = BTreeMap::new();
+    games.insert("game.one".into(), game_actions.clone());
+    profile.synchronize(ActionKeyMap::new(), games);
+    assert_eq!(profile.user.games["game.one"], game_actions);
+
+    profile.synchronize(ActionKeyMap::new(), BTreeMap::new());
+    assert_eq!(profile.default.games["game.one"], game_actions);
+    assert_eq!(profile.user.games["game.one"], game_actions);
+  }
+
+  #[test]
+  fn key_bindings_profile_removes_actions_no_longer_declared_by_an_installed_game() {
+    let mut profile = KeyBindingsProfile::default();
+    let mut original = ActionKeyMap::new();
+    original.insert("jump".into(), vec![vec!["space".into()]]);
+    original.insert("removed".into(), vec![vec!["r".into()]]);
+    let mut games = BTreeMap::new();
+    games.insert("game.one".into(), original);
+    profile.synchronize(ActionKeyMap::new(), games);
+
+    let mut current = ActionKeyMap::new();
+    current.insert("jump".into(), vec![vec!["space".into()]]);
+    let mut games = BTreeMap::new();
+    games.insert("game.one".into(), current);
+    profile.synchronize(ActionKeyMap::new(), games);
+
+    assert!(!profile.user.games["game.one"].contains_key("removed"));
+  }
+
+  #[test]
   fn old_recording_profile_receives_export_defaults() {
     let profile: RecordingProfile = serde_json::from_str("{}").unwrap();
     assert_eq!(profile.capture_frame_rate, RecordingFrameRate::Fps60);
@@ -1191,6 +1369,7 @@ mod tests {
     assert_eq!(profile.quality, RecordingExportQuality::Balanced);
     assert_eq!(profile.keyframe_interval_seconds, 2);
     assert_eq!(profile.pixel_scale, RecordingPixelScale::Original);
+    assert_eq!(profile.gpu_acceleration, RecordingGpuAcceleration::Auto);
   }
 
   #[test]
@@ -1215,7 +1394,8 @@ mod tests {
         "legacy_frame_rate":"bad",
         "quality":"lossless",
         "keyframe_interval_seconds":99,
-        "pixel_scale":"triple"
+        "pixel_scale":"triple",
+        "gpu_acceleration":"unknown"
       }"#,
     )
     .unwrap();
@@ -1241,6 +1421,7 @@ mod tests {
     assert_eq!(value["capture_frame_rate"], "fps60");
     assert_eq!(value["pixel_scale"], "original");
     assert_eq!(value["keyframe_interval_seconds"], 2);
+    assert_eq!(value["gpu_acceleration"], "auto");
   }
 
   #[test]

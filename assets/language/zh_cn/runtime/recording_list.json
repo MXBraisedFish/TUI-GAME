@@ -34,5 +34,7 @@
   "recording_list.list.search.placeholder": "🔍 搜索",
   "recording_list.list.modify.placeholder": "请输入命名内容",
   "recording_list.modify.invalid": "命名无效",
-  "recording_list.modify.duplicate": "命名重复"
+  "recording_list.modify.duplicate": "命名重复",
+  "recording_list.popup.no_del": "当前录屏正在导出，不可删除",
+  "recording_list_list.popup.no_del": "当前录屏正在导出，不可删除"
 }

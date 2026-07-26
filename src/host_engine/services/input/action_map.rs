@@ -94,3 +94,18 @@ fn translate_key_pattern(
     }),
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn action_without_keys_registers_no_binding() {
+    let entries = vec![ActionMapEntry {
+      action: "optional".to_string(),
+      description: "Optional action".to_string(),
+      keys: Vec::new(),
+    }];
+    assert_eq!(translate_action_map(&entries), Ok(Vec::new()));
+  }
+}

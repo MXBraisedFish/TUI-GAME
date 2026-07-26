@@ -45,5 +45,6 @@
   "screenshot_list.list.modify.placeholder": "Enter a name",
 
   "screenshot_list.modify.invalid": "Invalid Name",
-  "screenshot_list.modify.duplicate": "Name Already Exists"
+  "screenshot_list.modify.duplicate": "Name Already Exists",
+  "screenshot_list.popup.no_del": "This screenshot is being exported and cannot be deleted"
 }

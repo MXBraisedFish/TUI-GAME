@@ -34,5 +34,7 @@
   "recording_list.list.search.placeholder": "🔍 Search",
   "recording_list.list.modify.placeholder": "Enter a name",
   "recording_list.modify.invalid": "Invalid Name",
-  "recording_list.modify.duplicate": "Name Already Exists"
+  "recording_list.modify.duplicate": "Name Already Exists",
+  "recording_list.popup.no_del": "This recording is being exported and cannot be deleted",
+  "recording_list_list.popup.no_del": "This recording is being exported and cannot be deleted"
 }

@@ -20,28 +20,31 @@ use crate::host_engine::core::state_machine::{
 };
 use crate::host_engine::core::{ExitState, FrameScheduler, RuntimeWorld, set_crash_phase};
 use crate::host_engine::services::{
-  ActionMapEntry, AutoRecordingMode, BorderStyle, DisplayLogoMode, DisplayOrderMode,
-  DrawTextParams, EngineServices, EngineTask, HostAreaKind, ImPolicy, InputActionEvent, KeyState,
-  LogSource, PackageEvent, PackageListEntry, PopupDismissEvent, PopupRequest, RandomGeneratorId,
-  RandomSeed, RecordingState, ScreenshotAsyncEvent, ScreenshotDoubleAction, ScreenshotService,
-  ScreenshotTask, TaskId, TextColor, VideoAsyncEvent, translate_action_map,
+  ActionKeyMap, ActionMapEntry, AutoRecordingMode, BorderStyle, DisplayLogoMode, DisplayOrderMode,
+  DrawTextParams, EngineServices, EngineTask, HostAreaKind, ImPolicy, InputActionEvent,
+  KeyBindingsProfile, KeyState, LogSource, PackageEvent, PackageListEntry, PopupDismissEvent,
+  PopupRequest, RandomGeneratorId, RandomSeed, RecordingState, ScreenshotAsyncEvent,
+  ScreenshotDoubleAction, ScreenshotService, ScreenshotTask, TaskId, TextColor, VideoAsyncEvent,
+  translate_action_map,
 };
 use crate::host_engine::ui::{
   ClearWarningCommand, ClearWarningTarget, ClearWarningUi, DisplaySettingsCommand,
   DisplaySettingsUi, ExportFormat, ExportLoadingUi, ExportSettingsCommand, ExportSettingsUi,
-  ExportType, GameListCommand, GameListUi, GamePackageCommand, GamePackageUi, HomeUi,
-  HomeUiCommand, InputDemoCommand, InputDemoUi, LanguageLoadingUi, LanguageSelectCommand,
-  LanguageSelectUi, MediaListNotice, MediaRenameError, ModsCommand, ModsUi, RecordingListCommand,
-  RecordingListUi, RecordingSettingsCommand, RecordingSettingsUi, SafeModeWarningCommand,
-  SafeModeWarningUi, ScreensaverListCommand, ScreensaverListUi, ScreensaverOverlayUi,
-  ScreensaverPackageCommand, ScreensaverPackageUi, ScreenshotCaptureCommand, ScreenshotCaptureUi,
-  ScreenshotListCommand, ScreenshotListUi, ScreenshotRecordingCommand, ScreenshotRecordingUi,
-  ScreenshotSettingsCommand, ScreenshotSettingsUi, SecurityDetailsCommand, SecurityDetailsUi,
-  SecuritySettingsCommand, SecuritySettingsUi, SettingsUi, SettingsUiCommand,
-  StorageManagementClearCommand, StorageManagementClearUi, StorageManagementCommand,
-  StorageManagementExportCommand, StorageManagementExportUi, StorageManagementUi,
-  StorageManagementViewCommand, StorageManagementViewUi, TerminalCheckCommand, TerminalCheckLayout,
-  TerminalCheckUi, ToolbarCustomCommand, WindowSizeWarningCommand, WindowSizeWarningUi,
+  ExportType, GameKeyBindingsCommand, GameKeyBindingsUi, GameListCommand, GameListUi,
+  GamePackageCommand, GamePackageUi, GlobalKeyBindingsCommand, GlobalKeyBindingsUi, HomeUi,
+  HomeUiCommand, InputDemoCommand, InputDemoUi, KeyBindingsCommand, KeyBindingsUi,
+  LanguageLoadingUi, LanguageSelectCommand, LanguageSelectUi, MediaListNotice, MediaRenameError,
+  ModsCommand, ModsUi, RecordingListCommand, RecordingListUi, RecordingSettingsCommand,
+  RecordingSettingsUi, SafeModeWarningCommand, SafeModeWarningUi, ScreensaverListCommand,
+  ScreensaverListUi, ScreensaverOverlayUi, ScreensaverPackageCommand, ScreensaverPackageUi,
+  ScreenshotCaptureCommand, ScreenshotCaptureUi, ScreenshotListCommand, ScreenshotListUi,
+  ScreenshotRecordingCommand, ScreenshotRecordingUi, ScreenshotSettingsCommand,
+  ScreenshotSettingsUi, SecurityDetailsCommand, SecurityDetailsUi, SecuritySettingsCommand,
+  SecuritySettingsUi, SettingsUi, SettingsUiCommand, StorageManagementClearCommand,
+  StorageManagementClearUi, StorageManagementCommand, StorageManagementExportCommand,
+  StorageManagementExportUi, StorageManagementUi, StorageManagementViewCommand,
+  StorageManagementViewUi, TerminalCheckCommand, TerminalCheckLayout, TerminalCheckUi,
+  ToolbarCustomCommand, WindowSizeWarningCommand, WindowSizeWarningUi,
 };
 use std::{
   collections::HashMap,
@@ -1037,6 +1040,47 @@ fn route_frame_input(
   if world.state.current_overlay_kind() == Some(OverlayKind::ScreenshotCapture) {
     load_screenshot_capture_action_map(services);
   }
+  if world.state.current_overlay_kind().is_none() {
+    let capture_finished = match world.state.current_ui_kind() {
+      Some(UiNodeKind::GlobalKeyBindings)
+        if settings_ui.key_bindings_mut().global_mut().is_capturing() =>
+      {
+        Some(
+          settings_ui
+            .key_bindings_mut()
+            .global_mut()
+            .handle_raw_key_events(&mut services.input, world.clock.delta_time()),
+        )
+      }
+      Some(UiNodeKind::GameKeyBindings)
+        if settings_ui.key_bindings_mut().game_mut().is_capturing() =>
+      {
+        Some(
+          settings_ui
+            .key_bindings_mut()
+            .game_mut()
+            .handle_raw_key_events(&mut services.input, world.clock.delta_time()),
+        )
+      }
+      _ => None,
+    };
+    if let Some(finished) = capture_finished {
+      if finished {
+        services.canvas.request_render();
+        let _ = services.input.disable_raw_key_capture();
+      }
+      // 绑定期间原始按键只用于采集，不触发宿主快捷键或页面动作。
+      services.input.clear();
+      let _ = services.input.drain_system_events();
+      return;
+    }
+    if matches!(
+      world.state.current_ui_kind(),
+      Some(UiNodeKind::GlobalKeyBindings | UiNodeKind::GameKeyBindings)
+    ) {
+      let _ = services.input.take_raw_key_events();
+    }
+  }
   let host_actions = services.input.collect_action_events();
   if handle_screenshot_hotkey(
     services,
@@ -1943,14 +1987,14 @@ pub(super) fn submit_screenshot_png(
   rect: crate::host_engine::services::ScreenshotRect,
 ) -> TaskId {
   let png_path = ScreenshotService::next_png_path(&services.storage);
-  let _ = services.screenshot.write_json(
+  let source_path = services.screenshot.write_json(
     &services.storage,
     &frame,
     rect,
     Some(&png_path),
     &mut services.log,
   );
-  services
+  let task_id = services
     .async_runtime
     .submit(EngineTask::Screenshot(ScreenshotTask {
       frame,
@@ -1960,7 +2004,13 @@ pub(super) fn submit_screenshot_png(
         .storage
         .read_screenshot_profile_or_default(&mut services.log)
         .fonts,
-    }))
+    }));
+  if let Some(source_path) = source_path {
+    services
+      .screenshot
+      .register_source_export(task_id, source_path);
+  }
+  task_id
 }
 
 fn submit_font_preview_png(
@@ -1973,7 +2023,7 @@ fn submit_font_preview_png(
     return;
   };
   let png_path = ScreenshotService::next_png_path(&services.storage);
-  let _ = services.screenshot.write_json(
+  let source_path = services.screenshot.write_json(
     &services.storage,
     &frame,
     rect,
@@ -1988,6 +2038,11 @@ fn submit_font_preview_png(
       png_path,
       fonts,
     }));
+  if let Some(source_path) = source_path {
+    services
+      .screenshot
+      .register_source_export(task_id, source_path);
+  }
   pending_screenshot_saves.insert(task_id, PendingScreenshotSave { progress: 0.0 });
   show_popup(
     services,

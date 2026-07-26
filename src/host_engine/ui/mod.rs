@@ -3,17 +3,18 @@ mod overlay;
 mod terminal_check;
 
 pub use home::{
-  DisplaySettingsCommand, DisplaySettingsUi, GameListCommand, GameListUi, GamePackageCommand,
-  GamePackageUi, HomeUi, HomeUiCommand, InputDemoCommand, InputDemoUi, LanguageSelectCommand,
-  LanguageSelectUi, MediaListNotice, MediaRenameError, ModsCommand, ModsUi, RecordingListCommand,
-  RecordingListUi, RecordingSettingsCommand, RecordingSettingsUi, ScreensaverListCommand,
-  ScreensaverListUi, ScreensaverPackageCommand, ScreensaverPackageUi, ScreenshotListCommand,
-  ScreenshotListUi, ScreenshotRecordingCommand, ScreenshotRecordingUi, ScreenshotSettingsCommand,
-  ScreenshotSettingsUi, SecurityDetailsCommand, SecurityDetailsUi, SecuritySettingsCommand,
-  SecuritySettingsUi, SettingsUi, SettingsUiCommand, StorageManagementClearCommand,
-  StorageManagementClearUi, StorageManagementCommand, StorageManagementExportCommand,
-  StorageManagementExportUi, StorageManagementUi, StorageManagementViewCommand,
-  StorageManagementViewUi, ToolbarCustomCommand,
+  DisplaySettingsCommand, DisplaySettingsUi, GameKeyBindingsCommand, GameKeyBindingsUi,
+  GameListCommand, GameListUi, GamePackageCommand, GamePackageUi, GlobalKeyBindingsCommand,
+  GlobalKeyBindingsUi, HomeUi, HomeUiCommand, InputDemoCommand, InputDemoUi, KeyBindingsCommand,
+  KeyBindingsUi, LanguageSelectCommand, LanguageSelectUi, MediaListNotice, MediaRenameError,
+  ModsCommand, ModsUi, RecordingListCommand, RecordingListUi, RecordingSettingsCommand,
+  RecordingSettingsUi, ScreensaverListCommand, ScreensaverListUi, ScreensaverPackageCommand,
+  ScreensaverPackageUi, ScreenshotListCommand, ScreenshotListUi, ScreenshotRecordingCommand,
+  ScreenshotRecordingUi, ScreenshotSettingsCommand, ScreenshotSettingsUi, SecurityDetailsCommand,
+  SecurityDetailsUi, SecuritySettingsCommand, SecuritySettingsUi, SettingsUi, SettingsUiCommand,
+  StorageManagementClearCommand, StorageManagementClearUi, StorageManagementCommand,
+  StorageManagementExportCommand, StorageManagementExportUi, StorageManagementUi,
+  StorageManagementViewCommand, StorageManagementViewUi, ToolbarCustomCommand,
 };
 pub use overlay::{
   ClearWarningCommand, ClearWarningTarget, ClearWarningUi, ExportFormat, ExportLoadingUi,

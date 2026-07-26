@@ -1,4 +1,5 @@
 use super::*;
+use std::collections::BTreeMap;
 
 pub(super) const HOST_KEY_SCREENSHOT: &str = "host_key.screenshot";
 pub(super) const HOST_KEY_RECORDING: &str = "host_key.recording";
@@ -8,59 +9,114 @@ pub(super) const HOST_KEY_TOP_TOOLBAR: &str = "host_key.top_toolbar";
 pub(super) const HOST_KEY_RECORDING_PAUSE: &str = "host_key.recording.pause";
 pub(super) const HOST_KEY_TOP_TOOLBAR_SWITCH: &str = "host_key.top_toolbar.switch";
 
+pub(super) const HOST_KEY_ORDER: &[&str] = &[
+  HOST_KEY_SCREENSHOT,
+  HOST_KEY_RECORDING,
+  HOST_KEY_RECORDING_PAUSE,
+  HOST_KEY_SCREENSAVER,
+  HOST_KEY_FORCE_STOP,
+  HOST_KEY_TOP_TOOLBAR,
+  HOST_KEY_TOP_TOOLBAR_SWITCH,
+];
+
+fn host_key_defaults() -> ActionKeyMap {
+  [
+    (HOST_KEY_SCREENSHOT, vec![vec!["f1".to_string()]]),
+    (HOST_KEY_RECORDING, vec![vec!["f2".to_string()]]),
+    (
+      HOST_KEY_RECORDING_PAUSE,
+      vec![vec!["f2".to_string(), "q".to_string()]],
+    ),
+    (HOST_KEY_SCREENSAVER, vec![vec!["f3".to_string()]]),
+    (HOST_KEY_FORCE_STOP, vec![vec!["f4".to_string()]]),
+    (HOST_KEY_TOP_TOOLBAR, vec![vec!["f5".to_string()]]),
+    (
+      HOST_KEY_TOP_TOOLBAR_SWITCH,
+      vec![vec!["f5".to_string(), "q".to_string()]],
+    ),
+  ]
+  .into_iter()
+  .map(|(action, keys)| (action.to_string(), keys))
+  .collect()
+}
+
+pub(super) fn synchronize_key_bindings_profile(
+  services: &mut EngineServices,
+) -> KeyBindingsProfile {
+  let packages = services.package.games();
+  let games = packages
+    .iter()
+    .filter_map(|package| {
+      let game = package.game.as_ref()?;
+      let actions = game
+        .actions
+        .iter()
+        .map(|(action, config)| (action.clone(), config.keys.clone()))
+        .collect::<BTreeMap<_, _>>();
+      Some((package.mod_id.clone(), actions))
+    })
+    .collect();
+  let mut profile = services
+    .storage
+    .read_key_bindings_profile(&mut services.log);
+  let mut changed = profile.synchronize(host_key_defaults(), games);
+  for package in &packages {
+    let Some(game) = &package.game else {
+      continue;
+    };
+    let user = profile
+      .user
+      .games
+      .entry(package.mod_id.clone())
+      .or_default();
+    for (action, config) in &game.actions {
+      if config.lock && user.get(action) != Some(&config.keys) {
+        user.insert(action.clone(), config.keys.clone());
+        changed = true;
+      }
+    }
+  }
+  if changed {
+    let _ = services
+      .storage
+      .write_key_bindings_profile(&profile, &mut services.log);
+  }
+  services
+    .package
+    .set_user_game_key_actions(profile.user.games.clone());
+  profile
+}
+
+pub(super) fn host_key_action_entries(services: &mut EngineServices) -> Vec<ActionMapEntry> {
+  let profile = synchronize_key_bindings_profile(services);
+  host_key_action_entries_from_profile(services, &profile)
+}
+
+pub(super) fn host_key_action_entries_from_profile(
+  services: &EngineServices,
+  profile: &KeyBindingsProfile,
+) -> Vec<ActionMapEntry> {
+  HOST_KEY_ORDER
+    .iter()
+    .map(|action| ActionMapEntry {
+      action: (*action).to_string(),
+      description: services.i18n.get_runtime_text("host_key", action),
+      keys: profile
+        .user
+        .global
+        .get(*action)
+        .cloned()
+        .unwrap_or_default(),
+    })
+    .collect()
+}
+
 pub(super) fn load_host_key_action_map(services: &mut EngineServices) {
-  let entries = vec![
-    // 组合键必须先于它们包含的单键注册；InputService 会按顺序消费已命中的键。
-    ActionMapEntry {
-      action: HOST_KEY_RECORDING_PAUSE.to_string(),
-      description: services
-        .i18n
-        .get_runtime_text("host_key", "host_key.recording.pause"),
-      keys: vec![vec!["f2".to_string(), "q".to_string()]],
-    },
-    ActionMapEntry {
-      action: HOST_KEY_TOP_TOOLBAR_SWITCH.to_string(),
-      description: services
-        .i18n
-        .get_runtime_text("host_key", "host_key.top_toolbar.switch"),
-      keys: vec![vec!["f5".to_string(), "q".to_string()]],
-    },
-    ActionMapEntry {
-      action: HOST_KEY_SCREENSAVER.to_string(),
-      description: services
-        .i18n
-        .get_runtime_text("host_key", "host_key.screensaver"),
-      keys: vec![vec!["f3".to_string()]],
-    },
-    ActionMapEntry {
-      action: HOST_KEY_SCREENSHOT.to_string(),
-      description: services
-        .i18n
-        .get_runtime_text("host_key", "host_key.screenshot"),
-      keys: vec![vec!["f1".to_string()]],
-    },
-    ActionMapEntry {
-      action: HOST_KEY_RECORDING.to_string(),
-      description: services
-        .i18n
-        .get_runtime_text("host_key", "host_key.recording"),
-      keys: vec![vec!["f2".to_string()]],
-    },
-    ActionMapEntry {
-      action: HOST_KEY_FORCE_STOP.to_string(),
-      description: services
-        .i18n
-        .get_runtime_text("host_key", "host_key.force_stop"),
-      keys: vec![vec!["f4".to_string()]],
-    },
-    ActionMapEntry {
-      action: HOST_KEY_TOP_TOOLBAR.to_string(),
-      description: services
-        .i18n
-        .get_runtime_text("host_key", "host_key.top_toolbar"),
-      keys: vec![vec!["f5".to_string()]],
-    },
-  ];
+  let mut entries = host_key_action_entries(services);
+  // 组合键必须先于它们包含的单键注册；InputService 会按顺序消费已命中的键。
+  entries.sort_by_key(|entry| {
+    std::cmp::Reverse(entry.keys.iter().map(Vec::len).max().unwrap_or_default())
+  });
 
   let bindings = translate_action_map(&entries).expect("failed to translate host key action map");
   services.input.load_system_key_bindings(bindings);
@@ -70,6 +126,19 @@ pub(super) fn load_current_action_map(services: &mut EngineServices, world: &Run
   match world.state.current_ui_kind() {
     Some(UiNodeKind::Home) => load_home_action_map(services),
     Some(UiNodeKind::Settings) => load_settings_action_map(services),
+    Some(UiNodeKind::KeyBindings) => {
+      load_action_map(services, &KeyBindingsUi::action_map(), "KeyBindingsUi")
+    }
+    Some(UiNodeKind::GlobalKeyBindings) => load_action_map(
+      services,
+      &GlobalKeyBindingsUi::action_map(),
+      "GlobalKeyBindingsUi",
+    ),
+    Some(UiNodeKind::GameKeyBindings) => load_action_map(
+      services,
+      &GameKeyBindingsUi::action_map(),
+      "GameKeyBindingsUi",
+    ),
     Some(UiNodeKind::DisplaySettings) => load_display_settings_action_map(services),
     Some(UiNodeKind::ToolbarCustom) => {}
     Some(UiNodeKind::ScreensaverList) => load_screensaver_list_action_map(services),

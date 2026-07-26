@@ -16,6 +16,8 @@ impl MediaListSpec for RecordingListSpec {
       ("recording_list.scroll_up", "w"),
       ("recording_list.scroll_down", "s"),
       ("recording_list.scroll_left", "a"),
+      // D 在列表聚焦时删除，在信息栏聚焦时向右移动。
+      ("recording_list.del", "d"),
       ("recording_list.scroll_right", "d"),
       ("recording_list.focus_up", "up"),
       ("recording_list.focus_down", "down"),
@@ -24,7 +26,8 @@ impl MediaListSpec for RecordingListSpec {
       ("recording_list.order", "z"),
       ("recording_list.sort", "x"),
       ("recording_list.modify", "f"),
-      ("recording_list.del", "d"),
+      ("recording_list.warning_yes", "y"),
+      ("recording_list.warning_no", "n"),
       ("recording_list.switch", "tab"),
       ("recording_list.play_pause", "space"),
       ("recording_list.skip_forward", "right"),
@@ -84,5 +87,15 @@ mod tests {
         .iter()
         .any(|entry| entry.action == "recording_list.export" && entry.keys == [["1"]])
     );
+    let actions = RecordingListSpec::action_map();
+    let delete = actions
+      .iter()
+      .position(|entry| entry.action == "recording_list.del")
+      .unwrap();
+    let scroll_right = actions
+      .iter()
+      .position(|entry| entry.action == "recording_list.scroll_right")
+      .unwrap();
+    assert!(delete < scroll_right);
   }
 }

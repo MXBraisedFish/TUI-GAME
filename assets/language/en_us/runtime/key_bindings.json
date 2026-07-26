@@ -1,0 +1,9 @@
+{
+  "key_bindings.title": "Key Bindings",
+  "key_bindings.global": "Global",
+  "key_bindings.game": "Game",
+  "key_bindings.action.focus": "{key:key_bindings.focus_global}/{key:key_bindings.focus_game} Focus",
+  "key_bindings.action.select": "{key:key_bindings.focus_up}/{key:key_bindings.focus_down} Select",
+  "key_bindings.action.confirm": "{key:key_bindings.confirm} Confirm",
+  "key_bindings.action.list.back": "{key:key_bindings.list.back} Back"
+}

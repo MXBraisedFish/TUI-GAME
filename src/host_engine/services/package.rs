@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{
   Arc,
@@ -69,6 +69,7 @@ pub struct PackageListEntry {
   pub source: PackageSource,
   pub package_type: PackageType,
   pub key_actions: HashMap<String, Vec<Vec<String>>>,
+  pub key_default_actions: HashMap<String, Vec<Vec<String>>>,
   pub title: String,
   pub game_name: String,
   pub screensaver_name: String,
@@ -139,6 +140,7 @@ pub struct GameConfig {
   pub save: bool,
   pub score: Option<ScoreConfig>,
   pub actions: HashMap<String, ActionConfig>,
+  pub action_order: Vec<String>,
 }
 
 /// 分数配置
@@ -153,13 +155,13 @@ pub struct ScoreConfig {
 pub struct ActionConfig {
   pub description: String,
   pub keys: Vec<Vec<String>>,
+  pub lock: bool,
 }
 
 /// 屏保配置
 #[derive(Clone, Debug)]
 pub struct ScreensaverConfig {
   pub name: String,
-  pub mouse: bool,
   pub truecolor: bool,
   pub command: String,
 }
@@ -229,6 +231,7 @@ struct ScanReport {
 /// 包管理服务，负责扫描和加载游戏/屏保包。
 pub struct PackageService {
   snapshot: PackageSnapshot,
+  user_game_key_actions: BTreeMap<String, BTreeMap<String, Vec<Vec<String>>>>,
   last_scan: Option<ScanRequest>,
   watcher_thread: Option<ManagedThreadId>,
   watcher_tx: Option<Sender<PackageWatcherCommand>>,
@@ -242,6 +245,7 @@ impl PackageService {
   pub fn new() -> Self {
     Self {
       snapshot: PackageSnapshot::default(),
+      user_game_key_actions: BTreeMap::new(),
       last_scan: None,
       watcher_thread: None,
       watcher_tx: None,
@@ -385,12 +389,16 @@ impl PackageService {
       .games()
       .into_iter()
       .filter(|info| info.source == PackageSource::Mod)
-      .map(package_list_entry)
+      .map(|info| self.package_list_entry(info))
       .collect()
   }
 
   pub fn game_list(&self) -> Vec<PackageListEntry> {
-    self.games().into_iter().map(package_list_entry).collect()
+    self
+      .games()
+      .into_iter()
+      .map(|info| self.package_list_entry(info))
+      .collect()
   }
 
   pub fn mod_screensavers(&self) -> Vec<PackageListEntry> {
@@ -413,6 +421,24 @@ impl PackageService {
 
   pub fn total_count(&self) -> usize {
     self.snapshot.games.len() + self.snapshot.screensavers.len()
+  }
+
+  pub fn set_user_game_key_actions(
+    &mut self,
+    actions: BTreeMap<String, BTreeMap<String, Vec<Vec<String>>>>,
+  ) {
+    self.user_game_key_actions = actions;
+  }
+
+  fn package_list_entry(&self, info: PackageInfo) -> PackageListEntry {
+    let mut entry = package_list_entry(info);
+    if let Some(actions) = self.user_game_key_actions.get(&entry.mod_id) {
+      entry.key_actions = actions
+        .iter()
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    }
+    entry
   }
 }
 
@@ -784,18 +810,14 @@ fn package_list_entry(info: PackageInfo) -> PackageListEntry {
     },
     PackageAsset::Text { .. } => info.display.banner.clone(),
   };
-  let mouse_required = info.game.as_ref().is_some_and(|game| game.mouse)
-    || info
-      .screensaver
-      .as_ref()
-      .is_some_and(|screensaver| screensaver.mouse);
+  let mouse_required = info.game.as_ref().is_some_and(|game| game.mouse);
   let truecolor_required = info.game.as_ref().is_some_and(|game| game.truecolor)
     || info
       .screensaver
       .as_ref()
       .is_some_and(|screensaver| screensaver.truecolor);
   let high_privilege_required = info.game.as_ref().is_some_and(|game| game.high_privilege);
-  let key_actions = info
+  let key_actions: HashMap<String, Vec<Vec<String>>> = info
     .game
     .as_ref()
     .map(|game| {
@@ -842,6 +864,7 @@ fn package_list_entry(info: PackageInfo) -> PackageListEntry {
     mod_id: info.mod_id,
     source: info.source,
     package_type: info.package_type,
+    key_default_actions: key_actions.clone(),
     key_actions,
     title: info.display.title,
     game_name,
@@ -1084,19 +1107,24 @@ fn read_package(
         ));
       }
       let mut actions = HashMap::new();
+      let mut action_order = Vec::new();
       if let Some(raw_actions) = g.actions {
-        for (name, a) in raw_actions {
-          if a.keys.is_empty() {
-            return Err(format!("action '{}' has empty keys", name));
-          }
+        let raw_actions = raw_actions
+          .as_object()
+          .ok_or("game.actions must be an object")?;
+        for (name, value) in raw_actions {
+          let a: RawActionConfig = serde_json::from_value(value.clone())
+            .map_err(|error| format!("Invalid game action '{}': {}", name, error))?;
+          action_order.push(name.clone());
           actions.insert(
-            name,
+            name.clone(),
             ActionConfig {
               description: a
                 .description
                 .map(|value| resolve_package_text(dir, value, request, &mut watched_files))
                 .unwrap_or_default(),
               keys: a.keys,
+              lock: a.lock,
             },
           );
         }
@@ -1123,6 +1151,7 @@ fn read_package(
             .unwrap_or_default(),
         }),
         actions,
+        action_order,
       })
     }
     PackageType::Screensaver => None,
@@ -1136,7 +1165,6 @@ fn read_package(
           .name
           .map(|value| resolve_package_text(dir, value, request, &mut watched_files))
           .unwrap_or_default(),
-        mouse: s.mouse.unwrap_or(false),
         truecolor: s.truecolor.unwrap_or(false),
         command: s.command.unwrap_or_default(),
       })
@@ -1249,7 +1277,7 @@ struct RawGameConfig {
   target_fps: u32,
   save: Option<bool>,
   score: Option<RawScoreConfig>,
-  actions: Option<HashMap<String, RawActionConfig>>,
+  actions: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize)]
@@ -1262,12 +1290,13 @@ struct RawScoreConfig {
 struct RawActionConfig {
   description: Option<String>,
   keys: Vec<Vec<String>>,
+  #[serde(default)]
+  lock: bool,
 }
 
 #[derive(Deserialize)]
 struct RawScreensaverConfig {
   name: Option<String>,
-  mouse: Option<bool>,
   truecolor: Option<bool>,
   command: Option<String>,
 }
@@ -1822,7 +1851,7 @@ mod tests {
         "game":{
           "target_fps":60,
           "actions":{
-            "move_up":{"description":"Move up","keys":[["w"],["arrow_up"]]}
+            "move_up":{"description":"Move up","keys":[["w"],["arrow_up"]],"lock":true}
           }
         }
       }"#,
@@ -1833,12 +1862,59 @@ mod tests {
     let mut log = LogService::new();
     scan(&mut service, &root, &mut log, "en_us");
 
+    assert!(service.games()[0].game.as_ref().unwrap().actions["move_up"].lock);
     let entry = service.mod_games().remove(0);
     assert_eq!(
       entry.key_actions.get("move_up"),
       Some(&vec![vec!["w".to_string()], vec!["arrow_up".to_string()]])
     );
+    service.set_user_game_key_actions(BTreeMap::from([(
+      "action_keys".into(),
+      BTreeMap::from([("move_up".into(), vec![vec!["k".into()]])]),
+    )]));
+    let entry = service.mod_games().remove(0);
+    assert_eq!(entry.key_actions["move_up"], vec![vec!["k".to_string()]]);
+    assert_eq!(
+      entry.key_default_actions["move_up"],
+      vec![vec!["w".to_string()], vec!["arrow_up".to_string()]]
+    );
 
+    let _ = std::fs::remove_dir_all(root);
+  }
+
+  #[test]
+  fn game_action_may_define_no_keys() {
+    let root = temp_root("empty_action_keys");
+    let dir = root.join("data/mod/game/empty_action_keys");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+      dir.join("package.json"),
+      r#"{
+        "mod_id":"empty_action_keys",
+        "schema_version":1,
+        "type":"game",
+        "version":"1.0.0",
+        "version_code":1,
+        "api":{"min":1,"max":1},
+        "entry":"main",
+        "display":{"title":"Empty Action","author":"Tester"},
+        "game":{
+          "target_fps":60,
+          "actions":{"optional":{"description":"Optional","keys":[]}}
+        }
+      }"#,
+    )
+    .unwrap();
+
+    let mut service = PackageService::new();
+    let mut log = LogService::new();
+    scan(&mut service, &root, &mut log, "en_us");
+
+    assert!(
+      service.games()[0].game.as_ref().unwrap().actions["optional"]
+        .keys
+        .is_empty()
+    );
     let _ = std::fs::remove_dir_all(root);
   }
 
@@ -1936,6 +2012,7 @@ mod tests {
     assert_eq!(game_config.detail, "游戏详情");
     assert_eq!(game_config.score.as_ref().unwrap().empty_text, "无记录");
     assert_eq!(game_config.actions["move_up"].description, "上移");
+    assert!(!game_config.actions["move_up"].lock);
     assert_eq!(package_list_entry(game).game_name, "游戏名");
 
     let _ = std::fs::remove_dir_all(root);
@@ -2055,7 +2132,7 @@ mod tests {
   }
 
   #[test]
-  fn screensaver_mouse_flag_reaches_list_entry() {
+  fn legacy_screensaver_mouse_flag_is_ignored() {
     let root = temp_root("screensaver_mouse");
     write_screensaver(
       &root,
@@ -2074,7 +2151,7 @@ mod tests {
     let mut log = LogService::new();
     scan(&mut service, &root, &mut log, "en_us");
 
-    assert!(service.mod_screensavers()[0].mouse_required);
+    assert!(!service.mod_screensavers()[0].mouse_required);
 
     let _ = std::fs::remove_dir_all(root);
   }
@@ -2147,12 +2224,11 @@ mod tests {
     let screen = service.screensavers().remove(0);
     let config = screen.screensaver.as_ref().unwrap();
     assert_eq!(config.name, "旗标屏保");
-    assert!(config.mouse);
     assert!(config.truecolor);
     assert_eq!(config.command, "flag-screen");
 
     let entry = service.mod_screensavers().remove(0);
-    assert!(entry.mouse_required);
+    assert!(!entry.mouse_required);
     assert!(entry.truecolor_required);
 
     let _ = std::fs::remove_dir_all(root);

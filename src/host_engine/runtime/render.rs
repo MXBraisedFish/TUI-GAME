@@ -185,6 +185,14 @@ pub(super) fn route_render(
       &mut services.log,
     );
   }
+  if world.state.current_ui_kind() == Some(UiNodeKind::GameKeyBindings) {
+    settings_ui.key_bindings_mut().game_mut().prepare_surfaces(
+      &services.layout,
+      &services.i18n,
+      &services.text_input,
+      &services.scroll_box,
+    );
+  }
   if world.state.current_ui_kind() == Some(UiNodeKind::ScreenshotSettings) {
     settings_ui
       .screenshot_recording_mut()
@@ -261,6 +269,35 @@ pub(super) fn route_render(
         &services.layout,
         &services.i18n,
         &services.hit_area,
+      );
+    }
+    Some(UiNodeKind::KeyBindings) => {
+      settings_ui.key_bindings_mut().render(
+        &mut services.render,
+        &mut services.canvas,
+        &services.layout,
+        &services.i18n,
+        &services.hit_area,
+      );
+    }
+    Some(UiNodeKind::GlobalKeyBindings) => {
+      settings_ui.key_bindings_mut().global_mut().render(
+        &mut services.render,
+        &mut services.canvas,
+        &services.layout,
+        &services.i18n,
+        &services.hit_area,
+      );
+    }
+    Some(UiNodeKind::GameKeyBindings) => {
+      settings_ui.key_bindings_mut().game_mut().render(
+        &mut services.render,
+        &mut services.canvas,
+        &services.layout,
+        &services.i18n,
+        &services.hit_area,
+        &services.text_input,
+        &services.scroll_box,
       );
     }
     Some(UiNodeKind::DisplaySettings) => {
@@ -487,7 +524,6 @@ pub(super) fn route_render(
         &services.storage,
         &mut services.log,
         &mut services.image,
-        capabilities.mouse,
         capabilities.truecolor,
       );
     }

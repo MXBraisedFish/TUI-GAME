@@ -288,6 +288,7 @@ impl ModsUi {
     }
     RichTextParams {
       values: HashMap::new(),
+      key_default_actions: key_actions.clone(),
       key_actions,
     }
   }

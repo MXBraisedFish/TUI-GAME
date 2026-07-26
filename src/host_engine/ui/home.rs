@@ -6,6 +6,10 @@ mod settings;
 pub use about::{InputDemoCommand, InputDemoUi};
 pub use game_list::{GameListCommand, GameListUi};
 pub use settings::display_settings::{DisplaySettingsCommand, DisplaySettingsUi};
+pub use settings::key_bindings::{
+  GameKeyBindingsCommand, GameKeyBindingsUi, GlobalKeyBindingsCommand, GlobalKeyBindingsUi,
+  KeyBindingsCommand, KeyBindingsUi,
+};
 pub use settings::language::{LanguageSelectCommand, LanguageSelectUi};
 pub use settings::mods::game::{GamePackageCommand, GamePackageUi};
 pub use settings::mods::screensaver::{ScreensaverPackageCommand, ScreensaverPackageUi};

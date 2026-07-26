@@ -548,7 +548,7 @@ impl ScreensaverListUi {
   }
 
   fn package_params(entry: &PackageListEntry) -> RichTextParams {
-    RichTextParams::from_key_actions(&entry.key_actions)
+    RichTextParams::from_key_action_maps(&entry.key_actions, &entry.key_default_actions)
   }
 
   fn toggle_enabled(&mut self) -> Option<ScreensaverListCommand> {
@@ -1328,6 +1328,7 @@ mod tests {
       source: PackageSource::Mod,
       package_type: PackageType::Screensaver,
       key_actions: HashMap::new(),
+      key_default_actions: HashMap::new(),
       title: id.to_string(),
       game_name: String::new(),
       screensaver_name: id.to_string(),

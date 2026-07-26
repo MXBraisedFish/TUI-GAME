@@ -102,11 +102,18 @@ pub enum MediaListCommand {
     rich: bool,
   },
   SaveScreenshot {
+    source_path: PathBuf,
     frame: ComposedFrame,
     rect: ScreenshotRect,
     copy: bool,
   },
   ExportRecording {
+    path: PathBuf,
+  },
+  RequestDelete {
+    path: PathBuf,
+  },
+  ConfirmDelete {
     path: PathBuf,
   },
 }
@@ -521,6 +528,7 @@ pub struct MediaListUi<S: MediaListSpec> {
   ascending: bool,
   sort_field: SortField,
   renaming: Option<String>,
+  pending_delete: Option<PathBuf>,
   pending_notice: Option<MediaListNotice>,
   last_list_scroll_y: u16,
   zoomed: bool,
@@ -637,6 +645,7 @@ impl<S: MediaListSpec> MediaListUi<S> {
       ascending: true,
       sort_field: SortField::Name,
       renaming: None,
+      pending_delete: None,
       pending_notice: None,
       last_list_scroll_y: 0,
       zoomed: false,
@@ -777,6 +786,7 @@ impl<S: MediaListSpec> MediaListUi<S> {
   ) {
     self.search.clear();
     self.renaming = None;
+    self.pending_delete = None;
     self.selected = 0;
     self.active = ActivePanel::List;
     self.ascending = true;
@@ -870,6 +880,28 @@ impl<S: MediaListSpec> MediaListUi<S> {
 
   pub fn take_notice(&mut self) -> Option<MediaListNotice> {
     self.pending_notice.take()
+  }
+
+  pub fn begin_delete(&mut self, path: PathBuf) {
+    self.pending_delete = Some(path);
+    self.pause_player();
+  }
+
+  pub fn cancel_delete(&mut self) {
+    self.pending_delete = None;
+  }
+
+  pub fn finish_delete(&mut self, path: &Path) -> io::Result<()> {
+    fs::remove_file(path)?;
+    self.entries.retain(|entry| entry.path != path);
+    self.selected = self
+      .selected
+      .min(self.filtered_entries().len().saturating_sub(1));
+    self.pending_delete = None;
+    self.player = None;
+    self.loading_path = None;
+    self.request_selected_load();
+    Ok(())
   }
 
   pub fn scroll_list(&mut self, service: &ScrollBoxService, layout: &LayoutService, dy: i32) {
@@ -1020,6 +1052,26 @@ impl<S: MediaListSpec> MediaListUi<S> {
   }
 
   pub fn handle_event(&mut self, event: &UiEvent) -> Option<MediaListCommand> {
+    if let Some(path) = self.pending_delete.clone() {
+      let UiEvent::Action(event) = event else {
+        return None;
+      };
+      if event.state != KeyState::Pressed {
+        return None;
+      }
+      return match event.action.as_str() {
+        action if action == format!("{}.warning_yes", S::NS) => {
+          Some(MediaListCommand::ConfirmDelete { path })
+        }
+        action
+          if action == format!("{}.warning_no", S::NS) || action == format!("{}.back", S::NS) =>
+        {
+          self.pending_delete = None;
+          None
+        }
+        _ => None,
+      };
+    }
     if let Some(original) = self.renaming.clone() {
       return match event {
         UiEvent::TextInput(TextInputEvent::Submit { id, value }) if *id == self.rename_input => {
@@ -1142,6 +1194,17 @@ impl<S: MediaListSpec> MediaListUi<S> {
       ".modify" if self.active == ActivePanel::List && !self.filtered_entries().is_empty() => {
         Some(MediaListCommand::BeginRename)
       }
+      ".del" if self.active == ActivePanel::List => {
+        self
+          .filtered_entries()
+          .get(self.selected)
+          .map(|entry| MediaListCommand::RequestDelete {
+            path: entry.path.clone(),
+          })
+      }
+      ".del" if self.active == ActivePanel::Info => {
+        Some(MediaListCommand::ScrollInfo { dx: 3, dy: 0 })
+      }
       ".copy" if self.active == ActivePanel::Info => self.screenshot_command(false, false),
       ".copy_rich_text" if self.active == ActivePanel::Info => self.screenshot_command(true, false),
       ".save_image" if self.active == ActivePanel::Info => self.screenshot_command(false, true),
@@ -1190,9 +1253,12 @@ impl<S: MediaListSpec> MediaListUi<S> {
   }
 
   fn screenshot_command(&self, flag: bool, save: bool) -> Option<MediaListCommand> {
-    let (frame, rect) = self.selected_preview()?.frame_and_rect();
+    let entries = self.filtered_entries();
+    let entry = entries.get(self.selected)?;
+    let (frame, rect) = entry.preview.as_ref()?.frame_and_rect();
     Some(if save {
       MediaListCommand::SaveScreenshot {
+        source_path: entry.path.clone(),
         frame,
         rect,
         copy: flag,
@@ -1246,6 +1312,9 @@ impl<S: MediaListSpec> MediaListUi<S> {
     self.draw_hints(render, canvas, layout, i18n, text_input, &pos);
     if self.renaming.is_some() {
       self.draw_rename_dialog(render, canvas, layout, i18n, text_input)
+    } else if self.pending_delete.is_some() {
+      self.draw_delete_dialog(render, canvas, layout, i18n);
+      None
     } else {
       cursor
     }
@@ -2278,6 +2347,101 @@ impl<S: MediaListSpec> MediaListUi<S> {
     );
     cursor
   }
+
+  fn draw_delete_dialog(
+    &self,
+    render: &mut RenderService,
+    canvas: &mut CanvasService,
+    layout: &LayoutService,
+    i18n: &I18nService,
+  ) {
+    let viewport = layout.developer_viewport_rect();
+    let params = RichTextParams::from_action_map(&S::action_map(), &format!("{}.", S::NS));
+    let warning = i18n.get_runtime_text(S::NS, &format!("{}.warning", S::NS));
+    let warning = warning.replace("<fg:red>", "").replace("</fg>", "");
+    let choices = format!(
+      "{}  {}",
+      i18n.get_runtime_text(S::NS, &format!("{}.warning.no", S::NS)),
+      i18n.get_runtime_text(S::NS, &format!("{}.warning.yes", S::NS))
+    );
+    let warning_lines = warning.lines().collect::<Vec<_>>();
+    let content_width = warning_lines
+      .iter()
+      .map(|line| layout.get_text_width(line, Some(&params)))
+      .chain(std::iter::once(
+        layout.get_text_width(&choices, Some(&params)),
+      ))
+      .max()
+      .unwrap_or(1);
+    let width = content_width
+      .saturating_add(4)
+      .min(viewport.width.saturating_sub(2))
+      .max(8);
+    let height = (warning_lines.len() as u16)
+      .saturating_add(4)
+      .min(viewport.height);
+    let rect = Rect {
+      x: viewport.x + viewport.width.saturating_sub(width) / 2,
+      y: viewport.y + viewport.height.saturating_sub(height) / 2,
+      width,
+      height,
+    };
+    let red = TextColor::Terminal(TerminalColor::BrightRed);
+    render.draw_host_filled_rect(
+      canvas,
+      rect.x,
+      rect.y,
+      rect.width,
+      rect.height,
+      Some(" ".to_string()),
+      None,
+      Some(TextColor::Terminal(TerminalColor::Black)),
+    );
+    render.draw_host_border_rect(
+      canvas,
+      rect.x,
+      rect.y,
+      rect.width,
+      rect.height,
+      &BorderStyle::Line,
+      Some(red),
+      None,
+      None,
+      None,
+    );
+    for (index, line) in warning_lines.iter().enumerate() {
+      let line_width = layout.get_text_width(line, Some(&params));
+      render.draw_host_text(
+        canvas,
+        &DrawTextParams {
+          x: rect
+            .x
+            .saturating_add(rect.width.saturating_sub(line_width) / 2),
+          y: rect.y.saturating_add(1 + index as u16),
+          text: format!("f%<fg:red>{line}</fg>"),
+          params: Some(params.clone()),
+          max_width: Some(rect.width.saturating_sub(2)),
+          max_height: Some(1),
+          ..Default::default()
+        },
+      );
+    }
+    let choices_width = layout.get_text_width(&choices, Some(&params));
+    render.draw_host_text(
+      canvas,
+      &DrawTextParams {
+        x: rect
+          .x
+          .saturating_add(rect.width.saturating_sub(choices_width) / 2),
+        y: rect.y.saturating_add(height.saturating_sub(2)),
+        text: format!("f%<fg:rgb(85,87,83)>{choices}</fg>"),
+        params: Some(params),
+        max_width: Some(rect.width.saturating_sub(2)),
+        max_height: Some(1),
+        ..Default::default()
+      },
+    );
+  }
 }
 
 fn media_json_path(directory: &Path, name: &str) -> PathBuf {
@@ -2773,6 +2937,24 @@ mod tests {
 
     assert!(ui.handle_event(&action_event("test.order")).is_none());
     assert!(!ui.zoomed);
+  }
+
+  #[test]
+  fn shared_d_action_deletes_from_list_and_scrolls_from_info() {
+    let mut ui = ui_with_preview();
+    ui.active = ActivePanel::List;
+    assert_eq!(
+      ui.handle_event(&action_event("test.del")),
+      Some(MediaListCommand::RequestDelete {
+        path: PathBuf::from("capture.json"),
+      })
+    );
+
+    ui.active = ActivePanel::Info;
+    assert_eq!(
+      ui.handle_event(&action_event("test.del")),
+      Some(MediaListCommand::ScrollInfo { dx: 3, dy: 0 })
+    );
   }
 
   #[test]

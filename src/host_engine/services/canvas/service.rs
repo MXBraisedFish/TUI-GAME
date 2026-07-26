@@ -851,6 +851,7 @@ mod tests {
     key_actions.insert("home.confirm".to_string(), vec![vec!["enter".to_string()]]);
     let params = RichTextParams {
       values: HashMap::new(),
+      key_default_actions: key_actions.clone(),
       key_actions,
     };
 

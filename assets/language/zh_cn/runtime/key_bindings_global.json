@@ -1,0 +1,23 @@
+{
+  "key_bindings_global.title": "全局按键",
+  "key_bindings_global.action": "动作",
+  "key_bindings_global.key1": "键 1",
+  "key_bindings_global.key2": "键 2",
+  "key_bindings_global.action.select": "{key:key_bindings_global.focus_up}/{key:key_bindings_global.focus_down} 选择",
+  "key_bindings_global.action.key.edit": "{key:key_bindings_global.key_edit_del_1}/{key:key_bindings_global.key_edit_del_2} 添加/修改按键",
+  "key_bindings_global.action.key.del": "{key:key_bindings_global.key_edit_del_1}/{key:key_bindings_global.key_edit_del_2} 删除按键",
+  "key_bindings_global.action.switch": "{key:key_bindings_global.key_switch} 切换编辑模式",
+  "key_bindings_global.action.back": "{key:key_bindings_global.back} 返回并保存",
+  "key_bindings_global.action.color_doc.in": "{key:key_bindings_global.color_doc} 查看颜色说明",
+  "key_bindings_global.action.color_doc.out": "{key:key_bindings_global.color_doc} 关闭颜色说明",
+  "key_bindings_global.action.reset.only": "{key:key_bindings_global.reset.only} 重置当前动作按键",
+  "key_bindings_global.action.reset.all": "{key:key_bindings_global.reset.all} 重置全部按键",
+  "key_bindings_global.action.any": "[任意按键] 绑定（组合键需同时按下）",
+  "key_bindings_global.color_doc.yellow": "黄色 - 与游戏按键存在冲突（全局按键优先）",
+  "key_bindings_global.color_doc.red": "红色 - 当前全局按键存在冲突",
+  "key_bindings_global.color_doc.gray": "灰色 - 该按键不可修改",
+  "key_bindings_global.color_doc.composite": "黄色/红色 + 灰色 - 存在按键冲突且不可修改",
+  "key_bindings_global.color_doc.priority": "颜色优先级：红色 > 黄色",
+  "key_bindings_global.conflict": "全局按键存在冲突，不可保存"
+}
+

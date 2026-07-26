@@ -1,0 +1,9 @@
+{
+  "key_bindings.title": "按键设置",
+  "key_bindings.global": "全局按键",
+  "key_bindings.game": "游戏按键",
+  "key_bindings.action.focus": "{key:key_bindings.focus_global}/{key:key_bindings.focus_game} 聚焦",
+  "key_bindings.action.select": "{key:key_bindings.focus_up}/{key:key_bindings.focus_down} 选择",
+  "key_bindings.action.confirm": "{key:key_bindings.confirm} 确认",
+  "key_bindings.action.list.back": "{key:key_bindings.list.back} 返回"
+} 

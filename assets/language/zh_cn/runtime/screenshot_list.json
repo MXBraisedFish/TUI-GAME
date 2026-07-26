@@ -32,5 +32,6 @@
   "screenshot_list.list.search.placeholder": "🔍 搜索",
   "screenshot_list.list.modify.placeholder": "请输入命名内容",
   "screenshot_list.modify.invalid": "命名无效",
-  "screenshot_list.modify.duplicate": "命名重复"
+  "screenshot_list.modify.duplicate": "命名重复",
+  "screenshot_list.popup.no_del": "当前截屏正在导出，不可删除"
 }

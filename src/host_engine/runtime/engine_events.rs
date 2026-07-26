@@ -24,40 +24,46 @@ pub(super) fn drain_engine_events(services: &mut EngineServices) -> RuntimeEngin
         let event = services
           .package
           .handle_async_event(event, &mut services.log);
+        if matches!(event, PackageEvent::ScanFinished { .. }) {
+          synchronize_key_bindings_profile(services);
+        }
         if matches!(event, PackageEvent::WatchChanged { .. }) {
           let _ = services.package.request_rescan(&services.async_runtime);
         }
         package_events.push(event);
       }
       EngineEvent::Export(event) => export_events.push(event),
-      EngineEvent::Screenshot(event) => match event {
-        ScreenshotAsyncEvent::Progress {
-          task_id,
-          completed_rows,
-          total_rows,
-        } => screenshot_events.push(ScreenshotAsyncEvent::Progress {
-          task_id,
-          completed_rows,
-          total_rows,
-        }),
-        ScreenshotAsyncEvent::Saved { task_id, png_path } => {
-          services.log.info(
-            LogSource::Storage,
-            format!(
-              "Screenshot task {task_id:?} saved PNG: {}",
-              png_path.display()
-            ),
-          );
-          screenshot_events.push(ScreenshotAsyncEvent::Saved { task_id, png_path });
+      EngineEvent::Screenshot(event) => {
+        services.screenshot.handle_engine_event(&event);
+        match event {
+          ScreenshotAsyncEvent::Progress {
+            task_id,
+            completed_rows,
+            total_rows,
+          } => screenshot_events.push(ScreenshotAsyncEvent::Progress {
+            task_id,
+            completed_rows,
+            total_rows,
+          }),
+          ScreenshotAsyncEvent::Saved { task_id, png_path } => {
+            services.log.info(
+              LogSource::Storage,
+              format!(
+                "Screenshot task {task_id:?} saved PNG: {}",
+                png_path.display()
+              ),
+            );
+            screenshot_events.push(ScreenshotAsyncEvent::Saved { task_id, png_path });
+          }
+          ScreenshotAsyncEvent::Failed { task_id, error } => {
+            services.log.warn(
+              LogSource::Storage,
+              format!("Screenshot task {task_id:?} failed: {error}"),
+            );
+            screenshot_events.push(ScreenshotAsyncEvent::Failed { task_id, error });
+          }
         }
-        ScreenshotAsyncEvent::Failed { task_id, error } => {
-          services.log.warn(
-            LogSource::Storage,
-            format!("Screenshot task {task_id:?} failed: {error}"),
-          );
-          screenshot_events.push(ScreenshotAsyncEvent::Failed { task_id, error });
-        }
-      },
+      }
       EngineEvent::Recording(event) => {
         services.recording.handle_engine_event(&event);
         match event {

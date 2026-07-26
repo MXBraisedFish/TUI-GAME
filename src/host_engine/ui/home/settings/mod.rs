@@ -8,6 +8,7 @@ use crate::host_engine::services::{
 };
 
 pub mod display_settings;
+pub mod key_bindings;
 pub mod language;
 pub mod mods;
 pub mod screensaver_list;
@@ -16,6 +17,7 @@ pub mod security;
 pub mod storage_management;
 pub mod toolbar_custom;
 
+use key_bindings::KeyBindingsUi;
 use screenshot_recording::ScreenshotRecordingUi;
 
 const SETTINGS_MENU_LEN: usize = 8;
@@ -48,6 +50,7 @@ pub struct SettingsUi {
   back_area: HitAreaId,
   menu_areas: [HitAreaId; SETTINGS_MENU_LEN],
   screenshot_recording: ScreenshotRecordingUi,
+  key_bindings: KeyBindingsUi,
 }
 
 impl UiObjectPoolOwner for SettingsUi {
@@ -75,6 +78,7 @@ impl RuntimeObjectPoolOwner for SettingsUi {
 pub enum SettingsUiCommand {
   Back,
   OpenLanguageSelect,
+  OpenKeyBindings,
   OpenMods,
   OpenStorageManagement,
   OpenSecuritySettings,
@@ -98,11 +102,16 @@ impl SettingsUi {
       objects,
       runtime_objects: RuntimeObjectPool::new(),
       screenshot_recording: ScreenshotRecordingUi::init(hit_area, text_input, scroll_box),
+      key_bindings: KeyBindingsUi::init(hit_area, text_input, scroll_box),
     }
   }
 
   pub fn screenshot_recording_mut(&mut self) -> &mut ScreenshotRecordingUi {
     &mut self.screenshot_recording
+  }
+
+  pub fn key_bindings_mut(&mut self) -> &mut KeyBindingsUi {
+    &mut self.key_bindings
   }
 
   /// 返回设置页面的按键映射定义。
@@ -186,6 +195,7 @@ impl SettingsUi {
         self.selected_index = self.menu_areas.iter().position(|area| area == id)?;
         match self.selected_index {
           0 => Some(SettingsUiCommand::OpenLanguageSelect),
+          1 => Some(SettingsUiCommand::OpenKeyBindings),
           2 => Some(SettingsUiCommand::OpenMods),
           3 => Some(SettingsUiCommand::OpenStorageManagement),
           4 => Some(SettingsUiCommand::OpenSecuritySettings),
@@ -210,6 +220,7 @@ impl SettingsUi {
         }
         "settings.confirm" => match self.selected_index {
           0 => Some(SettingsUiCommand::OpenLanguageSelect),
+          1 => Some(SettingsUiCommand::OpenKeyBindings),
           2 => Some(SettingsUiCommand::OpenMods),
           3 => Some(SettingsUiCommand::OpenStorageManagement),
           4 => Some(SettingsUiCommand::OpenSecuritySettings),

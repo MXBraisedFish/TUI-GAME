@@ -1,11 +1,12 @@
 use std::{
+  collections::HashMap,
   env, fs,
   path::{Path, PathBuf},
 };
 
 use chrono::Local;
 use crossbeam_channel::Sender;
-use image::{ImageBuffer, Rgba, RgbaImage, imageops::FilterType};
+use image::{ImageBuffer, Rgba, RgbaImage};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use unicode_segmentation::UnicodeSegmentation;
@@ -20,6 +21,24 @@ use crate::host_engine::services::{
 const CELL_WIDTH: u32 = 18;
 const CELL_HEIGHT: u32 = 36;
 const FONT_SIZE: f32 = 27.0;
+
+#[derive(Clone, Copy)]
+struct RasterMetrics {
+  cell_width: u32,
+  cell_height: u32,
+  font_size: f32,
+}
+
+impl RasterMetrics {
+  fn for_scale(scale: RecordingPixelScale) -> Self {
+    let (numerator, denominator) = scale.multiplier();
+    Self {
+      cell_width: (CELL_WIDTH * numerator / denominator).max(1),
+      cell_height: (CELL_HEIGHT * numerator / denominator).max(1),
+      font_size: FONT_SIZE * numerator as f32 / denominator as f32,
+    }
+  }
+}
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ScreenshotRect {
@@ -64,6 +83,7 @@ pub struct ScreenshotService {
   last_presented_frame: Option<ComposedFrame>,
   pending_font_preview: Option<Vec<String>>,
   pending_operation_feedback: Option<ScreenshotOperationFeedback>,
+  active_export_sources: HashMap<TaskId, Vec<PathBuf>>,
 }
 
 impl ScreenshotService {
@@ -72,6 +92,7 @@ impl ScreenshotService {
       last_presented_frame: None,
       pending_font_preview: None,
       pending_operation_feedback: None,
+      active_export_sources: HashMap::new(),
     }
   }
 
@@ -96,6 +117,31 @@ impl ScreenshotService {
 
   pub(crate) fn take_operation_feedback(&mut self) -> Option<ScreenshotOperationFeedback> {
     self.pending_operation_feedback.take()
+  }
+
+  pub fn register_source_export(&mut self, task_id: TaskId, source_path: PathBuf) {
+    let sources = self.active_export_sources.entry(task_id).or_default();
+    if !sources.contains(&source_path) {
+      sources.push(source_path);
+    }
+  }
+
+  pub fn handle_engine_event(&mut self, event: &ScreenshotAsyncEvent) {
+    match event {
+      ScreenshotAsyncEvent::Saved { task_id, .. }
+      | ScreenshotAsyncEvent::Failed { task_id, .. } => {
+        self.active_export_sources.remove(task_id);
+      }
+      ScreenshotAsyncEvent::Progress { .. } => {}
+    }
+  }
+
+  pub fn is_source_exporting(&self, path: &Path) -> bool {
+    self
+      .active_export_sources
+      .values()
+      .flatten()
+      .any(|source| source == path)
   }
 
   pub fn font_preview_frame() -> ComposedFrame {
@@ -529,10 +575,10 @@ impl TerminalFrameRasterizer {
   }
 
   pub(crate) fn dimensions(width: u16, height: u16, scale: RecordingPixelScale) -> (u32, u32) {
-    let (numerator, denominator) = scale.multiplier();
+    let metrics = RasterMetrics::for_scale(scale);
     (
-      even_dimension((u32::from(width) * CELL_WIDTH * numerator / denominator).max(1)),
-      even_dimension((u32::from(height) * CELL_HEIGHT * numerator / denominator).max(1)),
+      even_dimension((u32::from(width) * metrics.cell_width).max(1)),
+      even_dimension((u32::from(height) * metrics.cell_height).max(1)),
     )
   }
 
@@ -543,8 +589,11 @@ impl TerminalFrameRasterizer {
     scale: RecordingPixelScale,
     mut progress: impl FnMut(u16, u16),
   ) -> RgbaImage {
-    let width = u32::from(rect.width) * CELL_WIDTH;
-    let height = u32::from(rect.height) * CELL_HEIGHT;
+    // 字符、样式与颜色一直保留为结构化数据，直到确定最终导出尺寸后，
+    // 才按目标单元格和字号直接栅格化，避免先生成低分辨率位图再缩放。
+    let metrics = RasterMetrics::for_scale(scale);
+    let width = even_dimension(u32::from(rect.width) * metrics.cell_width);
+    let height = even_dimension(u32::from(rect.height) * metrics.cell_height);
     let mut image = ImageBuffer::from_pixel(width.max(1), height.max(1), Rgba([0, 0, 0, 255]));
 
     for y in 0..rect.height {
@@ -555,14 +604,14 @@ impl TerminalFrameRasterizer {
         let (fg, bg) = resolved_colors(&cell.style);
         fill_rect(
           &mut image,
-          u32::from(x) * CELL_WIDTH,
-          u32::from(y) * CELL_HEIGHT,
-          CELL_WIDTH,
-          CELL_HEIGHT,
+          u32::from(x) * metrics.cell_width,
+          u32::from(y) * metrics.cell_height,
+          metrics.cell_width,
+          metrics.cell_height,
           bg,
         );
         if cell.style.underline {
-          draw_underline(&mut image, x, y, fg);
+          draw_underline(&mut image, metrics, x, y, fg);
         }
       }
       progress(y.saturating_add(1), rect.height.saturating_mul(2));
@@ -574,7 +623,7 @@ impl TerminalFrameRasterizer {
           continue;
         };
         if !cell.is_continuation() {
-          draw_cell_text(&mut image, &self.fonts, x, y, cell);
+          draw_cell_text(&mut image, &self.fonts, metrics, x, y, cell);
         }
       }
       progress(
@@ -583,12 +632,7 @@ impl TerminalFrameRasterizer {
       );
     }
 
-    if scale == RecordingPixelScale::Original {
-      image
-    } else {
-      let (width, height) = Self::dimensions(rect.width, rect.height, scale);
-      image::imageops::resize(&image, width, height, FilterType::Nearest)
-    }
+    image
   }
 }
 
@@ -716,17 +760,25 @@ fn load_font_file(path: &Path, fonts: &mut Vec<fontdue::Font>) -> Result<(), Str
   Ok(())
 }
 
-fn draw_cell_text(image: &mut RgbaImage, fonts: &FontSet, x: u16, y: u16, cell: &CanvasCell) {
+fn draw_cell_text(
+  image: &mut RgbaImage,
+  fonts: &FontSet,
+  metrics: RasterMetrics,
+  x: u16,
+  y: u16,
+  cell: &CanvasCell,
+) {
   if cell.style.hidden {
     return;
   }
   let (fg, _bg) = resolved_colors(&cell.style);
-  let px = x as u32 * CELL_WIDTH;
-  let py = y as u32 * CELL_HEIGHT;
-  let span_width = cell.text.width().max(1) as u32 * CELL_WIDTH;
+  let px = x as u32 * metrics.cell_width;
+  let py = y as u32 * metrics.cell_height;
+  let span_width = cell.text.width().max(1) as u32 * metrics.cell_width;
   draw_grapheme(
     image,
     fonts,
+    metrics,
     &cell.text,
     px,
     py,
@@ -736,10 +788,16 @@ fn draw_cell_text(image: &mut RgbaImage, fonts: &FontSet, x: u16, y: u16, cell: 
   );
 }
 
-fn draw_underline(image: &mut RgbaImage, x: u16, y: u16, color: (u8, u8, u8)) {
-  let px = x as u32 * CELL_WIDTH;
-  let py = y as u32 * CELL_HEIGHT + CELL_HEIGHT.saturating_sub(4);
-  for xx in px..px.saturating_add(CELL_WIDTH).min(image.width()) {
+fn draw_underline(
+  image: &mut RgbaImage,
+  metrics: RasterMetrics,
+  x: u16,
+  y: u16,
+  color: (u8, u8, u8),
+) {
+  let px = x as u32 * metrics.cell_width;
+  let py = y as u32 * metrics.cell_height + metrics.cell_height.saturating_sub(4);
+  for xx in px..px.saturating_add(metrics.cell_width).min(image.width()) {
     composite_pixel(
       image,
       xx,
@@ -754,6 +812,7 @@ fn draw_underline(image: &mut RgbaImage, x: u16, y: u16, color: (u8, u8, u8)) {
 fn draw_grapheme(
   image: &mut RgbaImage,
   fonts: &FontSet,
+  metrics: RasterMetrics,
   grapheme: &str,
   origin_x: u32,
   origin_y: u32,
@@ -763,7 +822,9 @@ fn draw_grapheme(
 ) {
   if let Some(character) = grapheme.chars().next()
     && grapheme.chars().count() == 1
-    && draw_block_element(image, character, origin_x, origin_y, span_width, fg)
+    && draw_block_element(
+      image, metrics, character, origin_x, origin_y, span_width, fg,
+    )
   {
     return;
   }
@@ -777,7 +838,7 @@ fn draw_grapheme(
   let clip_left = origin_x;
   let clip_right = (origin_x + span_width).min(image.width());
   let clip_top = origin_y;
-  let clip_bottom = (origin_y + CELL_HEIGHT).min(image.height());
+  let clip_bottom = (origin_y + metrics.cell_height).min(image.height());
 
   for character in grapheme.chars() {
     if character == '\u{200d}' || character == '\u{fe0f}' {
@@ -792,33 +853,33 @@ fn draw_grapheme(
       continue;
     };
     let font_size = if is_probably_emoji(character) {
-      FONT_SIZE * 0.86
+      metrics.font_size * 0.86
     } else {
-      FONT_SIZE
+      metrics.font_size
     };
-    let (metrics, bitmap) = font.rasterize(character, font_size);
+    let (glyph_metrics, bitmap) = font.rasterize(character, font_size);
     let allocated_width = if char_width == 0 {
       span_width
     } else {
-      (char_width as u32 * CELL_WIDTH).min(span_width)
+      (char_width as u32 * metrics.cell_width).min(span_width)
     };
     let glyph_origin_x = if char_width == 0 {
       last_base_origin_x
     } else {
-      let origin =
-        pen_x as i32 + ((allocated_width as f32 - metrics.advance_width) / 2.0).round() as i32;
+      let origin = pen_x as i32
+        + ((allocated_width as f32 - glyph_metrics.advance_width) / 2.0).round() as i32;
       last_base_origin_x = origin;
       origin
     };
 
-    let destination_x = glyph_origin_x + metrics.xmin;
-    let baseline = origin_y as i32 + (CELL_HEIGHT as f32 * 0.78) as i32;
-    let top = baseline - metrics.height as i32 - metrics.ymin;
+    let destination_x = glyph_origin_x + glyph_metrics.xmin;
+    let baseline = origin_y as i32 + (metrics.cell_height as f32 * 0.78) as i32;
+    let top = baseline - glyph_metrics.height as i32 - glyph_metrics.ymin;
     draw_glyph_bitmap(
       image,
       &bitmap,
-      metrics.width,
-      metrics.height,
+      glyph_metrics.width,
+      glyph_metrics.height,
       destination_x,
       top,
       clip_left,
@@ -831,8 +892,8 @@ fn draw_grapheme(
       draw_glyph_bitmap(
         image,
         &bitmap,
-        metrics.width,
-        metrics.height,
+        glyph_metrics.width,
+        glyph_metrics.height,
         destination_x + 1,
         top,
         clip_left,
@@ -844,7 +905,7 @@ fn draw_grapheme(
     }
 
     if char_width > 0 {
-      pen_x = pen_x.saturating_add(char_width as u32 * CELL_WIDTH);
+      pen_x = pen_x.saturating_add(char_width as u32 * metrics.cell_width);
     }
   }
 
@@ -852,12 +913,21 @@ fn draw_grapheme(
     && grapheme.chars().count() == 1
     && let Some(connections) = box_connections(character)
   {
-    draw_box_connections(image, origin_x, origin_y, span_width, fg, connections);
+    draw_box_connections(
+      image,
+      metrics,
+      origin_x,
+      origin_y,
+      span_width,
+      fg,
+      connections,
+    );
   }
 }
 
 fn draw_block_element(
   image: &mut RgbaImage,
+  metrics: RasterMetrics,
   character: char,
   x: u32,
   y: u32,
@@ -865,7 +935,7 @@ fn draw_block_element(
   color: (u8, u8, u8),
 ) -> bool {
   let eighth_w = width.div_ceil(8);
-  let eighth_h = CELL_HEIGHT.div_ceil(8);
+  let eighth_h = metrics.cell_height.div_ceil(8);
   let rects: &[(u32, u32, u32, u32)] = match character {
     '█' => &[(0, 0, 8, 8)],
     '▀' => &[(0, 0, 8, 4)],
@@ -900,16 +970,17 @@ fn draw_block_element(
   };
   for &(rx, ry, rw, rh) in rects {
     let left = x.saturating_add(rx * eighth_w).min(x + width);
-    let top = y.saturating_add(ry * eighth_h).min(y + CELL_HEIGHT);
+    let top = y.saturating_add(ry * eighth_h).min(y + metrics.cell_height);
     let right = if rx + rw == 8 {
       x + width
     } else {
       x.saturating_add((rx + rw) * eighth_w).min(x + width)
     };
     let bottom = if ry + rh == 8 {
-      y + CELL_HEIGHT
+      y + metrics.cell_height
     } else {
-      y.saturating_add((ry + rh) * eighth_h).min(y + CELL_HEIGHT)
+      y.saturating_add((ry + rh) * eighth_h)
+        .min(y + metrics.cell_height)
     };
     fill_rect(
       image,
@@ -965,6 +1036,7 @@ fn box_connections(character: char) -> Option<BoxConnections> {
 
 fn draw_box_connections(
   image: &mut RgbaImage,
+  metrics: RasterMetrics,
   x: u32,
   y: u32,
   width: u32,
@@ -972,8 +1044,8 @@ fn draw_box_connections(
   connections: BoxConnections,
 ) {
   let center_x = x.saturating_add(width / 2);
-  let center_y = y.saturating_add(CELL_HEIGHT / 2);
-  let thickness = (CELL_WIDTH / 9).max(1);
+  let center_y = y.saturating_add(metrics.cell_height / 2);
+  let thickness = (metrics.cell_width / 9).max(1);
   if connections.left {
     fill_rect(image, x, center_y, width / 2 + 1, thickness, color);
   }
@@ -988,7 +1060,14 @@ fn draw_box_connections(
     );
   }
   if connections.up {
-    fill_rect(image, center_x, y, thickness, CELL_HEIGHT / 2 + 1, color);
+    fill_rect(
+      image,
+      center_x,
+      y,
+      thickness,
+      metrics.cell_height / 2 + 1,
+      color,
+    );
   }
   if connections.down {
     fill_rect(
@@ -996,7 +1075,8 @@ fn draw_box_connections(
       center_x,
       center_y,
       thickness,
-      y.saturating_add(CELL_HEIGHT).saturating_sub(center_y),
+      y.saturating_add(metrics.cell_height)
+        .saturating_sub(center_y),
       color,
     );
   }
@@ -1181,10 +1261,24 @@ mod tests {
   }
 
   #[test]
+  fn source_export_lock_is_removed_on_terminal_event() {
+    let mut service = ScreenshotService::new();
+    let path = PathBuf::from("data/screenshot/cache/example.json");
+    service.register_source_export(TaskId(8), path.clone());
+    assert!(service.is_source_exporting(&path));
+    service.handle_engine_event(&ScreenshotAsyncEvent::Failed {
+      task_id: TaskId(8),
+      error: "test".to_string(),
+    });
+    assert!(!service.is_source_exporting(&path));
+  }
+
+  #[test]
   fn full_block_fills_the_entire_export_cell_without_font_margins() {
     let mut image = RgbaImage::new(CELL_WIDTH, CELL_HEIGHT);
     assert!(draw_block_element(
       &mut image,
+      RasterMetrics::for_scale(RecordingPixelScale::Original),
       '█',
       0,
       0,

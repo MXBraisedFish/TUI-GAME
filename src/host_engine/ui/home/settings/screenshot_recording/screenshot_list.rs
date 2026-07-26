@@ -24,6 +24,9 @@ impl MediaListSpec for ScreenshotListSpec {
       ("screenshot_list.scroll_up", "w"),
       ("screenshot_list.scroll_down", "s"),
       ("screenshot_list.scroll_left", "a"),
+      // D 在列表聚焦时删除，在信息栏聚焦时向右移动。输入服务会让
+      // 先注册的动作消费按键，因此必须由 del 统一接收后按面板分流。
+      ("screenshot_list.del", "d"),
       ("screenshot_list.scroll_right", "d"),
       ("screenshot_list.focus_up", "up"),
       ("screenshot_list.focus_down", "down"),
@@ -32,7 +35,8 @@ impl MediaListSpec for ScreenshotListSpec {
       ("screenshot_list.order", "z"),
       ("screenshot_list.sort", "x"),
       ("screenshot_list.modify", "f"),
-      ("screenshot_list.del", "d"),
+      ("screenshot_list.warning_yes", "y"),
+      ("screenshot_list.warning_no", "n"),
       ("screenshot_list.switch", "tab"),
       ("screenshot_list.copy", "1"),
       ("screenshot_list.copy_rich_text", "2"),
@@ -67,5 +71,24 @@ impl MediaListSpec for ScreenshotListSpec {
       "action.all",
       "action.zoom.in",
     ]
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn delete_consumes_the_shared_d_key_before_scroll_right() {
+    let actions = ScreenshotListSpec::action_map();
+    let delete = actions
+      .iter()
+      .position(|entry| entry.action == "screenshot_list.del")
+      .unwrap();
+    let scroll_right = actions
+      .iter()
+      .position(|entry| entry.action == "screenshot_list.scroll_right")
+      .unwrap();
+    assert!(delete < scroll_right);
   }
 }

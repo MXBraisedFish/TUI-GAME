@@ -65,9 +65,9 @@ pub use host_object::{HostArea, HostAreaId, HostAreaKind, HostObjectPool};
 pub use i18n::{I18nService, LanguageRegistryEntry};
 pub use image::{ImageConvertParams, ImageService};
 pub use input::{
-  ActionMapEntry, InputActionEvent, InputEventType, InputService, Key, KeyEventKind, KeyState,
-  MouseButton, MouseEvent, MouseEventKind, RawKeyEvent, ScrollDirection, SystemEvent,
-  TerminalKeyCode, TerminalKeyEvent, translate_action_map,
+  ActionMapEntry, InputActionEvent, InputEventType, InputService, Key, KeyEvent, KeyEventKind,
+  KeyState, MouseButton, MouseEvent, MouseEventKind, RawKeyEvent, ScrollDirection, SystemEvent,
+  TerminalKeyCode, TerminalKeyEvent, format_key_display, key_token, translate_action_map,
 };
 pub use input_method::{ImPolicy, InputMethodService};
 pub use layout::{LayoutService, Rect, Size};
@@ -76,7 +76,8 @@ pub use lua::LuaService;
 pub use network::NetworkService;
 pub use overlay::OverlayService;
 pub use package::{
-  PackageAsset, PackageEvent, PackageListEntry, PackageService, PackageSource, PackageType,
+  PackageAsset, PackageEvent, PackageInfo, PackageListEntry, PackageService, PackageSource,
+  PackageType,
 };
 pub use popup::{PopupDismissEvent, PopupRequest, PopupService, PopupView};
 pub use random::RandomService;
@@ -92,11 +93,12 @@ pub use rich_text::{
 };
 pub use screenshot::{ScreenshotAsyncEvent, ScreenshotRect, ScreenshotService, ScreenshotTask};
 pub use storage::{
-  AutoRecordingMode, AutoSplitDuration, DisplayFpsLimit, DisplayLogoMode, DisplayOrderMode,
-  DisplaySettingsProfile, DisplaySourceMode, GamePackageState, PackageDefaultState,
-  PackageStateProfile, RecordingExportFrameRate, RecordingExportQuality, RecordingFrameRate,
-  RecordingPixelScale, RecordingPopupMode, RecordingProfile, SafeModeDefault,
-  ScreensaverPackageState, ScreenshotDoubleAction, ScreenshotProfile, StorageService,
+  ActionKeyMap, AutoRecordingMode, AutoSplitDuration, DisplayFpsLimit, DisplayLogoMode,
+  DisplayOrderMode, DisplaySettingsProfile, DisplaySourceMode, GamePackageState,
+  KeyBindingsProfile, PackageDefaultState, PackageStateProfile, RecordingExportFrameRate,
+  RecordingExportQuality, RecordingFrameRate, RecordingGpuAcceleration, RecordingPixelScale,
+  RecordingPopupMode, RecordingProfile, SafeModeDefault, ScreensaverPackageState,
+  ScreenshotDoubleAction, ScreenshotProfile, StorageService,
 };
 pub use terminal::TerminalService;
 pub use text_layout::DrawTextParams;

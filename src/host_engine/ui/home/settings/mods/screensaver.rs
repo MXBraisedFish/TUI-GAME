@@ -481,7 +481,6 @@ impl ScreensaverPackageUi {
     storage: &StorageService,
     log: &mut LogService,
     image: &mut ImageService,
-    mouse_supported: bool,
     truecolor_supported: bool,
   ) {
     self.sync_entries(package.mod_screensavers(), storage, log);
@@ -521,7 +520,6 @@ impl ScreensaverPackageUi {
       layout,
       i18n,
       image,
-      mouse_supported,
       truecolor_supported,
       &positions,
       info_scroll_y,
@@ -1202,7 +1200,6 @@ impl ScreensaverPackageUi {
     layout: &LayoutService,
     i18n: &I18nService,
     image: &mut ImageService,
-    mouse_supported: bool,
     truecolor_supported: bool,
     pos: &ScreensaverPackageLayout,
     scroll_y: u16,
@@ -1260,7 +1257,6 @@ impl ScreensaverPackageUi {
       entry,
       pos.right_inner,
       scroll_y,
-      mouse_supported,
       truecolor_supported,
     );
   }
@@ -1275,7 +1271,6 @@ impl ScreensaverPackageUi {
     entry: &PackageListEntry,
     rect: Rect,
     scroll_y: u16,
-    mouse_supported: bool,
     truecolor_supported: bool,
   ) {
     let package_params = Self::package_rich_params(entry);
@@ -1396,29 +1391,6 @@ impl ScreensaverPackageUi {
       } else {
         Self::hint_style()
       },
-    );
-    y += 1;
-    let (mouse_key, mouse_color) = if !entry.mouse_required {
-      ("screensaver_pack.info.mouse.off", Self::hint_style())
-    } else if mouse_supported {
-      (
-        "screensaver_pack.info.mouse.on.support",
-        Self::style(TerminalColor::BrightGreen),
-      )
-    } else {
-      (
-        "screensaver_pack.info.mouse.on.unsupport",
-        Self::style(TerminalColor::BrightRed),
-      )
-    };
-    self.draw_info_status(
-      canvas,
-      rect,
-      scroll_y,
-      y,
-      i18n.get_runtime_text("screensaver_pack", "screensaver_pack.info.mouse"),
-      i18n.get_runtime_text("screensaver_pack", mouse_key),
-      mouse_color,
     );
     y += 1;
     let (truecolor_key, truecolor_color) = if !entry.truecolor_required {
@@ -1874,7 +1846,7 @@ impl ScreensaverPackageUi {
   // ─── 辅助方法 ──────────────────────────────────────────
 
   fn package_rich_params(entry: &PackageListEntry) -> RichTextParams {
-    RichTextParams::from_key_actions(&entry.key_actions)
+    RichTextParams::from_key_action_maps(&entry.key_actions, &entry.key_default_actions)
   }
 
   fn package_visible_text(entry: &PackageListEntry, text: &str) -> String {
