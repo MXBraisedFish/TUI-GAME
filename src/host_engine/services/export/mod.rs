@@ -1,5 +1,4 @@
 mod service;
 
-pub use service::{
-  ExportAsyncEvent, ExportFormat, ExportScope, ExportService, ExportTask, run_export_task,
-};
+pub(crate) use service::run_export_task;
+pub use service::{ExportAsyncEvent, ExportFormat, ExportScope, ExportService, ExportTask};

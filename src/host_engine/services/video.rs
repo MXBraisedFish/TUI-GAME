@@ -18,6 +18,7 @@ use openh264::{
   formats::{RgbSliceU8, YUVBuffer},
 };
 
+use crate::host_engine::services::async_runtime::TaskCancellation;
 use crate::host_engine::services::{
   AsyncRuntime, EngineEvent, EngineTask, RecordingExportQuality, RecordingGpuAcceleration,
   RecordingProfile, ScreenshotRect, StorageService, TaskId, load_recording_playback,
@@ -256,6 +257,10 @@ impl VideoService {
     self.active_exports.len()
   }
 
+  pub fn active_task_ids(&self) -> Vec<TaskId> {
+    self.export_order.clone()
+  }
+
   pub fn is_source_exporting(&self, path: &Path) -> bool {
     self.source_paths.values().any(|source| source == path)
   }
@@ -278,12 +283,28 @@ pub(crate) fn run_video_task(
   task_id: TaskId,
   task: VideoExportTask,
   event_tx: &Sender<EngineEvent>,
+  cancellation: &TaskCancellation,
 ) -> Result<(), String> {
   let _ = event_tx.send(EngineEvent::Video(VideoAsyncEvent::Preparing { task_id }));
   let temporary_path = temporary_path(&task.output_path, task_id);
-  let result = export_recording(task_id, &task, &temporary_path, event_tx);
+  let result = export_recording(task_id, &task, &temporary_path, event_tx, cancellation);
   match result {
     Ok(()) => {
+      if cancellation.is_cancelled() {
+        cleanup_temporary_file(&temporary_path);
+        return Err("video export cancelled".to_string());
+      }
+      if let Err(error) = File::options()
+        .read(true)
+        .write(true)
+        .open(&temporary_path)
+        .and_then(|file| file.sync_all())
+      {
+        let export_error = VideoExportError::new(VideoExportStage::Disk, error.to_string());
+        cleanup_temporary_file(&temporary_path);
+        send_failed(task_id, &task, export_error.clone(), event_tx);
+        return Err(export_error.to_string());
+      }
       if let Err(error) = fs::rename(&temporary_path, &task.output_path) {
         let export_error = VideoExportError::new(VideoExportStage::Disk, error.to_string());
         cleanup_temporary_file(&temporary_path);
@@ -310,14 +331,22 @@ fn export_recording(
   task: &VideoExportTask,
   temporary_path: &Path,
   event_tx: &Sender<EngineEvent>,
+  cancellation: &TaskCancellation,
 ) -> Result<(), VideoExportError> {
   if let Some(encoder) = resolve_ffmpeg_encoder(task.profile.gpu_acceleration) {
-    match export_recording_ffmpeg(task_id, task, temporary_path, event_tx, encoder) {
+    match export_recording_ffmpeg(
+      task_id,
+      task,
+      temporary_path,
+      event_tx,
+      encoder,
+      cancellation,
+    ) {
       Ok(()) => return Ok(()),
       Err(_) => cleanup_temporary_file(temporary_path),
     }
   }
-  export_recording_openh264(task_id, task, temporary_path, event_tx)
+  export_recording_openh264(task_id, task, temporary_path, event_tx, cancellation)
 }
 
 fn export_recording_openh264(
@@ -325,6 +354,7 @@ fn export_recording_openh264(
   task: &VideoExportTask,
   temporary_path: &Path,
   event_tx: &Sender<EngineEvent>,
+  cancellation: &TaskCancellation,
 ) -> Result<(), VideoExportError> {
   let playback = load_recording_playback(&task.source_path)
     .ok_or_else(|| VideoExportError::new(VideoExportStage::Parse, "recording JSON is invalid"))?;
@@ -362,6 +392,12 @@ fn export_recording_openh264(
   let mut last_progress_percent = u64::MAX;
 
   for frame_index in 0..total_frames {
+    if cancellation.is_cancelled() {
+      return Err(VideoExportError::new(
+        VideoExportStage::Encode,
+        "video export cancelled",
+      ));
+    }
     let time_us = frame_index
       .saturating_mul(1_000_000)
       .checked_div(u64::from(frame_rate))
@@ -453,6 +489,7 @@ fn export_recording_ffmpeg(
   temporary_path: &Path,
   event_tx: &Sender<EngineEvent>,
   encoder: &'static str,
+  cancellation: &TaskCancellation,
 ) -> Result<(), VideoExportError> {
   let playback = load_recording_playback(&task.source_path)
     .ok_or_else(|| VideoExportError::new(VideoExportStage::Parse, "recording JSON is invalid"))?;
@@ -525,6 +562,15 @@ fn export_recording_ffmpeg(
   let mut cursor = 0;
   let mut last_progress_percent = u64::MAX;
   for frame_index in 0..total_frames {
+    if cancellation.is_cancelled() {
+      drop(stdin);
+      let _ = child.kill();
+      let _ = child.wait();
+      return Err(VideoExportError::new(
+        VideoExportStage::Encode,
+        "video export cancelled",
+      ));
+    }
     let time_us = frame_index
       .saturating_mul(1_000_000)
       .checked_div(u64::from(frame_rate))
@@ -851,7 +897,7 @@ fn next_available_output_path<'a>(
 }
 
 fn temporary_path(output_path: &Path, task_id: TaskId) -> PathBuf {
-  output_path.with_extension(format!("mp4.task-{}.tmp", task_id.0))
+  output_path.with_extension(format!("mp4.task-{}.part", task_id.0))
 }
 
 fn cleanup_temporary_file(path: &Path) {
@@ -1021,7 +1067,14 @@ mod tests {
     };
     let (event_tx, _event_rx) = crossbeam_channel::unbounded();
 
-    export_recording(TaskId(1), &task, &output_path, &event_tx).unwrap();
+    export_recording(
+      TaskId(1),
+      &task,
+      &output_path,
+      &event_tx,
+      &TaskCancellation::new(TaskId(1)),
+    )
+    .unwrap();
 
     let size = fs::metadata(&output_path).unwrap().len();
     let mut reader =
@@ -1088,7 +1141,7 @@ mod tests {
     fs::write(&temporary, b"stale").unwrap();
     let (event_tx, event_rx) = crossbeam_channel::unbounded();
 
-    assert!(run_video_task(task_id, task, &event_tx).is_err());
+    assert!(run_video_task(task_id, task, &event_tx, &TaskCancellation::new(task_id)).is_err());
     assert!(!temporary.exists());
     assert!(event_rx.try_iter().any(|event| matches!(
       event,

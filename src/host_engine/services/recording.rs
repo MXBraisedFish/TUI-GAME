@@ -9,6 +9,7 @@ use chrono::{Local, SecondsFormat};
 use crossbeam_channel::Sender;
 use serde::{Deserialize, Serialize};
 
+use crate::host_engine::services::storage::atomic_write;
 use crate::host_engine::services::{
   AsyncRuntime, CanvasCell, ComposedCell, ComposedFrame, EngineEvent, EngineTask, StorageService,
   TaskId, TerminalColor, TextColor,
@@ -120,6 +121,12 @@ enum PlaybackColor {
 pub struct RecordingTask {
   document: RecordingDocument,
   path: PathBuf,
+}
+
+impl RecordingTask {
+  pub(crate) fn path(&self) -> &Path {
+    &self.path
+  }
 }
 
 #[derive(Clone, Debug)]
@@ -836,10 +843,8 @@ pub fn run_recording_task(
   let result = (|| {
     let parent = task.path.parent().ok_or("recording path has no parent")?;
     fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    let temporary = task.path.with_extension("json.tmp");
     let bytes = serde_json::to_vec(&task.document).map_err(|error| error.to_string())?;
-    fs::write(&temporary, bytes).map_err(|error| error.to_string())?;
-    fs::rename(&temporary, &task.path).map_err(|error| error.to_string())
+    atomic_write(&task.path, &bytes, true).map_err(|error| error.to_string())
   })();
   match result {
     Ok(()) => {

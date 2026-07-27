@@ -1184,7 +1184,7 @@ impl GameKeyBindingsUi {
           WHITE.clone()
         }),
         None,
-        Some(BLACK.clone()),
+        None,
         None,
       );
     }
@@ -2276,5 +2276,91 @@ mod tests {
     ui.selected_action = Some("locked".into());
     assert!(ui.activate_slot(0).is_none());
     assert!(!ui.is_capturing());
+  }
+
+  #[test]
+  fn game_and_action_rows_are_drawn_into_their_scroll_boxes() {
+    let hit_area = HitAreaService::new();
+    let text_input = TextInputService::new();
+    let scroll_box = ScrollBoxService::new();
+    let mut ui = GameKeyBindingsUi::init(&hit_area, &text_input, &scroll_box);
+    ui.games = vec![GameBindingEntry {
+      id: "sample".into(),
+      title: "Sample Game".into(),
+      rows: vec![GameBindingRow {
+        action: "jump".into(),
+        description: "Jump".into(),
+        keys: vec![vec!["space".into()]],
+        locked: false,
+        priority: 0,
+      }],
+    }];
+    ui.selected_game_id = Some("sample".into());
+    ui.selected_action = Some("jump".into());
+
+    let mut layout = LayoutService::new();
+    layout.resize_physical(120, 40);
+    layout.set_developer_viewport(Rect {
+      x: 0,
+      y: 0,
+      width: 120,
+      height: 40,
+    });
+    let i18n = I18nService::new();
+    ui.prepare_surfaces(&layout, &i18n, &text_input, &scroll_box);
+
+    let mut canvas = CanvasService::new();
+    ui.objects.begin_render();
+    canvas.prepare(&ui.objects, &layout);
+    ui.render(
+      &mut RenderService::new(),
+      &mut canvas,
+      &layout,
+      &i18n,
+      &hit_area,
+      &text_input,
+      &scroll_box,
+    );
+    let frame = crate::host_engine::services::FrameCompositor::new().compose(&canvas);
+    let rendered = (0..frame.height())
+      .flat_map(|y| (0..frame.width()).map(move |x| (x, y)))
+      .filter_map(|(x, y)| match frame.get(x, y) {
+        Some(crate::host_engine::services::ComposedCell::Text(cell)) => Some(cell.text.as_str()),
+        _ => None,
+      })
+      .collect::<String>();
+
+    assert!(rendered.contains("Sample Game"));
+    assert!(rendered.contains("Jump"));
+  }
+
+  #[test]
+  fn game_description_resolves_user_and_package_default_keys_separately() {
+    let hit_area = HitAreaService::new();
+    let text_input = TextInputService::new();
+    let scroll_box = ScrollBoxService::new();
+    let mut ui = GameKeyBindingsUi::init(&hit_area, &text_input, &scroll_box);
+    ui.profile.default.games.insert(
+      "sample".into(),
+      BTreeMap::from([("jump".into(), vec![vec!["space".into()]])]),
+    );
+    ui.profile.user.games.insert(
+      "sample".into(),
+      BTreeMap::from([("jump".into(), vec![vec!["j".into()]])]),
+    );
+    let game = GameBindingEntry {
+      id: "sample".into(),
+      title: "Sample".into(),
+      rows: vec![],
+    };
+    let row = GameBindingRow {
+      action: "jump".into(),
+      description: "f%{key:jump}/{key_default:jump} Jump".into(),
+      keys: vec![vec!["j".into()]],
+      locked: false,
+      priority: 0,
+    };
+
+    assert_eq!(ui.visible_description(&game, &row), "[J]/[Space] Jump");
   }
 }

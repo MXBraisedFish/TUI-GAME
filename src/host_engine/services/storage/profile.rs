@@ -6,6 +6,7 @@ use std::{
 use serde::{Deserialize, Deserializer, Serialize, de::DeserializeOwned};
 use serde_json::{Map, Value};
 
+use super::atomic_write;
 use super::layout;
 use super::service::StorageService;
 use crate::host_engine::services::{LogService, LogSource};
@@ -670,7 +671,11 @@ impl StorageService {
 
   /// 写入语言代码到配置文件。
   pub fn write_language_code(&self, language_code: &str) -> std::io::Result<()> {
-    fs::write(self.profile_language_path(), language_code.trim())
+    atomic_write(
+      &self.profile_language_path(),
+      language_code.trim().as_bytes(),
+      true,
+    )
   }
 
   pub fn read_key_bindings_profile(&self, log: &mut LogService) -> KeyBindingsProfile {
@@ -700,7 +705,7 @@ impl StorageService {
     log: &mut LogService,
   ) -> io::Result<()> {
     let json = serde_json::to_string_pretty(profile).map_err(io::Error::other)?;
-    fs::write(self.profile_key_bindings_path(), json).map_err(|error| {
+    atomic_write(&self.profile_key_bindings_path(), json.as_bytes(), true).map_err(|error| {
       log.error(
         LogSource::Storage,
         format!("Failed to write key bindings profile: {error}"),
@@ -829,7 +834,7 @@ impl StorageService {
     );
     set_profile_field(&mut values, "game_list_fps", profile.game_list_fps);
     let content = serde_json::to_string_pretty(&values).map_err(io::Error::other)?;
-    fs::write(&path, content).map_err(|error| {
+    atomic_write(&path, content.as_bytes(), true).map_err(|error| {
       log.warn(
         LogSource::Storage,
         format!("Failed to write display settings profile: {error}"),
@@ -897,7 +902,7 @@ impl StorageService {
         ));
       }
     };
-    fs::write(self.profile_terminal_path(), json)
+    atomic_write(&self.profile_terminal_path(), json.as_bytes(), true)
   }
 
   /// 检查终端配置文件是否已填写完整。
@@ -950,7 +955,7 @@ impl StorageService {
         ));
       }
     };
-    fs::write(self.profile_package_state_path(), json)
+    atomic_write(&self.profile_package_state_path(), json.as_bytes(), true)
   }
 
   pub fn update_game_package_state(
@@ -1084,7 +1089,7 @@ impl StorageService {
       );
       io::Error::new(io::ErrorKind::InvalidData, error)
     })?;
-    let result = fs::write(self.profile_recording_path(), json);
+    let result = atomic_write(&self.profile_recording_path(), json.as_bytes(), true);
     if result.is_ok() {
       self
         .recording_profile_revision
@@ -1112,7 +1117,7 @@ impl StorageService {
         format!("Serialization failed: {error}"),
       )
     })?;
-    fs::write(self.profile_screenshot_path(), json)
+    atomic_write(&self.profile_screenshot_path(), json.as_bytes(), true)
   }
 
   pub fn mark_screenshot_guide_seen(&self, log: &mut LogService) {
@@ -1172,7 +1177,7 @@ fn write_json_object(
 ) {
   let result = serde_json::to_string_pretty(values)
     .map_err(io::Error::other)
-    .and_then(|content| fs::write(path, content));
+    .and_then(|content| atomic_write(path, content.as_bytes(), true));
   if let Err(error) = result {
     log.warn(
       LogSource::Storage,

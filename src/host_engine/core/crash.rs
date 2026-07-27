@@ -40,19 +40,23 @@ pub fn install_panic_hook() {
   panic::set_hook(Box::new(move |panic_info| {
     let phase = current_crash_phase();
 
+    // 终端恢复必须先于日志与输出；后两者本身也可能失败。
     TerminalService::force_restore();
 
-    eprintln!("[Crash] Panic occurred during {:?} phase.", phase);
+    let log_dir = std::path::Path::new("data/log");
+    let logged = std::fs::create_dir_all(log_dir)
+      .and_then(|_| {
+        std::fs::OpenOptions::new()
+          .create(true)
+          .append(true)
+          .open(log_dir.join("tui_crash.log"))
+      })
+      .and_then(|mut file| writeln!(file, "[Crash] {:?} phase: {}", phase, panic_info))
+      .is_ok();
 
-    // Try writing crash info to file
-    if let Ok(mut file) = std::fs::OpenOptions::new()
-      .create(true)
-      .append(true)
-      .open("tui_crash.log")
-    {
-      let _ = writeln!(file, "[Crash] {:?} phase: {}", phase, panic_info);
+    if !logged {
+      eprintln!("[Crash] {:?} phase: {}", phase, panic_info);
+      previous_hook(panic_info);
     }
-
-    previous_hook(panic_info);
   }))
 }

@@ -1,8 +1,10 @@
 {
   "exit_warning.title.stop": "Exit Warning",
   "exit_warning.stop.tip.export": "Background export tasks are still running.\nExiting now will interrupt the export process and may corrupt the exported files.",
-  "exit_warning.stop.tip.export.queue.image": "Screenshot Export Queue: {value:image_queue}",
-  "exit_warning.stop.tip.export.queue.video": "Recording Export Queue: {value:video_queue}",
+  "exit_warning.stop.tip.export.queue.image": "Screenshot Export Queue: <fg:bright_red>{value:image_queue}</fg>",
+  "exit_warning.stop.tip.export.queue.video": "Recording Export Queue: <fg:bright_red>{value:video_queue}</fg>",
+  "exit_warning.stop.tip.export.queue.image.get": "All screenshot exports are complete.",
+  "exit_warning.stop.tip.export.queue.video.get": "All recording exports are complete.",
   "exit_warning.stop.tip.export.auto_exit.tip": "The application will exit automatically after all export tasks are complete.",
   "exit_warning.stop.tip.export.auto_exit": "{key:exit_warning.tip_export_auto_exit} Exit When Exports Complete",
   "exit_warning.stop.tip.export.back": "{key:exit_warning.tip_export_back} Back",

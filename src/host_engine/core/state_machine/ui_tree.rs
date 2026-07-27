@@ -42,6 +42,7 @@ pub enum UiNodeKind {
   GamePackage,
   ScreensaverPackage,
   InputDemo,
+  ExitWarning,
 }
 
 /// UI 节点逻辑状态
@@ -264,6 +265,14 @@ impl UiNodeState {
   pub fn input_demo() -> Self {
     Self {
       kind: UiNodeKind::InputDemo,
+      logic: UiNodeLogicState,
+      render: UiNodeRenderState,
+    }
+  }
+
+  pub fn exit_warning() -> Self {
+    Self {
+      kind: UiNodeKind::ExitWarning,
       logic: UiNodeLogicState,
       render: UiNodeRenderState,
     }

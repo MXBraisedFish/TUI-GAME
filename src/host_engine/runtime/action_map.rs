@@ -87,11 +87,6 @@ pub(super) fn synchronize_key_bindings_profile(
   profile
 }
 
-pub(super) fn host_key_action_entries(services: &mut EngineServices) -> Vec<ActionMapEntry> {
-  let profile = synchronize_key_bindings_profile(services);
-  host_key_action_entries_from_profile(services, &profile)
-}
-
 pub(super) fn host_key_action_entries_from_profile(
   services: &EngineServices,
   profile: &KeyBindingsProfile,
@@ -111,8 +106,9 @@ pub(super) fn host_key_action_entries_from_profile(
     .collect()
 }
 
-pub(super) fn load_host_key_action_map(services: &mut EngineServices) {
-  let mut entries = host_key_action_entries(services);
+pub(super) fn load_host_key_action_map(services: &mut EngineServices) -> KeyBindingsProfile {
+  let profile = synchronize_key_bindings_profile(services);
+  let mut entries = host_key_action_entries_from_profile(services, &profile);
   // 组合键必须先于它们包含的单键注册；InputService 会按顺序消费已命中的键。
   entries.sort_by_key(|entry| {
     std::cmp::Reverse(entry.keys.iter().map(Vec::len).max().unwrap_or_default())
@@ -120,6 +116,15 @@ pub(super) fn load_host_key_action_map(services: &mut EngineServices) {
 
   let bindings = translate_action_map(&entries).expect("failed to translate host key action map");
   services.input.load_system_key_bindings(bindings);
+  profile
+}
+
+pub(super) fn host_key_rich_text_params(
+  profile: &KeyBindingsProfile,
+) -> crate::host_engine::services::RichTextParams {
+  let user = profile.user.global.clone().into_iter().collect();
+  let defaults = profile.default.global.clone().into_iter().collect();
+  crate::host_engine::services::RichTextParams::from_key_action_maps(&user, &defaults)
 }
 
 pub(super) fn load_current_action_map(services: &mut EngineServices, world: &RuntimeWorld) {
@@ -180,6 +185,10 @@ pub(super) fn load_current_action_map(services: &mut EngineServices, world: &Run
     Some(UiNodeKind::ScreensaverPackage) => load_screensaver_package_action_map(services),
     Some(UiNodeKind::TerminalCheck) => load_terminal_check_action_map(services),
     Some(UiNodeKind::InputDemo) => load_input_demo_action_map(services),
+    Some(UiNodeKind::ExitWarning) => load_exit_warning_action_map(
+      services,
+      world.state.closing_state() == Some(RuntimeClosingState::WaitingForExports),
+    ),
     _ => {}
   }
 }
@@ -284,6 +293,18 @@ pub(super) fn load_export_settings_action_map(services: &mut EngineServices) {
   );
 }
 
+pub(super) fn load_exit_warning_action_map(
+  services: &mut EngineServices,
+  waiting_for_exports: bool,
+) {
+  let entries = if waiting_for_exports {
+    ExitWarningUi::waiting_action_map()
+  } else {
+    ExitWarningUi::action_map()
+  };
+  load_action_map(services, &entries, "ExitWarningUi");
+}
+
 fn load_language_select_action_map(services: &mut EngineServices) {
   load_action_map(
     services,
@@ -328,4 +349,31 @@ fn load_action_map(
   let bindings = translate_action_map(action_map)
     .unwrap_or_else(|_| panic!("failed to translate {name} action map"));
   services.input.load_key_bindings(bindings);
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::host_engine::services::RichTextService;
+
+  #[test]
+  fn host_rich_text_uses_user_and_default_global_maps_independently() {
+    let mut profile = KeyBindingsProfile::default();
+    profile.default.global.insert(
+      HOST_KEY_SCREENSHOT.to_string(),
+      vec![vec!["f1".to_string()]],
+    );
+    profile.user.global.insert(
+      HOST_KEY_SCREENSHOT.to_string(),
+      vec![vec!["1".to_string()], vec!["2".to_string()]],
+    );
+
+    let params = host_key_rich_text_params(&profile);
+    let visible = RichTextService::new().visible_text(
+      "f%{key:host_key.screenshot}|{key_default:host_key.screenshot}",
+      Some(&params),
+    );
+
+    assert_eq!(visible, "[1]/[2]|[F1]");
+  }
 }

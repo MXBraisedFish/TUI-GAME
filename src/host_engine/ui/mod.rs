@@ -1,7 +1,9 @@
+mod exit;
 mod home;
 mod overlay;
 mod terminal_check;
 
+pub use exit::{ExitWarningCommand, ExitWarningMode, ExitWarningUi};
 pub use home::{
   DisplaySettingsCommand, DisplaySettingsUi, GameKeyBindingsCommand, GameKeyBindingsUi,
   GameListCommand, GameListUi, GamePackageCommand, GamePackageUi, GlobalKeyBindingsCommand,

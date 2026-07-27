@@ -1333,10 +1333,7 @@ pub(super) fn handle_host_key_action(
     | HOST_KEY_TOP_TOOLBAR_SWITCH => true,
     HOST_KEY_FORCE_STOP => {
       if state == KeyState::Pressed {
-        world.state.enter_shutdown();
-        set_crash_phase(world.state.crash_phase());
-        world.state.enter_stopped();
-        set_crash_phase(world.state.crash_phase());
+        world.state.request_shutdown();
       }
       true
     }

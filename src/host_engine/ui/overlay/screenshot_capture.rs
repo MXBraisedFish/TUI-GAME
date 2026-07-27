@@ -8,7 +8,7 @@ use crate::host_engine::services::{
   StorageService, SystemEvent, TerminalColor, TextColor,
 };
 
-const DOUBLE_F1_WINDOW: Duration = Duration::from_millis(300);
+const DOUBLE_SCREENSHOT_ACTION_WINDOW: Duration = Duration::from_millis(300);
 const DOUBLE_MOUSE_CLICK_WINDOW: Duration = Duration::from_millis(300);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -40,6 +40,7 @@ pub struct ScreenshotCaptureUi {
   user_touched: bool,
   mode_toast_dismiss_requested: bool,
   operation_toast_dismiss_requested: bool,
+  host_key_params: RichTextParams,
 }
 
 impl ScreenshotCaptureUi {
@@ -56,7 +57,12 @@ impl ScreenshotCaptureUi {
       user_touched: false,
       mode_toast_dismiss_requested: false,
       operation_toast_dismiss_requested: false,
+      host_key_params: RichTextParams::default(),
     }
+  }
+
+  pub fn set_host_key_params(&mut self, params: RichTextParams) {
+    self.host_key_params = params;
   }
 
   pub fn action_map() -> Vec<ActionMapEntry> {
@@ -91,7 +97,7 @@ impl ScreenshotCaptureUi {
   }
 
   pub fn can_run_double_action(&self) -> bool {
-    !self.user_touched && self.opened_elapsed <= DOUBLE_F1_WINDOW
+    !self.user_touched && self.opened_elapsed <= DOUBLE_SCREENSHOT_ACTION_WINDOW
   }
 
   pub fn is_guide_visible(&self) -> bool {
@@ -389,7 +395,7 @@ impl ScreenshotCaptureUi {
       g: 40,
       b: 40,
     };
-    let params = guide_rich_text_params();
+    let params = self.guide_rich_text_params();
     let text = i18n.get_runtime_text("screenshot", "screenshot.guide");
     let max_width = 72.min(layout.physical_width().saturating_sub(2));
     let text_params = DrawTextParams {
@@ -414,6 +420,17 @@ impl ScreenshotCaptureUi {
       Some(bg),
     );
     render.draw_host_text(canvas, &text_params);
+  }
+
+  fn guide_rich_text_params(&self) -> RichTextParams {
+    let mut params = RichTextParams::from_action_map(&Self::action_map(), "screenshot.");
+    params
+      .key_actions
+      .extend(self.host_key_params.key_actions.clone());
+    params
+      .key_default_actions
+      .extend(self.host_key_params.key_default_actions.clone());
+    params
   }
 
   fn draw_menu(
@@ -458,12 +475,6 @@ fn entry(action: &str, description: &str, key: &str) -> ActionMapEntry {
     description: description.to_string(),
     keys: vec![vec![key.to_string()]],
   }
-}
-
-fn guide_rich_text_params() -> RichTextParams {
-  let mut entries = ScreenshotCaptureUi::action_map();
-  entries.push(entry("host_key.screenshot", "Screenshot", "f1"));
-  RichTextParams::from_action_map(&entries, "screenshot.")
 }
 
 fn menu_labels(i18n: &I18nService) -> [String; 4] {
@@ -541,7 +552,8 @@ fn operation_toast_should_close(
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::host_engine::services::InputEventType;
+  use crate::host_engine::services::{InputEventType, RichTextService};
+  use std::collections::HashMap;
 
   #[test]
   fn double_left_press_selects_the_whole_frozen_frame() {
@@ -574,5 +586,28 @@ mod tests {
       action_command(&events),
       Some(ScreenshotCaptureCommand::CopyRichText)
     );
+  }
+
+  #[test]
+  fn guide_uses_custom_global_keys_and_fixed_ui_keys_on_separate_routes() {
+    let mut ui = ScreenshotCaptureUi::init();
+    let user = HashMap::from([(
+      "host_key.screenshot".to_string(),
+      vec![vec!["1".to_string()], vec!["2".to_string()]],
+    )]);
+    let defaults = HashMap::from([(
+      "host_key.screenshot".to_string(),
+      vec![vec!["f1".to_string()]],
+    )]);
+    ui.set_host_key_params(RichTextParams::from_key_action_maps(&user, &defaults));
+
+    let params = ui.guide_rich_text_params();
+    let visible = RichTextService::new().visible_text(
+      "f%{key:host_key.screenshot}|{key_default:host_key.screenshot}|\
+       {key:screenshot.copy}|{key_default:screenshot.copy}",
+      Some(&params),
+    );
+
+    assert_eq!(visible, "[1]/[2]|[F1]|[C]|[C]");
   }
 }

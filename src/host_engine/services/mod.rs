@@ -35,6 +35,7 @@ mod unicode;
 mod version;
 mod video;
 pub(crate) mod widget;
+mod write_barrier;
 
 pub use animation::{
   AnimationBinding, AnimationCallbackId, AnimationCallbackRequest, AnimationClip, AnimationClock,
@@ -125,6 +126,7 @@ pub use widget::{
   TextInputMode, TextInputOptions, TextInputRenderParams, TextInputService, TimeCallbackId,
   TimeCallbackRequest, TimerEvent, TimerId, TimerMode, TimerOptions, TimerState, VerticalAlign,
 };
+pub use write_barrier::{WriteBarrier, WriteBarrierSnapshot};
 
 /// 引擎核心服务集合，持有所有子服务的实例
 pub struct EngineServices {

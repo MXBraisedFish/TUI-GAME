@@ -4,10 +4,7 @@ use crate::host_engine::services::{UiObjectPool, UiObjectPoolOwner};
 pub(super) fn apply_home_command(command: HomeUiCommand, world: &mut RuntimeWorld) {
   match command {
     HomeUiCommand::Exit => {
-      world.state.enter_shutdown();
-      set_crash_phase(world.state.crash_phase());
-      world.state.enter_stopped();
-      set_crash_phase(world.state.crash_phase());
+      world.state.request_shutdown();
     }
     HomeUiCommand::StartGame => world.state.enter_ui_node(UiNodeState::game_list()),
     HomeUiCommand::ContinueGame => {}
@@ -154,7 +151,7 @@ pub(super) fn apply_global_key_bindings_command(
         .write_key_bindings_profile(&profile, &mut services.log)
         .is_ok()
       {
-        load_host_key_action_map(services);
+        let _ = load_host_key_action_map(services);
         world.state.pop_ui_node();
       }
     }
@@ -1269,10 +1266,7 @@ pub(super) fn apply_terminal_check_command(
       world.state.pop_ui_node();
     }
     TerminalCheckCommand::Exit => {
-      world.state.enter_shutdown();
-      set_crash_phase(world.state.crash_phase());
-      world.state.enter_stopped();
-      set_crash_phase(world.state.crash_phase());
+      world.state.request_shutdown();
     }
   }
 }

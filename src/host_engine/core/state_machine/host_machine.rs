@@ -1,4 +1,7 @@
-use super::{MainHostState, OverlayKind, OverlayState, RuntimeState, UiNodeKind, UiNodeState};
+use super::{
+  MainHostState, OverlayKind, OverlayState, RuntimeClosingState, RuntimeState, UiNodeKind,
+  UiNodeState,
+};
 use crate::host_engine::core::CrashPhase;
 
 /// 主机状态机枚举，管理引擎的完整生命周期：引导 -> 初始化 -> 运行时 -> 关闭 -> 停止
@@ -73,6 +76,34 @@ impl HostMachineState {
   /// 切换到关闭状态
   pub fn enter_shutdown(&mut self) {
     *self = HostMachineState::Shutdown;
+  }
+
+  pub fn request_shutdown(&mut self) {
+    if let Some(runtime) = self.runtime_mut() {
+      runtime.request_close();
+    }
+  }
+
+  pub fn request_exception_shutdown(&mut self) {
+    if let Some(runtime) = self.runtime_mut() {
+      runtime.request_exception_close();
+    }
+  }
+
+  pub fn closing_state(&self) -> Option<RuntimeClosingState> {
+    self.runtime()?.closing()
+  }
+
+  pub fn set_closing_state(&mut self, state: RuntimeClosingState) {
+    if let Some(runtime) = self.runtime_mut() {
+      runtime.set_closing(state);
+    }
+  }
+
+  pub fn cancel_shutdown_request(&mut self) {
+    if let Some(runtime) = self.runtime_mut() {
+      runtime.cancel_close();
+    }
   }
 
   /// 切换到停止状态

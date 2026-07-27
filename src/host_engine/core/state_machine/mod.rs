@@ -18,6 +18,6 @@ pub use overlay::{
   OverlayKind, OverlayLogicState, OverlayRenderState, OverlayStackState, OverlayState,
 };
 
-pub use runtime::RuntimeState;
+pub use runtime::{RuntimeClosingState, RuntimeState};
 
 pub use ui_tree::{UiNodeKind, UiNodeState, UiTreeState};

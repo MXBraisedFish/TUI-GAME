@@ -26,6 +26,7 @@ pub(super) fn route_render(
   clear_warning_ui: &mut ClearWarningUi,
   export_settings_ui: &mut ExportSettingsUi,
   screenshot_capture_ui: &mut ScreenshotCaptureUi,
+  exit_warning_ui: &mut ExitWarningUi,
   screensaver_overlay_ui: &mut ScreensaverOverlayUi,
   export_loading_ui: &mut ExportLoadingUi,
   language_loading_ui: &mut LanguageLoadingUi,
@@ -228,27 +229,34 @@ pub(super) fn route_render(
       );
   }
 
-  if let Some(objects) = current_objects_mut(
-    world,
-    home_ui,
-    settings_ui,
-    display_settings_ui,
-    screensaver_list_ui,
-    security_uis,
-    storage_management_ui,
-    storage_management_clear_ui,
-    storage_management_export_ui,
-    storage_management_view_ui,
-    language_select_ui.as_deref_mut(),
-    terminal_check_ui,
-    mods_ui,
-    game_list_ui,
-    game_package_ui,
-    screensaver_package_ui,
-    input_demo_ui,
-  ) {
-    objects.begin_render();
-    services.canvas.prepare(objects, &services.layout);
+  if world.state.current_ui_kind() == Some(UiNodeKind::ExitWarning) {
+    exit_warning_ui.objects_mut().begin_render();
+    services
+      .canvas
+      .prepare(exit_warning_ui.objects(), &services.layout);
+  } else {
+    if let Some(objects) = current_objects_mut(
+      world,
+      home_ui,
+      settings_ui,
+      display_settings_ui,
+      screensaver_list_ui,
+      security_uis,
+      storage_management_ui,
+      storage_management_clear_ui,
+      storage_management_export_ui,
+      storage_management_view_ui,
+      language_select_ui.as_deref_mut(),
+      terminal_check_ui,
+      mods_ui,
+      game_list_ui,
+      game_package_ui,
+      screensaver_package_ui,
+      input_demo_ui,
+    ) {
+      objects.begin_render();
+      services.canvas.prepare(objects, &services.layout);
+    }
   }
 
   let mut input_cursor = None;
@@ -543,6 +551,35 @@ pub(super) fn route_render(
         &services.hit_area,
         &services.scroll_box,
       );
+    }
+    Some(UiNodeKind::ExitWarning) => {
+      if let Some(mode @ (ExitWarningMode::ExportWarning | ExitWarningMode::WaitingForExports)) =
+        exit_warning_mode(world)
+      {
+        let image = (image_queue > 0).then_some((image_queue, image_progress.unwrap_or(0.0)));
+        let video_count = services.video.active_export_count();
+        let video = (video_count > 0).then(|| {
+          (
+            video_count,
+            services
+              .video
+              .first_active_progress()
+              .map(|progress| progress.ratio)
+              .unwrap_or(0.0),
+          )
+        });
+        exit_warning_ui.render(
+          &mut services.render,
+          &mut services.canvas,
+          &services.layout,
+          &services.i18n,
+          &services.progress_bar,
+          &services.hit_area,
+          mode,
+          image,
+          video,
+        );
+      }
     }
     _ => {}
   }

@@ -12,6 +12,8 @@ use serde_json::json;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
+use crate::host_engine::services::async_runtime::TaskCancellation;
+use crate::host_engine::services::storage::{atomic_replace_with, atomic_write};
 use crate::host_engine::services::{
   CanvasCell, ComposedCell, ComposedFrame, EngineEvent, LogService, LogSource, RecordingPixelScale,
   StorageService, TaskId, TerminalColor, TextColor, TextStyle,
@@ -283,9 +285,10 @@ impl ScreenshotService {
       "rich_text": rich_text_json(frame, rect),
     });
     if let Err(error) = fs::create_dir_all(storage.screenshot_cache_dir_path()).and_then(|_| {
-      fs::write(
+      atomic_write(
         &path,
-        serde_json::to_vec_pretty(&document).unwrap_or_default(),
+        &serde_json::to_vec_pretty(&document).unwrap_or_default(),
+        true,
       )
     }) {
       log.warn(
@@ -501,7 +504,11 @@ pub fn run_screenshot_task(
   task_id: TaskId,
   task: ScreenshotTask,
   event_tx: &Sender<EngineEvent>,
+  cancellation: &TaskCancellation,
 ) -> Result<(), String> {
+  if cancellation.is_cancelled() {
+    return Err("screenshot export cancelled".to_string());
+  }
   match save_png(
     task_id,
     &task.frame,
@@ -509,6 +516,7 @@ pub fn run_screenshot_task(
     &task.png_path,
     &task.fonts,
     event_tx,
+    cancellation,
   ) {
     Ok(()) => {
       let _ = event_tx.send(EngineEvent::Screenshot(ScreenshotAsyncEvent::Saved {
@@ -534,6 +542,7 @@ fn save_png(
   path: &PathBuf,
   preferred_fonts: &[String],
   event_tx: &Sender<EngineEvent>,
+  cancellation: &TaskCancellation,
 ) -> Result<(), String> {
   fs::create_dir_all(path.parent().ok_or("PNG path has no parent directory")?)
     .map_err(|error| error.to_string())?;
@@ -546,8 +555,16 @@ fn save_png(
       send_progress(event_tx, task_id, completed, total);
     },
   );
+  if cancellation.is_cancelled() {
+    return Err("screenshot export cancelled".to_string());
+  }
 
-  image.save(path).map_err(|error| error.to_string())
+  atomic_replace_with(path, true, |temporary| {
+    image
+      .save_with_format(temporary, image::ImageFormat::Png)
+      .map_err(std::io::Error::other)
+  })
+  .map_err(|error| error.to_string())
 }
 
 fn send_progress(
@@ -664,6 +681,7 @@ impl FontSet {
 
     for path in [
       Path::new("assets/fonts/mnf.ttf"),
+      Path::new("assets/fonts/mmo.ttf"),
       Path::new("assets/fonts/asmn.otf"),
       Path::new("assets/fonts/nsscvf.ttf"),
     ] {

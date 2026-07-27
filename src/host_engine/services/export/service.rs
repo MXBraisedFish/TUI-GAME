@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crossbeam_channel::Sender;
 
+use crate::host_engine::services::storage::atomic_replace_with;
 use crate::host_engine::services::version::{
   HOST_API_VERSION, HOST_VERSION, PACKAGE_MANIFEST_VERSION,
 };
@@ -168,7 +169,9 @@ impl ExportService {
     let base = src_dir.parent().unwrap_or(&src_dir);
     let entries = collect_entries(base, &src_dir)?;
 
-    self.export_entries(&out_path, format, &entries, |_| {})?;
+    atomic_replace_with(&out_path, true, |temporary| {
+      self.export_entries(temporary, format, &entries, || false, |_| {})
+    })?;
 
     log.info(
       crate::host_engine::services::LogSource::Storage,
@@ -186,20 +189,22 @@ impl ExportService {
     async_runtime.submit(crate::host_engine::services::EngineTask::Export(task))
   }
 
-  fn export_entries<F>(
+  fn export_entries<C, F>(
     &self,
     out_path: &Path,
     format: ExportFormat,
     entries: &[Entry],
+    cancelled: C,
     progress: F,
   ) -> io::Result<()>
   where
+    C: FnMut() -> bool,
     F: FnMut(usize),
   {
     match format {
-      ExportFormat::Zip => self.pack_zip(out_path, entries, progress),
-      ExportFormat::Tar => self.pack_tar(out_path, entries, progress),
-      ExportFormat::TarGz => self.pack_tar_gz(out_path, entries, progress),
+      ExportFormat::Zip => self.pack_zip(out_path, entries, cancelled, progress),
+      ExportFormat::Tar => self.pack_tar(out_path, entries, cancelled, progress),
+      ExportFormat::TarGz => self.pack_tar_gz(out_path, entries, cancelled, progress),
     }
   }
 
@@ -213,8 +218,15 @@ impl ExportService {
     Ok(())
   }
 
-  fn pack_zip<F>(&self, out: &Path, entries: &[Entry], mut progress: F) -> io::Result<()>
+  fn pack_zip<C, F>(
+    &self,
+    out: &Path,
+    entries: &[Entry],
+    mut cancelled: C,
+    mut progress: F,
+  ) -> io::Result<()>
   where
+    C: FnMut() -> bool,
     F: FnMut(usize),
   {
     let file = fs::File::create(out)?;
@@ -230,6 +242,7 @@ impl ExportService {
 
     // directory contents
     for (index, entry) in entries.iter().enumerate() {
+      ensure_not_cancelled(&mut cancelled)?;
       let relative_str = entry.relative.to_string_lossy().replace('\\', "/");
       if entry.is_dir {
         zip.add_directory(&relative_str, options)?;
@@ -245,8 +258,15 @@ impl ExportService {
     Ok(())
   }
 
-  fn pack_tar<F>(&self, out: &Path, entries: &[Entry], mut progress: F) -> io::Result<()>
+  fn pack_tar<C, F>(
+    &self,
+    out: &Path,
+    entries: &[Entry],
+    mut cancelled: C,
+    mut progress: F,
+  ) -> io::Result<()>
   where
+    C: FnMut() -> bool,
     F: FnMut(usize),
   {
     let file = fs::File::create(out)?;
@@ -262,6 +282,7 @@ impl ExportService {
 
     // directory contents
     for (index, entry) in entries.iter().enumerate() {
+      ensure_not_cancelled(&mut cancelled)?;
       if entry.is_dir {
         tar.append_dir(&entry.relative, &entry.full_path)?;
       } else {
@@ -274,8 +295,15 @@ impl ExportService {
     Ok(())
   }
 
-  fn pack_tar_gz<F>(&self, out: &Path, entries: &[Entry], mut progress: F) -> io::Result<()>
+  fn pack_tar_gz<C, F>(
+    &self,
+    out: &Path,
+    entries: &[Entry],
+    mut cancelled: C,
+    mut progress: F,
+  ) -> io::Result<()>
   where
+    C: FnMut() -> bool,
     F: FnMut(usize),
   {
     let file = fs::File::create(out)?;
@@ -290,6 +318,7 @@ impl ExportService {
     tar.append_data(&mut header, "manifest.json", &manifest_bytes[..])?;
 
     for (index, entry) in entries.iter().enumerate() {
+      ensure_not_cancelled(&mut cancelled)?;
       if entry.is_dir {
         tar.append_dir(&entry.relative, &entry.full_path)?;
       } else {
@@ -304,12 +333,13 @@ impl ExportService {
   }
 }
 
-pub fn run_export_task(
+pub(crate) fn run_export_task(
   task_id: TaskId,
   task: ExportTask,
   event_tx: &Sender<EngineEvent>,
+  cancellation: &crate::host_engine::services::async_runtime::TaskCancellation,
 ) -> Result<(), String> {
-  match run_export_task_inner(task_id, task, event_tx) {
+  match run_export_task_inner(task_id, task, event_tx, cancellation) {
     Ok(()) => Ok(()),
     Err(error) => {
       let _ = event_tx.send(EngineEvent::Export(ExportAsyncEvent::Failed {
@@ -325,6 +355,7 @@ fn run_export_task_inner(
   task_id: TaskId,
   task: ExportTask,
   event_tx: &Sender<EngineEvent>,
+  cancellation: &crate::host_engine::services::async_runtime::TaskCancellation,
 ) -> Result<(), String> {
   let src_dir = task.scope.dir_path_from_root(&task.root_dir);
   if !src_dir.is_dir() {
@@ -346,19 +377,37 @@ fn run_export_task_inner(
   }));
 
   let service = ExportService::new();
-  service
-    .export_entries(&out_path, task.format, &entries, |packed| {
-      let _ = event_tx.send(EngineEvent::Export(ExportAsyncEvent::Progress {
-        task_id,
-        packed,
-        total,
-      }));
-    })
-    .map_err(|error| error.to_string())?;
+  atomic_replace_with(&out_path, true, |temporary| {
+    service.export_entries(
+      temporary,
+      task.format,
+      &entries,
+      || cancellation.is_cancelled(),
+      |packed| {
+        let _ = event_tx.send(EngineEvent::Export(ExportAsyncEvent::Progress {
+          task_id,
+          packed,
+          total,
+        }));
+      },
+    )
+  })
+  .map_err(|error| error.to_string())?;
 
   let _ = event_tx.send(EngineEvent::Export(ExportAsyncEvent::Finished {
     task_id,
     path: out_path,
   }));
   Ok(())
+}
+
+fn ensure_not_cancelled(cancelled: &mut impl FnMut() -> bool) -> io::Result<()> {
+  if cancelled() {
+    Err(io::Error::new(
+      io::ErrorKind::Interrupted,
+      "export cancelled",
+    ))
+  } else {
+    Ok(())
+  }
 }

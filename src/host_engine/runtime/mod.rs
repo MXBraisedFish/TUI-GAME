@@ -16,7 +16,7 @@ use router::*;
 use toolbar::TopToolbarRuntime;
 
 use crate::host_engine::core::state_machine::{
-  HostState, MainHostState, OverlayKind, UiNodeKind, UiNodeState,
+  HostState, MainHostState, OverlayKind, RuntimeClosingState, UiNodeKind, UiNodeState,
 };
 use crate::host_engine::core::{ExitState, FrameScheduler, RuntimeWorld, set_crash_phase};
 use crate::host_engine::services::{
@@ -24,27 +24,27 @@ use crate::host_engine::services::{
   DrawTextParams, EngineServices, EngineTask, HostAreaKind, ImPolicy, InputActionEvent,
   KeyBindingsProfile, KeyState, LogSource, PackageEvent, PackageListEntry, PopupDismissEvent,
   PopupRequest, RandomGeneratorId, RandomSeed, RecordingState, ScreenshotAsyncEvent,
-  ScreenshotDoubleAction, ScreenshotService, ScreenshotTask, TaskId, TextColor, VideoAsyncEvent,
-  translate_action_map,
+  ScreenshotDoubleAction, ScreenshotService, ScreenshotTask, SystemEvent, TaskId, TextColor,
+  UiEvent, UiObjectPoolOwner, VideoAsyncEvent, translate_action_map,
 };
 use crate::host_engine::ui::{
   ClearWarningCommand, ClearWarningTarget, ClearWarningUi, DisplaySettingsCommand,
-  DisplaySettingsUi, ExportFormat, ExportLoadingUi, ExportSettingsCommand, ExportSettingsUi,
-  ExportType, GameKeyBindingsCommand, GameKeyBindingsUi, GameListCommand, GameListUi,
-  GamePackageCommand, GamePackageUi, GlobalKeyBindingsCommand, GlobalKeyBindingsUi, HomeUi,
-  HomeUiCommand, InputDemoCommand, InputDemoUi, KeyBindingsCommand, KeyBindingsUi,
-  LanguageLoadingUi, LanguageSelectCommand, LanguageSelectUi, MediaListNotice, MediaRenameError,
-  ModsCommand, ModsUi, RecordingListCommand, RecordingListUi, RecordingSettingsCommand,
-  RecordingSettingsUi, SafeModeWarningCommand, SafeModeWarningUi, ScreensaverListCommand,
-  ScreensaverListUi, ScreensaverOverlayUi, ScreensaverPackageCommand, ScreensaverPackageUi,
-  ScreenshotCaptureCommand, ScreenshotCaptureUi, ScreenshotListCommand, ScreenshotListUi,
-  ScreenshotRecordingCommand, ScreenshotRecordingUi, ScreenshotSettingsCommand,
-  ScreenshotSettingsUi, SecurityDetailsCommand, SecurityDetailsUi, SecuritySettingsCommand,
-  SecuritySettingsUi, SettingsUi, SettingsUiCommand, StorageManagementClearCommand,
-  StorageManagementClearUi, StorageManagementCommand, StorageManagementExportCommand,
-  StorageManagementExportUi, StorageManagementUi, StorageManagementViewCommand,
-  StorageManagementViewUi, TerminalCheckCommand, TerminalCheckLayout, TerminalCheckUi,
-  ToolbarCustomCommand, WindowSizeWarningCommand, WindowSizeWarningUi,
+  DisplaySettingsUi, ExitWarningCommand, ExitWarningMode, ExitWarningUi, ExportFormat,
+  ExportLoadingUi, ExportSettingsCommand, ExportSettingsUi, ExportType, GameKeyBindingsCommand,
+  GameKeyBindingsUi, GameListCommand, GameListUi, GamePackageCommand, GamePackageUi,
+  GlobalKeyBindingsCommand, GlobalKeyBindingsUi, HomeUi, HomeUiCommand, InputDemoCommand,
+  InputDemoUi, KeyBindingsCommand, KeyBindingsUi, LanguageLoadingUi, LanguageSelectCommand,
+  LanguageSelectUi, MediaListNotice, MediaRenameError, ModsCommand, ModsUi, RecordingListCommand,
+  RecordingListUi, RecordingSettingsCommand, RecordingSettingsUi, SafeModeWarningCommand,
+  SafeModeWarningUi, ScreensaverListCommand, ScreensaverListUi, ScreensaverOverlayUi,
+  ScreensaverPackageCommand, ScreensaverPackageUi, ScreenshotCaptureCommand, ScreenshotCaptureUi,
+  ScreenshotListCommand, ScreenshotListUi, ScreenshotRecordingCommand, ScreenshotRecordingUi,
+  ScreenshotSettingsCommand, ScreenshotSettingsUi, SecurityDetailsCommand, SecurityDetailsUi,
+  SecuritySettingsCommand, SecuritySettingsUi, SettingsUi, SettingsUiCommand,
+  StorageManagementClearCommand, StorageManagementClearUi, StorageManagementCommand,
+  StorageManagementExportCommand, StorageManagementExportUi, StorageManagementUi,
+  StorageManagementViewCommand, StorageManagementViewUi, TerminalCheckCommand, TerminalCheckLayout,
+  TerminalCheckUi, ToolbarCustomCommand, WindowSizeWarningCommand, WindowSizeWarningUi,
 };
 use std::{
   collections::HashMap,
@@ -234,7 +234,7 @@ pub fn run(services: &mut EngineServices, world: &mut RuntimeWorld) -> ExitState
     .input
     .start_system_listener(&mut services.async_runtime);
   services.package.start_watcher(&mut services.async_runtime);
-  load_host_key_action_map(services);
+  let host_key_profile = load_host_key_action_map(services);
 
   let mut scheduler = FrameScheduler::new(60);
   scheduler.set_target_fps(
@@ -339,6 +339,8 @@ pub fn run(services: &mut EngineServices, world: &mut RuntimeWorld) -> ExitState
   let mut clear_warning_ui = ClearWarningUi::init(&services.hit_area);
   let mut export_settings_ui = ExportSettingsUi::init(&services.hit_area, &services.text_input);
   let mut screenshot_capture_ui = ScreenshotCaptureUi::init();
+  let mut exit_warning_ui = ExitWarningUi::init(&services.progress_bar, &services.hit_area);
+  screenshot_capture_ui.set_host_key_params(host_key_rich_text_params(&host_key_profile));
   let mut screensaver_overlay_ui = ScreensaverOverlayUi::init();
   let mut top_toolbar = TopToolbarRuntime::new(&services.progress_bar);
   let screensaver_random = services.random.create(
@@ -363,6 +365,7 @@ pub fn run(services: &mut EngineServices, world: &mut RuntimeWorld) -> ExitState
   let mut language_loading = LanguageLoadingRuntime::default();
   let mut export_loading = ExportLoadingRuntime::default();
   let mut input_mode_scope = None;
+  let mut exception_countdown_elapsed = Duration::ZERO;
 
   if services
     .storage
@@ -378,7 +381,7 @@ pub fn run(services: &mut EngineServices, world: &mut RuntimeWorld) -> ExitState
     world.state.enter_ui_node(UiNodeState::terminal_check());
   }
 
-  while !world.is_stopped() {
+  while !world.state.is_shutdown() && !world.is_stopped() {
     let _frame = scheduler.begin_frame();
 
     world.clock.tick();
@@ -426,6 +429,16 @@ pub fn run(services: &mut EngineServices, world: &mut RuntimeWorld) -> ExitState
       services,
     );
     apply_video_events(&engine_events.video, services);
+    update_exit_preparation(
+      services,
+      world,
+      &pending_screenshot_saves,
+      frame_delta,
+      &mut exception_countdown_elapsed,
+    );
+    if world.state.is_shutdown() || world.is_stopped() {
+      break;
+    }
 
     services.input.poll_resize_events(|w, h| {
       services.layout.resize_physical(w, h);
@@ -464,41 +477,59 @@ pub fn run(services: &mut EngineServices, world: &mut RuntimeWorld) -> ExitState
       &mut screenshot_capture_ui,
       &mut export_loading_ui,
     );
+    if world.state.current_ui_kind() != Some(UiNodeKind::ExitWarning)
+      || world.state.current_overlay_kind().is_some()
+    {
+      services.hit_area.deactivate(exit_warning_ui.objects_mut());
+    }
 
-    route_frame_input(
-      services,
-      world,
-      &mut home_ui,
-      &mut settings_ui,
-      &mut display_settings_ui,
-      &mut screensaver_list_ui,
-      &mut security_uis,
-      &mut storage_management_ui,
-      &mut storage_management_clear_ui,
-      &mut storage_management_export_ui,
-      &mut storage_management_view_ui,
-      language_select_ui.as_mut(),
-      &mut terminal_check_ui,
-      &mut mods_ui,
-      &mut game_list_ui,
-      &mut game_package_ui,
-      &mut screensaver_package_ui,
-      &mut input_demo_ui,
-      &mut window_size_ui,
-      &mut safe_mode_warning_ui,
-      &mut clear_warning_ui,
-      &mut export_settings_ui,
-      &mut screenshot_capture_ui,
-      &mut export_loading_ui,
-      &mut language_loading_ui,
-      &mut language_loading,
-      &mut export_loading,
-      &mut pending_screenshot_saves,
-      &mut pending_screenshot_hotkey,
-      &mut pending_recording_hotkey,
-      &mut pending_screensaver_hotkey,
-      &mut pending_toolbar_hotkey,
-    );
+    if matches!(
+      world.state.closing_state(),
+      Some(RuntimeClosingState::Exception { .. })
+    ) {
+      route_exception_exit_input(
+        services,
+        world,
+        &exit_warning_ui,
+        &mut pending_screenshot_saves,
+      );
+    } else {
+      route_frame_input(
+        services,
+        world,
+        &mut home_ui,
+        &mut settings_ui,
+        &mut display_settings_ui,
+        &mut screensaver_list_ui,
+        &mut security_uis,
+        &mut storage_management_ui,
+        &mut storage_management_clear_ui,
+        &mut storage_management_export_ui,
+        &mut storage_management_view_ui,
+        language_select_ui.as_mut(),
+        &mut terminal_check_ui,
+        &mut mods_ui,
+        &mut game_list_ui,
+        &mut game_package_ui,
+        &mut screensaver_package_ui,
+        &mut input_demo_ui,
+        &mut window_size_ui,
+        &mut safe_mode_warning_ui,
+        &mut clear_warning_ui,
+        &mut export_settings_ui,
+        &mut screenshot_capture_ui,
+        &mut exit_warning_ui,
+        &mut export_loading_ui,
+        &mut language_loading_ui,
+        &mut language_loading,
+        &mut export_loading,
+        &mut pending_screenshot_saves,
+        &mut pending_screenshot_hotkey,
+        &mut pending_recording_hotkey,
+        &mut pending_screensaver_hotkey,
+        &mut pending_toolbar_hotkey,
+      );
+    }
     apply_screenshot_operation_feedback(services, &mut pending_screenshot_saves);
     apply_video_submission_feedback(services);
     apply_media_list_notices(services, &mut settings_ui);
@@ -541,80 +572,103 @@ pub fn run(services: &mut EngineServices, world: &mut RuntimeWorld) -> ExitState
     sync_input_method_policy(services);
     restore_input_modes_if_scope_changed(services, world, &mut input_mode_scope);
 
-    if world.is_stopped() {
+    if world.state.is_shutdown() || world.is_stopped() {
       break;
     }
 
-    route_update(
-      services,
-      world,
-      &mut home_ui,
-      &mut settings_ui,
-      &mut display_settings_ui,
-      &mut screensaver_list_ui,
-      &mut security_uis,
-      &mut storage_management_ui,
-      &mut storage_management_clear_ui,
-      &mut storage_management_export_ui,
-      &mut storage_management_view_ui,
-      language_select_ui.as_mut(),
-      &mut terminal_check_ui,
-      &mut mods_ui,
-      &mut game_list_ui,
-      &mut game_package_ui,
-      &mut screensaver_package_ui,
-      &mut input_demo_ui,
-      &mut safe_mode_warning_ui,
-      &mut clear_warning_ui,
-      &mut export_settings_ui,
-      &mut screenshot_capture_ui,
-      &mut export_loading_ui,
-      &mut language_loading_ui,
-      &mut language_loading,
-      &mut export_loading,
-    );
+    if !matches!(
+      world.state.closing_state(),
+      Some(RuntimeClosingState::Exception { .. })
+    ) {
+      route_update(
+        services,
+        world,
+        &mut home_ui,
+        &mut settings_ui,
+        &mut display_settings_ui,
+        &mut screensaver_list_ui,
+        &mut security_uis,
+        &mut storage_management_ui,
+        &mut storage_management_clear_ui,
+        &mut storage_management_export_ui,
+        &mut storage_management_view_ui,
+        language_select_ui.as_mut(),
+        &mut terminal_check_ui,
+        &mut mods_ui,
+        &mut game_list_ui,
+        &mut game_package_ui,
+        &mut screensaver_package_ui,
+        &mut input_demo_ui,
+        &mut safe_mode_warning_ui,
+        &mut clear_warning_ui,
+        &mut export_settings_ui,
+        &mut screenshot_capture_ui,
+        &mut export_loading_ui,
+        &mut language_loading_ui,
+        &mut language_loading,
+        &mut export_loading,
+      );
+    }
     sync_input_method_policy(services);
     services.input_method.update(world.clock.delta_time());
     restore_input_modes_if_scope_changed(services, world, &mut input_mode_scope);
 
-    if world.is_stopped() {
+    if world.state.is_shutdown() || world.is_stopped() {
       break;
     }
 
-    let input_cursor = route_render(
-      services,
-      world,
-      &mut home_ui,
-      &mut settings_ui,
-      &mut display_settings_ui,
-      &mut screensaver_list_ui,
-      &mut security_uis,
-      &mut storage_management_ui,
-      &mut storage_management_clear_ui,
-      &mut storage_management_export_ui,
-      &mut storage_management_view_ui,
-      language_select_ui.as_mut(),
-      &mut terminal_check_ui,
-      &mut mods_ui,
-      &mut game_list_ui,
-      &mut game_package_ui,
-      &mut screensaver_package_ui,
-      &mut input_demo_ui,
-      &mut window_size_ui,
-      &mut safe_mode_warning_ui,
-      &mut clear_warning_ui,
-      &mut export_settings_ui,
-      &mut screenshot_capture_ui,
-      &mut screensaver_overlay_ui,
-      &mut export_loading_ui,
-      &mut language_loading_ui,
-      &mut top_toolbar,
-      pending_screenshot_saves.len(),
-      pending_screenshot_saves
-        .iter()
-        .min_by_key(|(task_id, _)| task_id.0)
-        .map(|(_, save)| save.progress),
-    );
+    let input_cursor =
+      if let Some(ExitWarningMode::Exception { seconds_left }) = exit_warning_mode(world) {
+        let video_progress = video_exit_progress(services);
+        exit_warning_ui.render(
+          &mut services.render,
+          &mut services.canvas,
+          &services.layout,
+          &services.i18n,
+          &services.progress_bar,
+          &services.hit_area,
+          ExitWarningMode::Exception { seconds_left },
+          screenshot_exit_progress(&pending_screenshot_saves),
+          video_progress,
+        );
+        None
+      } else {
+        route_render(
+          services,
+          world,
+          &mut home_ui,
+          &mut settings_ui,
+          &mut display_settings_ui,
+          &mut screensaver_list_ui,
+          &mut security_uis,
+          &mut storage_management_ui,
+          &mut storage_management_clear_ui,
+          &mut storage_management_export_ui,
+          &mut storage_management_view_ui,
+          language_select_ui.as_mut(),
+          &mut terminal_check_ui,
+          &mut mods_ui,
+          &mut game_list_ui,
+          &mut game_package_ui,
+          &mut screensaver_package_ui,
+          &mut input_demo_ui,
+          &mut window_size_ui,
+          &mut safe_mode_warning_ui,
+          &mut clear_warning_ui,
+          &mut export_settings_ui,
+          &mut screenshot_capture_ui,
+          &mut exit_warning_ui,
+          &mut screensaver_overlay_ui,
+          &mut export_loading_ui,
+          &mut language_loading_ui,
+          &mut top_toolbar,
+          pending_screenshot_saves.len(),
+          pending_screenshot_saves
+            .iter()
+            .min_by_key(|(task_id, _)| task_id.0)
+            .map(|(_, save)| save.progress),
+        )
+      };
     draw_popup(services);
     let text_force_redraw = services.canvas.take_render_requested();
     let composed = services.compositor.compose(&services.canvas);
@@ -669,6 +723,146 @@ fn sync_input_method_policy(services: &mut EngineServices) {
     ImPolicy::ForceAscii
   };
   let _ = services.input_method.set_policy(policy);
+}
+
+fn update_exit_preparation(
+  services: &mut EngineServices,
+  world: &mut RuntimeWorld,
+  pending_images: &HashMap<TaskId, PendingScreenshotSave>,
+  delta: Duration,
+  exception_elapsed: &mut Duration,
+) {
+  let exports_active = !pending_images.is_empty() || services.video.active_export_count() > 0;
+  match world.state.closing_state() {
+    Some(RuntimeClosingState::Requested) => {
+      if !exports_active {
+        finish_runtime_exit(world);
+      } else {
+        world
+          .state
+          .set_closing_state(RuntimeClosingState::ExportWarning);
+        world.state.enter_ui_node(UiNodeState::exit_warning());
+        load_exit_warning_action_map(services, false);
+        services.input.clear();
+      }
+    }
+    Some(RuntimeClosingState::WaitingForExports) if !exports_active => {
+      finish_runtime_exit(world);
+    }
+    Some(RuntimeClosingState::Exception { seconds_left }) => {
+      *exception_elapsed = exception_elapsed.saturating_add(delta);
+      let elapsed_seconds = exception_elapsed.as_secs().min(u8::MAX as u64) as u8;
+      if elapsed_seconds == 0 {
+        return;
+      }
+      *exception_elapsed =
+        exception_elapsed.saturating_sub(Duration::from_secs(elapsed_seconds as u64));
+      let seconds_left = seconds_left.saturating_sub(elapsed_seconds);
+      if seconds_left == 0 {
+        finish_runtime_exit(world);
+      } else {
+        world
+          .state
+          .set_closing_state(RuntimeClosingState::Exception { seconds_left });
+      }
+    }
+    _ => {
+      *exception_elapsed = Duration::ZERO;
+    }
+  }
+}
+
+fn route_exception_exit_input(
+  services: &mut EngineServices,
+  world: &mut RuntimeWorld,
+  ui: &ExitWarningUi,
+  pending_images: &mut HashMap<TaskId, PendingScreenshotSave>,
+) {
+  let Some(mode) = exit_warning_mode(world) else {
+    return;
+  };
+  load_exit_warning_action_map(services, false);
+  services.input.dispatch_action_events(&mut services.log);
+  let command = std::iter::from_fn(|| services.input.next_action_event())
+    .find_map(|event| ui.handle_event(mode, &UiEvent::Action(event)));
+  let Some(command) = command else { return };
+  apply_exit_warning_command(command, services, world, pending_images);
+}
+
+fn apply_exit_warning_command(
+  command: ExitWarningCommand,
+  services: &mut EngineServices,
+  world: &mut RuntimeWorld,
+  pending_images: &mut HashMap<TaskId, PendingScreenshotSave>,
+) {
+  match command {
+    ExitWarningCommand::WaitForExports => {
+      world
+        .state
+        .set_closing_state(RuntimeClosingState::WaitingForExports);
+      load_exit_warning_action_map(services, true);
+      services.input.clear();
+    }
+    ExitWarningCommand::Back => {
+      world.state.cancel_shutdown_request();
+      if world.state.current_ui_kind() == Some(UiNodeKind::ExitWarning) {
+        let _ = world.state.pop_ui_node();
+      }
+      load_current_action_map(services, world);
+      services.input.clear();
+    }
+    ExitWarningCommand::ExitNow => {
+      services
+        .async_runtime
+        .cancel_tasks(pending_images.keys().copied());
+      services
+        .async_runtime
+        .cancel_tasks(services.video.active_task_ids());
+      pending_images.clear();
+      finish_runtime_exit(world);
+    }
+  }
+}
+
+fn finish_runtime_exit(world: &mut RuntimeWorld) {
+  world.state.enter_shutdown();
+  set_crash_phase(world.state.crash_phase());
+}
+
+fn exit_warning_mode(world: &RuntimeWorld) -> Option<ExitWarningMode> {
+  match world.state.closing_state()? {
+    RuntimeClosingState::Requested => None,
+    RuntimeClosingState::ExportWarning => Some(ExitWarningMode::ExportWarning),
+    RuntimeClosingState::WaitingForExports => Some(ExitWarningMode::WaitingForExports),
+    RuntimeClosingState::Exception { seconds_left } => {
+      Some(ExitWarningMode::Exception { seconds_left })
+    }
+  }
+}
+
+fn screenshot_exit_progress(
+  pending: &HashMap<TaskId, PendingScreenshotSave>,
+) -> Option<(usize, f32)> {
+  let progress = pending
+    .iter()
+    .min_by_key(|(task_id, _)| task_id.0)
+    .map(|(_, task)| task.progress)
+    .unwrap_or(0.0);
+  (!pending.is_empty()).then_some((pending.len(), progress))
+}
+
+fn video_exit_progress(services: &EngineServices) -> Option<(usize, f32)> {
+  let count = services.video.active_export_count();
+  (count > 0).then(|| {
+    (
+      count,
+      services
+        .video
+        .first_active_progress()
+        .map(|progress| progress.ratio)
+        .unwrap_or(0.0),
+    )
+  })
 }
 
 fn apply_screenshot_events(
@@ -1027,6 +1221,7 @@ fn route_frame_input(
   clear_warning_ui: &mut ClearWarningUi,
   export_settings_ui: &mut ExportSettingsUi,
   screenshot_capture_ui: &mut ScreenshotCaptureUi,
+  exit_warning_ui: &mut ExitWarningUi,
   _export_loading_ui: &mut ExportLoadingUi,
   language_loading_ui: &mut LanguageLoadingUi,
   language_loading: &mut LanguageLoadingRuntime,
@@ -1268,6 +1463,8 @@ fn route_frame_input(
     }
     services.input.clear();
     let _ = services.input.drain_system_events();
+  } else if world.state.current_ui_kind() == Some(UiNodeKind::ExitWarning) {
+    route_exit_warning_runtime_events(services, world, exit_warning_ui, pending_screenshot_saves);
   } else if services.text_input.is_active() {
     services
       .input
@@ -1331,6 +1528,55 @@ fn route_frame_input(
       language_loading,
       _export_loading,
     );
+  }
+}
+
+fn route_exit_warning_runtime_events(
+  services: &mut EngineServices,
+  world: &mut RuntimeWorld,
+  ui: &mut ExitWarningUi,
+  pending_images: &mut HashMap<TaskId, PendingScreenshotSave>,
+) {
+  let Some(mode @ (ExitWarningMode::ExportWarning | ExitWarningMode::WaitingForExports)) =
+    exit_warning_mode(world)
+  else {
+    return;
+  };
+  load_exit_warning_action_map(services, mode == ExitWarningMode::WaitingForExports);
+  services.input.dispatch_action_events(&mut services.log);
+  while let Some(event) = services.input.next_action_event() {
+    if event.action == HOST_KEY_FORCE_STOP
+      || handle_host_key_action(event.action.as_str(), event.state, world)
+    {
+      continue;
+    }
+    if let Some(command) = ui.handle_event(mode, &UiEvent::Action(event)) {
+      apply_exit_warning_command(command, services, world, pending_images);
+      return;
+    }
+  }
+
+  for event in services.input.drain_system_events() {
+    match event {
+      SystemEvent::Mouse(mouse) if services.input.is_focused() => {
+        services.hit_area.route_mouse_event(
+          ui.objects_mut(),
+          &mut services.text_input,
+          &services.canvas,
+          mouse,
+        );
+      }
+      SystemEvent::Focus(focus) if !focus.gained => {
+        services.hit_area.focus_lost(ui.objects_mut());
+      }
+      _ => {}
+    }
+    while let Some(event) = ui.objects_mut().pop_event() {
+      if let Some(command) = ui.handle_event(mode, &event) {
+        apply_exit_warning_command(command, services, world, pending_images);
+        return;
+      }
+    }
   }
 }
 
@@ -1800,6 +2046,8 @@ fn start_screenshot_capture(
     .storage
     .read_screenshot_profile_or_default(&mut services.log)
     .guide_seen;
+  let profile = synchronize_key_bindings_profile(services);
+  screenshot_ui.set_host_key_params(host_key_rich_text_params(&profile));
   screenshot_ui.start(frame, show_guide);
   world.state.push_screenshot_capture_overlay();
   show_popup(services, ScreenshotModeToastKind::Enter);

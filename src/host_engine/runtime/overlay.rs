@@ -64,10 +64,7 @@ pub(super) fn apply_window_size_command(cmd: WindowSizeWarningCommand, world: &m
         let _ = world.state.remove_overlay_kind(OverlayKind::Screensaver);
       } else if world.state.is_host_mode() {
         world.state.pop_overlay();
-        world.state.enter_shutdown();
-        set_crash_phase(world.state.crash_phase());
-        world.state.enter_stopped();
-        set_crash_phase(world.state.crash_phase());
+        world.state.request_shutdown();
       } else {
         world.state.pop_overlay();
         if let Some(runtime) = world.state.runtime_mut() {

@@ -45,6 +45,7 @@ const RUNTIME_NAMESPACES: &[&str] = &[
   "toolbar",
   "toolbar_custom",
   "recording_settings",
+  "exit_warning",
 ];
 
 impl I18nService {
