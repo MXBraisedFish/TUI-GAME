@@ -228,40 +228,42 @@ impl CanvasService {
 
   /// 在基础层上绘制富文本（支持样式标签和排版参数）。
   pub fn text(&mut self, params: &DrawTextParams) {
+    self.text_at(i32::from(params.x), i32::from(params.y), params);
+  }
+
+  /// 在基础层的有符号坐标上绘制富文本，画布外内容会被自动裁剪。
+  pub fn text_at(&mut self, x: i32, y: i32, params: &DrawTextParams) {
     let lines = text_layout::layout_text_lines(params);
-    Self::draw_layout_lines(
-      &mut self.base,
-      params.x,
-      params.y,
-      params.line_align,
-      &lines,
-    );
+    Self::draw_layout_lines(&mut self.base, x, y, params.line_align, &lines);
   }
 
   pub fn rich_text_segments(&mut self, segments: &[RichTextSegment], params: &DrawTextParams) {
+    self.rich_text_segments_at(i32::from(params.x), i32::from(params.y), segments, params);
+  }
+
+  pub fn rich_text_segments_at(
+    &mut self,
+    x: i32,
+    y: i32,
+    segments: &[RichTextSegment],
+    params: &DrawTextParams,
+  ) {
     let lines = text_layout::layout_rich_text_segments(segments, params);
-    Self::draw_layout_lines(
-      &mut self.base,
-      params.x,
-      params.y,
-      params.line_align,
-      &lines,
-    );
+    Self::draw_layout_lines(&mut self.base, x, y, params.line_align, &lines);
   }
 
   /// 在指定切片的缓冲区上绘制富文本，返回是否成功（切片不可见时返回 false）。
   pub fn text_on(&mut self, id: SliceId, params: &DrawTextParams) -> bool {
+    self.text_at_on(id, i32::from(params.x), i32::from(params.y), params)
+  }
+
+  /// 在切片的有符号局部坐标上绘制文本。
+  pub fn text_at_on(&mut self, id: SliceId, x: i32, y: i32, params: &DrawTextParams) -> bool {
     let Some(slice) = self.slices.get_mut(&id).filter(|slice| slice.visible) else {
       return false;
     };
     let lines = text_layout::layout_text_lines(params);
-    Self::draw_layout_lines(
-      &mut slice.buffer,
-      params.x,
-      params.y,
-      params.line_align,
-      &lines,
-    );
+    Self::draw_layout_lines(&mut slice.buffer, x, y, params.line_align, &lines);
     true
   }
 
@@ -271,22 +273,44 @@ impl CanvasService {
     segments: &[RichTextSegment],
     params: &DrawTextParams,
   ) -> bool {
+    self.rich_text_segments_at_on(
+      id,
+      i32::from(params.x),
+      i32::from(params.y),
+      segments,
+      params,
+    )
+  }
+
+  pub fn rich_text_segments_at_on(
+    &mut self,
+    id: SliceId,
+    x: i32,
+    y: i32,
+    segments: &[RichTextSegment],
+    params: &DrawTextParams,
+  ) -> bool {
     let Some(slice) = self.slices.get_mut(&id).filter(|slice| slice.visible) else {
       return false;
     };
     let lines = text_layout::layout_rich_text_segments(segments, params);
-    Self::draw_layout_lines(
-      &mut slice.buffer,
-      params.x,
-      params.y,
-      params.line_align,
-      &lines,
-    );
+    Self::draw_layout_lines(&mut slice.buffer, x, y, params.line_align, &lines);
     true
   }
 
   /// 在指定滚动盒子的虚拟内容缓冲区上绘制富文本。
   pub fn text_in_scroll_box(&mut self, id: ScrollBoxId, params: &DrawTextParams) -> bool {
+    self.text_at_in_scroll_box(id, i32::from(params.x), i32::from(params.y), params)
+  }
+
+  /// 在滚动盒子虚拟内容区的有符号坐标上绘制文本。
+  pub fn text_at_in_scroll_box(
+    &mut self,
+    id: ScrollBoxId,
+    x: i32,
+    y: i32,
+    params: &DrawTextParams,
+  ) -> bool {
     let Some(scroll_box) = self
       .scroll_boxes
       .get_mut(&id)
@@ -295,13 +319,7 @@ impl CanvasService {
       return false;
     };
     let lines = text_layout::layout_text_lines(params);
-    Self::draw_layout_lines(
-      &mut scroll_box.buffer,
-      params.x,
-      params.y,
-      params.line_align,
-      &lines,
-    );
+    Self::draw_layout_lines(&mut scroll_box.buffer, x, y, params.line_align, &lines);
     true
   }
 
@@ -311,6 +329,23 @@ impl CanvasService {
     segments: &[RichTextSegment],
     params: &DrawTextParams,
   ) -> bool {
+    self.rich_text_segments_at_in_scroll_box(
+      id,
+      i32::from(params.x),
+      i32::from(params.y),
+      segments,
+      params,
+    )
+  }
+
+  pub fn rich_text_segments_at_in_scroll_box(
+    &mut self,
+    id: ScrollBoxId,
+    x: i32,
+    y: i32,
+    segments: &[RichTextSegment],
+    params: &DrawTextParams,
+  ) -> bool {
     let Some(scroll_box) = self
       .scroll_boxes
       .get_mut(&id)
@@ -319,38 +354,28 @@ impl CanvasService {
       return false;
     };
     let lines = text_layout::layout_rich_text_segments(segments, params);
-    Self::draw_layout_lines(
-      &mut scroll_box.buffer,
-      params.x,
-      params.y,
-      params.line_align,
-      &lines,
-    );
+    Self::draw_layout_lines(&mut scroll_box.buffer, x, y, params.line_align, &lines);
     true
   }
 
   /// 在宿主层上绘制富文本（用于覆盖层等）。
   pub(crate) fn host_text(&mut self, params: &DrawTextParams) {
+    self.host_text_at(i32::from(params.x), i32::from(params.y), params);
+  }
+
+  pub(crate) fn host_text_at(&mut self, x: i32, y: i32, params: &DrawTextParams) {
     let lines = text_layout::layout_text_lines(params);
-    Self::draw_layout_lines(
-      &mut self.host,
-      params.x,
-      params.y,
-      params.line_align,
-      &lines,
-    );
+    Self::draw_layout_lines(&mut self.host, x, y, params.line_align, &lines);
   }
 
   /// 在宿主最高层上绘制富文本。
   pub(crate) fn top_text(&mut self, params: &DrawTextParams) {
+    self.top_text_at(i32::from(params.x), i32::from(params.y), params);
+  }
+
+  pub(crate) fn top_text_at(&mut self, x: i32, y: i32, params: &DrawTextParams) {
     let lines = text_layout::layout_text_lines(params);
-    Self::draw_layout_lines(
-      &mut self.top.buffer_mut(),
-      params.x,
-      params.y,
-      params.line_align,
-      &lines,
-    );
+    Self::draw_layout_lines(self.top.buffer_mut(), x, y, params.line_align, &lines);
   }
 
   pub(crate) fn host_rich_text_segments(
@@ -358,34 +383,44 @@ impl CanvasService {
     segments: &[RichTextSegment],
     params: &DrawTextParams,
   ) {
+    self.host_rich_text_segments_at(i32::from(params.x), i32::from(params.y), segments, params);
+  }
+
+  pub(crate) fn host_rich_text_segments_at(
+    &mut self,
+    x: i32,
+    y: i32,
+    segments: &[RichTextSegment],
+    params: &DrawTextParams,
+  ) {
     let lines = text_layout::layout_rich_text_segments(segments, params);
-    Self::draw_layout_lines(
-      &mut self.host,
-      params.x,
-      params.y,
-      params.line_align,
-      &lines,
-    );
+    Self::draw_layout_lines(&mut self.host, x, y, params.line_align, &lines);
   }
 
   /// 在基础层上以指定样式绘制纯文本。
-  pub fn styled_text(&mut self, x: u16, y: u16, text: &str, style: TextStyle) {
-    Self::styled_text_to(&mut self.base, x, y, text, style);
+  pub fn styled_text(
+    &mut self,
+    x: impl Into<i32>,
+    y: impl Into<i32>,
+    text: &str,
+    style: TextStyle,
+  ) {
+    Self::styled_text_to(&mut self.base, x.into(), y.into(), text, style);
   }
 
   /// 在指定切片的缓冲区上以指定样式绘制纯文本，返回是否成功。
   pub fn styled_text_on(
     &mut self,
     id: SliceId,
-    x: u16,
-    y: u16,
+    x: impl Into<i32>,
+    y: impl Into<i32>,
     text: &str,
     style: TextStyle,
   ) -> bool {
     let Some(slice) = self.slices.get_mut(&id).filter(|slice| slice.visible) else {
       return false;
     };
-    Self::styled_text_to(&mut slice.buffer, x, y, text, style);
+    Self::styled_text_to(&mut slice.buffer, x.into(), y.into(), text, style);
     true
   }
 
@@ -393,8 +428,8 @@ impl CanvasService {
   pub fn styled_text_in_scroll_box(
     &mut self,
     id: ScrollBoxId,
-    x: u16,
-    y: u16,
+    x: impl Into<i32>,
+    y: impl Into<i32>,
     text: &str,
     style: TextStyle,
   ) -> bool {
@@ -405,53 +440,89 @@ impl CanvasService {
     else {
       return false;
     };
-    Self::styled_text_to(&mut scroll_box.buffer, x, y, text, style);
+    Self::styled_text_to(&mut scroll_box.buffer, x.into(), y.into(), text, style);
     true
   }
 
   /// 在宿主层上以指定样式绘制纯文本。
-  pub(crate) fn host_styled_text(&mut self, x: u16, y: u16, text: &str, style: TextStyle) {
-    Self::styled_text_to(&mut self.host, x, y, text, style);
+  pub(crate) fn host_styled_text(
+    &mut self,
+    x: impl Into<i32>,
+    y: impl Into<i32>,
+    text: &str,
+    style: TextStyle,
+  ) {
+    Self::styled_text_to(&mut self.host, x.into(), y.into(), text, style);
   }
 
-  pub(crate) fn host_cell(&mut self, x: u16, y: u16, cell: CanvasCell) {
-    self.host.set(x, y, cell);
+  pub(crate) fn host_cell(&mut self, x: impl Into<i32>, y: impl Into<i32>, cell: CanvasCell) {
+    let (x, y) = (x.into(), y.into());
+    if let (Ok(x), Ok(y)) = (u16::try_from(x), u16::try_from(y)) {
+      self.host.set(x, y, cell);
+    }
   }
 
   /// 在宿主最高层上以指定样式绘制纯文本。
-  pub(crate) fn top_styled_text(&mut self, x: u16, y: u16, text: &str, style: TextStyle) {
-    Self::styled_text_to(self.top.buffer_mut(), x, y, text, style);
+  pub(crate) fn top_styled_text(
+    &mut self,
+    x: impl Into<i32>,
+    y: impl Into<i32>,
+    text: &str,
+    style: TextStyle,
+  ) {
+    Self::styled_text_to(self.top.buffer_mut(), x.into(), y.into(), text, style);
   }
 
-  fn styled_text_to(buffer: &mut CanvasBuffer, x: u16, y: u16, text: &str, style: TextStyle) {
+  fn styled_text_to(buffer: &mut CanvasBuffer, x: i32, y: i32, text: &str, style: TextStyle) {
+    let Ok(y) = u16::try_from(y) else {
+      return;
+    };
+    if y >= buffer.height() {
+      return;
+    }
+
     let gs = graphemes(text);
     let mut cursor_x = x;
+    let buffer_width = i32::from(buffer.width());
 
     for g in &gs {
-      if cursor_x >= buffer.width() || y >= buffer.height() {
+      if cursor_x >= buffer_width {
         break;
       }
 
       if g.display_width == 0 {
-        let final_style = resolve_background(style.clone(), buffer, cursor_x, y);
-        buffer.set(cursor_x, y, CanvasCell::styled(&g.text, final_style));
+        if let Ok(visible_x) = u16::try_from(cursor_x)
+          && visible_x < buffer.width()
+        {
+          let final_style = resolve_background(style.clone(), buffer, visible_x, y);
+          buffer.set(visible_x, y, CanvasCell::styled(&g.text, final_style));
+        }
 
         continue;
       }
 
-      if cursor_x as usize + g.display_width > buffer.width() as usize {
+      let grapheme_width = i32::try_from(g.display_width).unwrap_or(i32::MAX);
+      let next_x = cursor_x.saturating_add(grapheme_width);
+      if next_x <= 0 {
+        cursor_x = next_x;
+        continue;
+      }
+      if cursor_x < 0 {
+        cursor_x = next_x;
+        continue;
+      }
+      if next_x > buffer_width {
         break;
       }
-      let final_style = resolve_background(style.clone(), buffer, cursor_x, y);
-      buffer.set(cursor_x, y, CanvasCell::styled(&g.text, final_style));
+      let visible_x = cursor_x as u16;
+      let final_style = resolve_background(style.clone(), buffer, visible_x, y);
+      buffer.set(visible_x, y, CanvasCell::styled(&g.text, final_style));
       for offset in 1..g.display_width {
-        let cont_x = cursor_x.saturating_add(offset as u16);
-        if cont_x < buffer.width() {
-          buffer.set(cont_x, y, CanvasCell::continuation());
-        }
+        let cont_x = visible_x.saturating_add(offset as u16);
+        buffer.set(cont_x, y, CanvasCell::continuation());
       }
 
-      cursor_x = cursor_x.saturating_add(g.display_width as u16);
+      cursor_x = next_x;
     }
   }
 
@@ -714,8 +785,8 @@ impl CanvasService {
 
   fn draw_layout_lines(
     buffer: &mut CanvasBuffer,
-    x: u16,
-    y: u16,
+    x: i32,
+    y: i32,
     align: TextAlign,
     lines: &[LayoutLine],
   ) {
@@ -726,9 +797,10 @@ impl CanvasService {
         TextAlign::Left => 0,
         TextAlign::Center => base_width.saturating_sub(line.width) / 2,
         TextAlign::Right => base_width.saturating_sub(line.width),
-      } as u16;
+      };
+      let offset = i32::try_from(offset).unwrap_or(i32::MAX);
       let mut cursor_x = x.saturating_add(offset);
-      let cursor_y = y.saturating_add(line_index as u16);
+      let cursor_y = y.saturating_add(i32::try_from(line_index).unwrap_or(i32::MAX));
       let mut run_text = String::new();
       let mut run_style: Option<&TextStyle> = None;
       let mut run_width = 0usize;
@@ -738,7 +810,7 @@ impl CanvasService {
           Some(style) if style == &item.style => {}
           Some(style) => {
             Self::styled_text_to(buffer, cursor_x, cursor_y, &run_text, style.clone());
-            cursor_x = cursor_x.saturating_add(run_width as u16);
+            cursor_x = cursor_x.saturating_add(i32::try_from(run_width).unwrap_or(i32::MAX));
             run_text.clear();
             run_width = 0;
             run_style = Some(&item.style);
@@ -810,7 +882,7 @@ mod tests {
   use super::*;
   use crate::host_engine::services::text_layout::TextWrapMode;
   use crate::host_engine::services::{
-    Overflow, RichTextParams, ScrollBoxOptions, ScrollBoxService, ScrollbarPolicy,
+    Overflow, RenderService, RichTextParams, ScrollBoxOptions, ScrollBoxService, ScrollbarPolicy,
     ScrollbarVisibility, SliceLength, SliceOptions, SliceRect, SliceService, TerminalColor,
     TextColor,
   };
@@ -880,6 +952,117 @@ mod tests {
       visible_row(&canvas, 0),
       "确认",
       "CJK characters must all be written"
+    );
+  }
+
+  #[test]
+  fn signed_text_coordinates_are_clipped_to_the_base_canvas() {
+    let mut canvas = CanvasService::new();
+    canvas.base.resize(5, 2);
+
+    canvas.text_at(
+      -2,
+      1,
+      &DrawTextParams {
+        text: "abcdef".to_string(),
+        ..Default::default()
+      },
+    );
+    canvas.text_at(
+      0,
+      -1,
+      &DrawTextParams {
+        text: "hidden\nshown".to_string(),
+        ..Default::default()
+      },
+    );
+
+    assert_eq!(raw_row_prefix(&canvas, 0, 5), "shown");
+    assert_eq!(raw_row_prefix(&canvas, 1, 5), "cdef ");
+  }
+
+  #[test]
+  fn signed_styled_text_skips_partially_visible_wide_graphemes() {
+    let mut canvas = CanvasService::new();
+    canvas.base.resize(5, 1);
+
+    canvas.styled_text(-1, 0, "界ab", TextStyle::default());
+
+    assert_eq!(raw_row_prefix(&canvas, 0, 5), " ab  ");
+    assert!(
+      (0..canvas.base_width()).all(|x| !canvas.base.get(x, 0).unwrap().is_continuation()),
+      "a clipped wide grapheme must not leave a continuation cell"
+    );
+  }
+
+  #[test]
+  fn negative_filled_rect_is_clipped_by_canvas_text_writes() {
+    let mut canvas = CanvasService::new();
+    canvas.base.resize(4, 3);
+    let mut render = RenderService::new();
+
+    render.draw_filled_rect(&mut canvas, -1, -1, 3, 3, Some("#".to_string()), None, None);
+
+    assert_eq!(raw_row_prefix(&canvas, 0, 4), "##  ");
+    assert_eq!(raw_row_prefix(&canvas, 1, 4), "##  ");
+    assert_eq!(raw_row_prefix(&canvas, 2, 4), "    ");
+  }
+
+  #[test]
+  fn signed_coordinates_are_clipped_inside_slices_and_scroll_boxes() {
+    let mut layout = LayoutService::new();
+    layout.resize_physical(12, 6);
+    let mut pool = UiObjectPool::new();
+    let slice = SliceService::new()
+      .create(
+        &mut pool,
+        SliceOptions {
+          rect: SliceRect {
+            x: 0,
+            y: 0,
+            width: SliceLength::Fixed(4),
+            height: SliceLength::Fixed(2),
+          },
+          ..Default::default()
+        },
+      )
+      .unwrap();
+    let scroll_box = ScrollBoxService::new()
+      .create(
+        &mut pool,
+        ScrollBoxOptions {
+          rect: Rect {
+            x: 5,
+            y: 0,
+            width: 4,
+            height: 2,
+          },
+          content_width: 4,
+          content_height: 2,
+          ..Default::default()
+        },
+      )
+      .unwrap();
+    let mut canvas = CanvasService::new();
+    canvas.begin_frame(&layout);
+    canvas.prepare(&pool, &layout);
+    let params = DrawTextParams {
+      text: "abcd".to_string(),
+      ..Default::default()
+    };
+
+    assert!(canvas.text_at_on(slice, -2, 0, &params));
+    assert!(canvas.text_at_in_scroll_box(scroll_box, -1, 0, &params));
+
+    assert_eq!(
+      canvas.slices[&slice].buffer.row_text(0),
+      "cd  ",
+      "slice-local negative coordinates must clip"
+    );
+    assert_eq!(
+      canvas.scroll_boxes[&scroll_box].buffer.row_text(0),
+      "bcd ",
+      "scroll-box content coordinates must clip"
     );
   }
 

@@ -21,6 +21,7 @@
   "recording_settings.auto_recording.host": "启动程序",
   "recording_settings.auto_recording.game": "开始游戏",
   "recording_settings.auto_split.nope": "关闭",
+  "recording_settings.auto_split.3": "3分钟",
   "recording_settings.auto_split.5": "5分钟",
   "recording_settings.auto_split.10": "10分钟",
   "recording_settings.video_fps.video": "录制帧率",

@@ -218,6 +218,8 @@ pub struct InputService {
   action_receiver: Receiver<InputActionEvent>,
   system_sender: Sender<SystemEvent>,
   system_receiver: Receiver<SystemEvent>,
+  pending_system_events: VecDeque<SystemEvent>,
+  observed_system_events: VecDeque<SystemEvent>,
   key_listener_started: Arc<AtomicBool>,
   system_listener_started: Arc<AtomicBool>,
   held_keys: HashSet<Key>,
@@ -248,6 +250,8 @@ impl InputService {
       action_receiver,
       system_sender,
       system_receiver,
+      pending_system_events: VecDeque::new(),
+      observed_system_events: VecDeque::new(),
       key_listener_started: Arc::new(AtomicBool::new(false)),
       system_listener_started: Arc::new(AtomicBool::new(false)),
       held_keys: HashSet::new(),
@@ -358,38 +362,57 @@ impl InputService {
 
   /// 轮询并应用系统事件队列
   pub fn poll_system_events(&mut self) {
-    while let Ok(event) = self.system_receiver.try_recv() {
+    while let Some(event) = self.pop_system_event() {
       self.apply_system_event(&event);
     }
   }
 
   /// 轮询系统事件并优先处理窗口大小变化
   pub fn poll_resize_events(&mut self, mut on_resize: impl FnMut(u16, u16)) {
-    let mut others = Vec::new();
-    while let Ok(event) = self.system_receiver.try_recv() {
+    let mut others = VecDeque::new();
+    while let Some(event) = self.pop_system_event() {
       match &event {
         SystemEvent::Resize(re) => {
           self.apply_system_event(&event);
           on_resize(re.width, re.height);
         }
-        _ => others.push(event),
+        _ => others.push_back(event),
       }
     }
-
-    for event in others {
-      if self.system_sender.send(event).is_err() {
-        // Channel disconnected — the main loop has exited. Cannot log here
-        // because LogService is not available in &self methods on the polling path.
-      }
-    }
+    self.pending_system_events = others;
   }
 
-  /// 排空系统事件队列并返回，同时补齐鼠标 Hold 事件
+  /// 取出 Runtime 尚未观察过的系统事件，同时保持其后续 UI 消费顺序。
+  ///
+  /// Runtime 用它旁路观察必须同时送往 Lua 的焦点事件；该方法不应用事件状态，
+  /// 也不把宿主 UI 的事件所有权转交给 Lua。
+  pub(crate) fn drain_system_event_observations(&mut self, limit: usize) -> Vec<SystemEvent> {
+    while self.pending_system_events.len() < limit {
+      let Ok(event) = self.system_receiver.try_recv() else {
+        break;
+      };
+      self.pending_system_events.push_back(event);
+      self.observed_system_events.push_back(event);
+    }
+    let count = self.observed_system_events.len().min(limit);
+    self.observed_system_events.drain(..count).collect()
+  }
+
+  /// 读取单帧允许的系统事件，同时补齐鼠标 Hold 事件。
+  ///
+  /// 未读取的事件保留在通道中，避免输入洪峰让 Runtime 一帧内无限排空队列。
   pub fn drain_system_events(&mut self) -> Vec<SystemEvent> {
+    self.drain_system_events_limited(128)
+  }
+
+  pub fn drain_system_events_limited(&mut self, limit: usize) -> Vec<SystemEvent> {
     let mut events = Vec::new();
     let mut active_buttons: HashSet<MouseButton> = HashSet::new();
 
-    while let Ok(event) = self.system_receiver.try_recv() {
+    while events.len() < limit {
+      let Some(event) = self.pop_system_event() else {
+        break;
+      };
       if let SystemEvent::Mouse(me) = &event {
         if let Some(button) = me.button {
           match me.kind {
@@ -410,6 +433,9 @@ impl InputService {
     }
 
     for button in &self.mouse_held_buttons {
+      if events.len() >= limit {
+        break;
+      }
       if !active_buttons.contains(button) {
         if let Some((x, y)) = self.mouse_position {
           let hold = MouseEvent {
@@ -428,6 +454,15 @@ impl InputService {
     }
 
     events
+  }
+
+  fn pop_system_event(&mut self) -> Option<SystemEvent> {
+    if let Some(event) = self.pending_system_events.pop_front() {
+      return Some(event);
+    }
+    let event = self.system_receiver.try_recv().ok()?;
+    self.observed_system_events.push_back(event);
+    Some(event)
   }
 
   fn apply_system_event(&mut self, event: &SystemEvent) {
@@ -1312,6 +1347,41 @@ mod tests {
 
     assert_eq!(resize, Some((100, 30)));
     assert_eq!(input.drain_system_events(), vec![a, b]);
+  }
+
+  #[test]
+  fn system_event_drain_keeps_input_beyond_the_frame_limit() {
+    let mut input = InputService::new();
+    for _ in 0..130 {
+      input
+        .system_sender
+        .send(SystemEvent::TerminalKey(TerminalKeyEvent {
+          code: TerminalKeyCode::Char('a'),
+          ctrl: false,
+          shift: false,
+        }))
+        .unwrap();
+    }
+
+    assert_eq!(input.drain_system_events().len(), 128);
+    assert_eq!(input.drain_system_events().len(), 2);
+  }
+
+  #[test]
+  fn system_event_observation_preserves_events_for_the_normal_consumer() {
+    let mut input = InputService::new();
+    let focus = SystemEvent::Focus(FocusEvent { gained: false });
+    let key = SystemEvent::TerminalKey(TerminalKeyEvent {
+      code: TerminalKeyCode::Char('a'),
+      ctrl: false,
+      shift: false,
+    });
+    input.system_sender.send(focus).unwrap();
+    input.system_sender.send(key).unwrap();
+
+    assert_eq!(input.drain_system_event_observations(128), vec![focus, key]);
+    assert!(input.drain_system_event_observations(128).is_empty());
+    assert_eq!(input.drain_system_events(), vec![focus, key]);
   }
 
   #[test]

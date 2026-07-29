@@ -16,6 +16,12 @@ pub fn close(services: &mut EngineServices, mut world: RuntimeWorld, _exit_state
       format!("Asynchronous write failed for {}: {error}", path.display()),
     );
   }
+
+  services.screensaver.stop();
+  let stop_data = services.game.stop(true);
+  for error in stop_data.save_errors {
+    services.log.error(LogSource::Lua, error.to_string());
+  }
   let _ = services.input_method.release_input_method();
 
   services

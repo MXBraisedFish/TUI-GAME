@@ -193,6 +193,35 @@ pub(super) fn load_current_action_map(services: &mut EngineServices, world: &Run
   }
 }
 
+pub(super) fn load_game_action_map(services: &mut EngineServices) {
+  let (Some(source), Some(package_id)) = (
+    services.game.package_source().cloned(),
+    services.game.package_id().map(str::to_string),
+  ) else {
+    services.input.load_key_bindings(Vec::new());
+    return;
+  };
+  let Some(entry) = services
+    .package
+    .game_list()
+    .into_iter()
+    .find(|entry| entry.source == source && entry.mod_id == package_id)
+  else {
+    services.input.load_key_bindings(Vec::new());
+    return;
+  };
+  let entries = entry
+    .key_actions
+    .into_iter()
+    .map(|(action, keys)| ActionMapEntry {
+      description: action.clone(),
+      action,
+      keys,
+    })
+    .collect::<Vec<_>>();
+  load_action_map(services, &entries, "GameSession");
+}
+
 pub(super) fn load_window_size_action_map(services: &mut EngineServices) {
   load_action_map(services, &WindowSizeWarningUi::action_map(), "window_size");
 }

@@ -37,7 +37,82 @@ pub(super) fn apply_game_list_command(
     GameListCommand::SubmitJump(value) => {
       game_list_ui.submit_jump(&mut services.text_input, value);
     }
-    GameListCommand::Confirm => {}
+    GameListCommand::Confirm { source, mod_id } => {
+      let Some(package) = services.package.find_game(&source, &mod_id) else {
+        services.log.error(
+          LogSource::Lua,
+          format!("Game package not found: source={source:?}, id={mod_id}"),
+        );
+        return;
+      };
+      let entry_path = match services.package.resolve_entry_path(&package) {
+        Ok(path) => path,
+        Err(error) => {
+          services.log.error(
+            LogSource::Lua,
+            format!("Game '{}' entry resolution failed: {error}", package.mod_id),
+          );
+          return;
+        }
+      };
+      let terminal_size = services.layout.physical_size();
+      let log_entry_path = entry_path.clone();
+      let spec = crate::host_engine::services::LuaSessionSpec {
+        package_id: package.mod_id.clone(),
+        session_kind: crate::host_engine::services::LuaSessionKind::Game,
+        entry_path,
+        fixed_delta: std::time::Duration::from_secs_f64(1.0 / 60.0),
+        terminal_size,
+        continue_data: None,
+      };
+      let session = match services.lua.create_session(spec) {
+        Ok(session) => session,
+        Err(error) => {
+          services.log.error(
+            LogSource::Lua,
+            format!("{error}; entry={}", log_entry_path.display()),
+          );
+          return;
+        }
+      };
+      let game = package
+        .game
+        .as_ref()
+        .expect("game package without game config");
+      services.game.start(
+        session,
+        package.source.clone(),
+        game.target_fps,
+        crate::host_engine::services::Size {
+          width: package.runtime.min_width.min(u16::MAX as u32) as u16,
+          height: package.runtime.min_height.min(u16::MAX as u32) as u16,
+        },
+      );
+      let Some(runtime) = world.state.runtime_mut() else {
+        let _ = services.game.stop(false);
+        return;
+      };
+      let Some(return_host) = runtime.main_host().host().cloned() else {
+        let _ = services.game.stop(false);
+        return;
+      };
+      let package_source = match package.source {
+        crate::host_engine::services::PackageSource::Official => "official",
+        crate::host_engine::services::PackageSource::Mod => "mod",
+      };
+      runtime.set_main_host(MainHostState::Game(
+        crate::host_engine::core::state_machine::GameState::new(
+          package.mod_id,
+          package_source.to_string(),
+          package.runtime.min_width,
+          package.runtime.min_height,
+          game.target_fps,
+          return_host,
+        ),
+      ));
+      services.canvas.request_render();
+      services.presenter.request_render();
+    }
   }
 }
 

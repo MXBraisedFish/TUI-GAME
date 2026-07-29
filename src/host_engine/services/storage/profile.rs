@@ -225,6 +225,7 @@ impl AutoRecordingMode {
 #[serde(rename_all = "snake_case")]
 pub enum AutoSplitDuration {
   Off,
+  Minutes3,
   Minutes5,
   Minutes10,
 }
@@ -232,7 +233,8 @@ pub enum AutoSplitDuration {
 impl AutoSplitDuration {
   pub fn next(self) -> Self {
     match self {
-      Self::Off => Self::Minutes5,
+      Self::Off => Self::Minutes3,
+      Self::Minutes3 => Self::Minutes5,
       Self::Minutes5 => Self::Minutes10,
       Self::Minutes10 => Self::Off,
     }
@@ -241,6 +243,7 @@ impl AutoSplitDuration {
   pub fn duration(self) -> Option<std::time::Duration> {
     match self {
       Self::Off => None,
+      Self::Minutes3 => Some(std::time::Duration::from_secs(3 * 60)),
       Self::Minutes5 => Some(std::time::Duration::from_secs(5 * 60)),
       Self::Minutes10 => Some(std::time::Duration::from_secs(10 * 60)),
     }
@@ -249,7 +252,7 @@ impl AutoSplitDuration {
 
 impl Default for AutoSplitDuration {
   fn default() -> Self {
-    Self::Minutes10
+    Self::Minutes3
   }
 }
 

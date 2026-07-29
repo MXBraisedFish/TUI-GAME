@@ -1,4 +1,6 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::fs::File;
+use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 use std::sync::{
   Arc,
@@ -20,6 +22,9 @@ use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
 const VALID_TARGET_FPS: &[u32] = &[30, 60, 120];
+const MAX_PACKAGE_MANIFEST_BYTES: usize = 1024 * 1024;
+const MAX_PACKAGE_TEXT_BYTES: usize = 1024 * 1024;
+const MAX_PACKAGE_I18N_BYTES: usize = 1024 * 1024;
 
 /// 包来源（官方或模组）
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -384,6 +389,76 @@ impl PackageService {
     self.snapshot.screensavers.clone()
   }
 
+  /// 按来源和包 ID 精确查找游戏，避免官方包与模组同名时选错。
+  pub fn find_game(&self, source: &PackageSource, mod_id: &str) -> Option<PackageInfo> {
+    find_package(&self.snapshot.games, source, mod_id)
+  }
+
+  /// 按来源和包 ID 精确查找屏保。
+  pub fn find_screensaver(&self, source: &PackageSource, mod_id: &str) -> Option<PackageInfo> {
+    find_package(&self.snapshot.screensavers, source, mod_id)
+  }
+
+  /// 解析包的实际 Lua 入口，并确保规范路径仍位于 scripts/ 内。
+  pub fn resolve_entry_path(&self, package: &PackageInfo) -> Result<PathBuf, String> {
+    let canonical_package = package.path.canonicalize().map_err(|error| {
+      format!(
+        "Failed to resolve package directory '{}': {error}",
+        package.path.display()
+      )
+    })?;
+    if !canonical_package.is_dir() {
+      return Err(format!(
+        "Package path '{}' is not a directory",
+        canonical_package.display()
+      ));
+    }
+
+    let scripts_dir = package.path.join("scripts");
+    let canonical_scripts = scripts_dir.canonicalize().map_err(|error| {
+      format!(
+        "Failed to resolve scripts directory '{}': {error}",
+        scripts_dir.display()
+      )
+    })?;
+    if !canonical_scripts.is_dir() || !canonical_scripts.starts_with(&canonical_package) {
+      return Err(format!(
+        "Scripts directory '{}' escapes package directory '{}'",
+        canonical_scripts.display(),
+        canonical_package.display()
+      ));
+    }
+
+    let normalized_entry = resolve_entry(&package.path, &package.entry)?;
+    let entry_path = scripts_dir.join(normalized_entry);
+    let canonical_entry = entry_path.canonicalize().map_err(|error| {
+      format!(
+        "Failed to resolve package entry '{}': {error}",
+        entry_path.display()
+      )
+    })?;
+    if !canonical_entry.starts_with(&canonical_scripts) {
+      return Err(format!(
+        "Package entry '{}' escapes scripts directory '{}'",
+        canonical_entry.display(),
+        canonical_scripts.display()
+      ));
+    }
+    if !extension_is(canonical_entry.to_string_lossy().as_ref(), &["lua"]) {
+      return Err(format!(
+        "Package entry '{}' is not a Lua source file",
+        canonical_entry.display()
+      ));
+    }
+    if !canonical_entry.is_file() {
+      return Err(format!(
+        "Package entry '{}' is not a file",
+        canonical_entry.display()
+      ));
+    }
+    Ok(canonical_entry)
+  }
+
   pub fn mod_games(&self) -> Vec<PackageListEntry> {
     self
       .games()
@@ -440,6 +515,17 @@ impl PackageService {
     }
     entry
   }
+}
+
+fn find_package(
+  packages: &[PackageInfo],
+  source: &PackageSource,
+  mod_id: &str,
+) -> Option<PackageInfo> {
+  packages
+    .iter()
+    .find(|package| &package.source == source && package.mod_id == mod_id)
+    .cloned()
 }
 
 pub(crate) fn run_package_task(
@@ -785,14 +871,8 @@ fn package_scan_roots(request: &ScanRequest) -> Vec<PathBuf> {
 
 fn package_list_entry(info: PackageInfo) -> PackageListEntry {
   let icon_path = match &info.display.icon {
-    PackageAsset::Image { path } => Some(
-      info
-        .path
-        .join("assets")
-        .join(path)
-        .to_string_lossy()
-        .to_string(),
-    ),
+    PackageAsset::Image { path } => resolve_package_image_path(&info.path, Path::new(path))
+      .map(|path| path.to_string_lossy().to_string()),
     _ => None,
   };
   let icon = icon_path
@@ -800,14 +880,11 @@ fn package_list_entry(info: PackageInfo) -> PackageListEntry {
     .map(|path| PackageAsset::Image { path: path.clone() })
     .unwrap_or_else(|| info.display.icon.clone());
   let banner = match &info.display.banner {
-    PackageAsset::Image { path } => PackageAsset::Image {
-      path: info
-        .path
-        .join("assets")
-        .join(path)
-        .to_string_lossy()
-        .to_string(),
-    },
+    PackageAsset::Image { path } => resolve_package_image_path(&info.path, Path::new(path))
+      .map(|path| PackageAsset::Image {
+        path: path.to_string_lossy().to_string(),
+      })
+      .unwrap_or_else(default_banner_asset),
     PackageAsset::Text { .. } => info.display.banner.clone(),
   };
   let mouse_required = info.game.as_ref().is_some_and(|game| game.mouse);
@@ -961,6 +1038,12 @@ fn scan_dir(
   source: PackageSource,
 ) {
   let dir = request.root.join(relative);
+  let Some((canonical_root, canonical_dir)) = canonical_scan_root(&request.root, &dir) else {
+    return;
+  };
+  if !canonical_dir.starts_with(&canonical_root) {
+    return;
+  }
   let entries = match std::fs::read_dir(&dir) {
     Ok(e) => e,
     Err(_) => return,
@@ -972,6 +1055,24 @@ fn scan_dir(
       continue;
     }
     let dir_name = path.file_name().unwrap().to_string_lossy().to_string();
+    let package_is_direct_child = path
+      .canonicalize()
+      .ok()
+      .and_then(|canonical| canonical.parent().map(|parent| parent == canonical_dir))
+      .unwrap_or(false);
+    if !package_is_direct_child {
+      report.events.push(PackageEvent::Warn(format!(
+        "Skipping '{}/{}': package directory escapes its scan root",
+        relative, dir_name
+      )));
+      report.errors += 1;
+      *scanned += 1;
+      emit_event(PackageEvent::ScanProgress {
+        scanned: *scanned,
+        total,
+      });
+      continue;
+    }
 
     match read_package(&path, &dir_name, &expected_type, &source, request) {
       Ok(info) => {
@@ -1000,6 +1101,14 @@ fn scan_dir(
       total,
     });
   }
+}
+
+fn canonical_scan_root(root: &Path, category: &Path) -> Option<(PathBuf, PathBuf)> {
+  let canonical_root = root.canonicalize().ok()?;
+  let canonical_category = category.canonicalize().ok()?;
+  canonical_category
+    .starts_with(&canonical_root)
+    .then_some((canonical_root, canonical_category))
 }
 
 fn count_package_candidates(request: &ScanRequest) -> usize {
@@ -1034,8 +1143,8 @@ fn read_package(
   request: &ScanRequest,
 ) -> Result<PackageInfo, String> {
   let json_path = dir.join("package.json");
-  let content =
-    std::fs::read_to_string(&json_path).map_err(|e| format!("Cannot read package.json: {}", e))?;
+  let content = read_utf8_file_limited(&json_path, MAX_PACKAGE_MANIFEST_BYTES)
+    .map_err(|error| format!("Cannot read package.json: {error}"))?;
   let mut watched_files = vec![json_path.clone()];
 
   let raw: RawPackageJson =
@@ -1332,15 +1441,17 @@ fn parse_package_asset(
 ) -> Option<PackageAsset> {
   let raw = raw.as_ref()?;
   let path = safe_asset_path(&raw.path)?;
-  let asset_path = package_dir.join("assets").join(&path);
+  let watched_path = package_dir.join("assets").join(&path);
   match raw.asset_type.as_str() {
     "image" if is_supported_image_path(&path) => {
-      watched_files.push(asset_path);
+      resolve_package_image_path(package_dir, Path::new(&path))?;
+      watched_files.push(watched_path);
       Some(PackageAsset::Image { path })
     }
     "text" if is_supported_text_path(&path) => {
-      watched_files.push(asset_path.clone());
-      let content = std::fs::read_to_string(asset_path).ok()?;
+      let asset_path = resolve_package_file(package_dir, Path::new("assets"), Path::new(&path))?;
+      watched_files.push(watched_path);
+      let content = read_utf8_file_limited(&asset_path, MAX_PACKAGE_TEXT_BYTES).ok()?;
       Some(PackageAsset::Text {
         path,
         lines: normalize_asset_text(&content, shape),
@@ -1388,7 +1499,7 @@ fn normalize_asset_lines<const N: usize>(lines: [&str; N], shape: AssetShape) ->
 
 fn safe_asset_path(path: &str) -> Option<String> {
   let trimmed = path.trim();
-  if trimmed.is_empty() {
+  if trimmed.is_empty() || trimmed.contains('\\') {
     return None;
   }
 
@@ -1401,6 +1512,107 @@ fn safe_asset_path(path: &str) -> Option<String> {
   }
 
   (!parts.is_empty()).then(|| parts.join("/"))
+}
+
+fn safe_path_segment(value: &str) -> bool {
+  let value = value.trim();
+  !value.is_empty()
+    && value != "."
+    && value != ".."
+    && !value
+      .chars()
+      .any(|character| matches!(character, '/' | '\\' | ':'))
+    && matches!(
+      Path::new(value).components().collect::<Vec<_>>().as_slice(),
+      [Component::Normal(_)]
+    )
+}
+
+fn safe_relative_path(path: &Path) -> bool {
+  !path.as_os_str().is_empty()
+    && path
+      .components()
+      .all(|component| matches!(component, Component::Normal(_)))
+}
+
+fn resolve_package_file(
+  package_dir: &Path,
+  allowed_root: &Path,
+  relative: &Path,
+) -> Option<PathBuf> {
+  if !safe_relative_path(allowed_root) || !safe_relative_path(relative) {
+    return None;
+  }
+  let canonical_package = package_dir.canonicalize().ok()?;
+  let root = package_dir.join(allowed_root);
+  let canonical_root = root.canonicalize().ok()?;
+  if !canonical_root.is_dir() || !canonical_root.starts_with(&canonical_package) {
+    return None;
+  }
+  let canonical_file = root.join(relative).canonicalize().ok()?;
+  (canonical_file.is_file() && canonical_file.starts_with(&canonical_root))
+    .then_some(canonical_file)
+}
+
+fn resolve_package_image_path(package_dir: &Path, relative: &Path) -> Option<PathBuf> {
+  if !safe_relative_path(relative) {
+    return None;
+  }
+  let canonical_package = package_dir.canonicalize().ok()?;
+  let root = package_dir.join("assets");
+  let canonical_root = match root.canonicalize() {
+    Ok(root) => {
+      if !root.is_dir() || !root.starts_with(&canonical_package) {
+        return None;
+      }
+      Some(root)
+    }
+    Err(_) => None,
+  };
+  let candidate = root.join(relative);
+  match candidate.canonicalize() {
+    Ok(file) => {
+      let root = canonical_root?;
+      (file.is_file() && file.starts_with(root)).then_some(file)
+    }
+    Err(_) => {
+      let parent_is_safe = candidate
+        .parent()
+        .and_then(|parent| parent.canonicalize().ok())
+        .is_none_or(|parent| {
+          canonical_root
+            .as_ref()
+            .is_some_and(|root| parent.starts_with(root))
+        });
+      parent_is_safe.then_some(candidate)
+    }
+  }
+}
+
+fn read_utf8_file_limited(path: &Path, limit: usize) -> Result<String, String> {
+  let file = File::open(path).map_err(|error| error.to_string())?;
+  let metadata = file.metadata().map_err(|error| error.to_string())?;
+  if !metadata.is_file() {
+    return Err("path is not a regular file".to_string());
+  }
+  if metadata.len() > limit as u64 {
+    return Err(format!(
+      "file is {} bytes; limit is {limit} bytes",
+      metadata.len()
+    ));
+  }
+
+  let mut bytes = Vec::with_capacity(metadata.len() as usize);
+  file
+    .take(limit.saturating_add(1) as u64)
+    .read_to_end(&mut bytes)
+    .map_err(|error| error.to_string())?;
+  if bytes.len() > limit {
+    return Err(format!(
+      "file exceeds the {limit} byte limit while being read"
+    ));
+  }
+  String::from_utf8(bytes).map_err(|error| error.to_string())
 }
 
 fn is_supported_image_path(path: &str) -> bool {
@@ -1521,7 +1733,10 @@ fn load_package_i18n_value(pkg_dir: &Path, language_code: &str, key: &str) -> Op
   package_i18n_paths(pkg_dir, language_code, key)
     .into_iter()
     .find_map(|(path, field)| {
-      let content = std::fs::read_to_string(path).ok()?;
+      let asset_root = pkg_dir.join("assets");
+      let relative = path.strip_prefix(&asset_root).ok()?;
+      let path = resolve_package_file(pkg_dir, Path::new("assets"), relative)?;
+      let content = read_utf8_file_limited(&path, MAX_PACKAGE_I18N_BYTES).ok()?;
       serde_json::from_str::<HashMap<String, String>>(&content)
         .ok()?
         .get(&field)
@@ -1531,6 +1746,9 @@ fn load_package_i18n_value(pkg_dir: &Path, language_code: &str, key: &str) -> Op
 
 fn package_i18n_paths(pkg_dir: &Path, language_code: &str, key: &str) -> Vec<(PathBuf, String)> {
   let parts: Vec<&str> = key.split('/').filter(|part| !part.is_empty()).collect();
+  if !safe_path_segment(language_code) || parts.iter().any(|part| !safe_path_segment(part)) {
+    return Vec::new();
+  }
   let language_root = pkg_dir.join("assets").join("language").join(language_code);
   match parts.as_slice() {
     [] => Vec::new(),
@@ -1579,6 +1797,12 @@ fn resolve_entry(pkg_dir: &Path, entry: &str) -> Result<String, String> {
   if trimmed.is_empty() {
     return Err("Entry is empty".to_string());
   }
+  if trimmed.contains('\\') || trimmed.contains(':') {
+    return Err(format!(
+      "Entry '{}' must use a portable relative scripts path",
+      entry
+    ));
+  }
   let mut parts = Vec::new();
   for component in Path::new(trimmed).components() {
     match component {
@@ -1599,6 +1823,8 @@ fn resolve_entry(pkg_dir: &Path, entry: &str) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
+  use std::io;
+
   use super::*;
   use crate::host_engine::services::async_runtime::{AsyncRuntime, EngineEvent};
 
@@ -1608,6 +1834,26 @@ mod tests {
     let root = std::env::temp_dir().join(format!("tg_package_{name}_{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     root
+  }
+
+  #[cfg(unix)]
+  fn create_dir_link(target: &Path, link: &Path) -> io::Result<()> {
+    std::os::unix::fs::symlink(target, link)
+  }
+
+  #[cfg(windows)]
+  fn create_dir_link(target: &Path, link: &Path) -> io::Result<()> {
+    std::os::windows::fs::symlink_dir(target, link)
+  }
+
+  #[cfg(unix)]
+  fn create_file_link(target: &Path, link: &Path) -> io::Result<()> {
+    std::os::unix::fs::symlink(target, link)
+  }
+
+  #[cfg(windows)]
+  fn create_file_link(target: &Path, link: &Path) -> io::Result<()> {
+    std::os::windows::fs::symlink_file(target, link)
   }
 
   fn poll_async_package_events(
@@ -1829,6 +2075,44 @@ mod tests {
     assert_eq!(games[0].mod_id, "manifest_only");
     assert_eq!(service.games()[0].entry, "main.lua");
 
+    let _ = std::fs::remove_dir_all(root);
+  }
+
+  #[test]
+  fn exact_lookup_and_entry_resolution_use_package_identity() {
+    let root = temp_root("lua_entry");
+    write_game(&root, "scripts/game", "official_id", "Official");
+    write_game(&root, "data/mod/game", "mod_id", "Mod");
+
+    let mut service = PackageService::new();
+    let mut log = LogService::new();
+    scan(&mut service, &root, &mut log, "en_us");
+
+    let official = service
+      .find_game(&PackageSource::Official, "official_id")
+      .unwrap();
+    let modified = service.find_game(&PackageSource::Mod, "mod_id").unwrap();
+    assert!(
+      service
+        .find_game(&PackageSource::Mod, "official_id")
+        .is_none()
+    );
+    assert_ne!(official.path, modified.path);
+    assert!(
+      service
+        .resolve_entry_path(&official)
+        .unwrap()
+        .ends_with("scripts/main.lua")
+    );
+    assert!(
+      service
+        .resolve_entry_path(&modified)
+        .unwrap()
+        .ends_with("scripts/main.lua")
+    );
+
+    std::fs::remove_file(modified.path.join("scripts/main.lua")).unwrap();
+    assert!(service.resolve_entry_path(&modified).is_err());
     let _ = std::fs::remove_dir_all(root);
   }
 
@@ -2474,5 +2758,71 @@ mod tests {
     assert!(resolve_entry(Path::new("."), "").is_err());
     assert!(resolve_entry(Path::new("."), "../main").is_err());
     assert!(resolve_entry(Path::new("."), "/main").is_err());
+    assert!(resolve_entry(Path::new("."), r"..\main").is_err());
+    assert!(resolve_entry(Path::new("."), r"C:\main").is_err());
+  }
+
+  #[test]
+  fn package_i18n_paths_reject_directory_traversal() {
+    let package = Path::new("package");
+    assert!(package_i18n_paths(package, "../outside", "title").is_empty());
+    assert!(package_i18n_paths(package, "en_us", "../outside/title").is_empty());
+    assert!(package_i18n_paths(package, "en_us", r"folder\..\title").is_empty());
+  }
+
+  #[test]
+  fn package_file_resolution_stays_inside_assets() {
+    let root = temp_root("asset_boundary");
+    let package = root.join("package");
+    std::fs::create_dir_all(package.join("assets/ui")).unwrap();
+    std::fs::write(package.join("assets/ui/icon.txt"), "safe").unwrap();
+    std::fs::write(root.join("outside.txt"), "outside").unwrap();
+
+    assert!(
+      resolve_package_file(&package, Path::new("assets"), Path::new("ui/icon.txt")).is_some()
+    );
+    assert!(
+      resolve_package_file(&package, Path::new("assets"), Path::new("../outside.txt")).is_none()
+    );
+
+    let link = package.join("assets/ui/outside.txt");
+    if create_file_link(&root.join("outside.txt"), &link).is_ok() {
+      assert!(
+        resolve_package_file(&package, Path::new("assets"), Path::new("ui/outside.txt")).is_none()
+      );
+    }
+    let _ = std::fs::remove_dir_all(root);
+  }
+
+  #[test]
+  fn scripts_directory_link_cannot_escape_package() {
+    let root = temp_root("scripts_link_boundary");
+    write_game_manifest_only(&root, "data/mod/game", "linked_scripts", "Linked Scripts");
+    let package = root.join("data/mod/game/linked_scripts");
+    let outside = root.join("outside_scripts");
+    std::fs::create_dir_all(&outside).unwrap();
+    std::fs::write(outside.join("main.lua"), "-- outside").unwrap();
+    if create_dir_link(&outside, &package.join("scripts")).is_err() {
+      let _ = std::fs::remove_dir_all(root);
+      return;
+    }
+
+    let mut service = PackageService::new();
+    let mut log = LogService::new();
+    scan(&mut service, &root, &mut log, "en_us");
+    let package = service.games().remove(0);
+    assert!(service.resolve_entry_path(&package).is_err());
+    let _ = std::fs::remove_dir_all(root);
+  }
+
+  #[test]
+  fn package_text_reads_are_size_limited() {
+    let root = temp_root("read_limit");
+    std::fs::create_dir_all(&root).unwrap();
+    let path = root.join("large.txt");
+    std::fs::write(&path, "12345").unwrap();
+    assert_eq!(read_utf8_file_limited(&path, 5).unwrap(), "12345");
+    assert!(read_utf8_file_limited(&path, 4).is_err());
+    let _ = std::fs::remove_dir_all(root);
   }
 }

@@ -21,6 +21,7 @@
   "recording_settings.auto_recording.host": "On Startup",
   "recording_settings.auto_recording.game": "On Game Start",
   "recording_settings.auto_split.nope": "Off",
+  "recording_settings.auto_split.3": "3 Minutes",
   "recording_settings.auto_split.5": "5 Minutes",
   "recording_settings.auto_split.10": "10 Minutes",
   "recording_settings.video_fps.video": "Match Recording FPS",

@@ -293,4 +293,10 @@ impl HostMachineState {
       .map(|r| r.main_host().is_host())
       .unwrap_or(true)
   }
+
+  pub fn is_game_mode(&self) -> bool {
+    self
+      .runtime()
+      .is_some_and(|runtime| runtime.main_host().is_game())
+  }
 }

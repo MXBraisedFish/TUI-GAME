@@ -18,6 +18,7 @@ use super::{
   image::{ImageConvertParams, ImageService},
   input::{KeyEvent, SystemEvent},
   log::LogSource,
+  network::{NetworkEvent, NetworkTask},
   package::{self, PackageAsyncEvent, PackageTask},
   recording::{self, RecordingAsyncEvent, RecordingTask},
   screenshot::{self, ScreenshotAsyncEvent, ScreenshotTask},
@@ -49,6 +50,15 @@ impl TaskCancellation {
 
   pub(crate) fn is_cancelled(&self) -> bool {
     is_cancelled(&self.cancelled, self.task_id)
+  }
+
+  #[cfg(test)]
+  pub(crate) fn cancel(&self) {
+    self
+      .cancelled
+      .lock()
+      .unwrap_or_else(|poison| poison.into_inner())
+      .insert(self.task_id);
   }
 }
 
@@ -108,26 +118,6 @@ pub enum ImageTask {
 pub enum ImageEvent {
   ConvertFinished { task_id: TaskId, output: String },
   Failed { task_id: TaskId, error: String },
-}
-
-#[derive(Clone, Debug)]
-pub enum NetworkTask {
-  Get { url: String },
-}
-
-#[derive(Clone, Debug)]
-pub enum NetworkEvent {
-  GetFinished {
-    task_id: TaskId,
-    url: String,
-    status: u16,
-    body: String,
-  },
-  Failed {
-    task_id: TaskId,
-    url: String,
-    error: String,
-  },
 }
 
 #[derive(Clone, Debug)]
@@ -385,7 +375,11 @@ fn worker_loop(
     match message {
       WorkerMessage::Run(id, task) => {
         if is_cancelled(&cancelled_tasks, id) {
+          if let EngineTask::Network(task) = &task {
+            super::network::emit_cancelled(id, task, &event_tx);
+          }
           set_task_state(&task_states, id, TaskState::Cancelled);
+          clear_cancelled(&cancelled_tasks, id);
           write_barrier.finish(id);
           continue;
         }
@@ -395,9 +389,13 @@ fn worker_loop(
           task_id: id,
           cancelled: cancelled_tasks.clone(),
         };
-        match run_task(id, task, &event_tx, &cancellation) {
+        let is_network = matches!(&task, EngineTask::Network(_));
+        let result = run_task(id, task, &event_tx, &cancellation);
+        let was_cancelled = is_cancelled(&cancelled_tasks, id);
+        clear_cancelled(&cancelled_tasks, id);
+        match result {
           Ok(()) => {
-            if is_cancelled(&cancelled_tasks, id) {
+            if !is_network && was_cancelled {
               set_task_state(&task_states, id, TaskState::Cancelled);
             } else {
               set_task_state(&task_states, id, TaskState::Finished);
@@ -406,7 +404,7 @@ fn worker_loop(
             write_barrier.finish(id);
           }
           Err(error) => {
-            if is_cancelled(&cancelled_tasks, id) {
+            if was_cancelled {
               set_task_state(&task_states, id, TaskState::Cancelled);
               write_barrier.finish(id);
             } else {
@@ -461,6 +459,13 @@ fn is_cancelled(cancelled_tasks: &Arc<Mutex<HashSet<TaskId>>>, id: TaskId) -> bo
     .contains(&id)
 }
 
+fn clear_cancelled(cancelled_tasks: &Arc<Mutex<HashSet<TaskId>>>, id: TaskId) {
+  cancelled_tasks
+    .lock()
+    .unwrap_or_else(|poison| poison.into_inner())
+    .remove(&id);
+}
+
 fn run_task(
   id: TaskId,
   task: EngineTask,
@@ -477,7 +482,7 @@ fn run_task(
     EngineTask::Video(task) => video::run_video_task(id, task, event_tx, cancellation),
     EngineTask::File(task) => run_file_task(id, task, event_tx),
     EngineTask::Image(task) => run_image_task(id, task, event_tx),
-    EngineTask::Network(task) => run_network_task(id, task, event_tx),
+    EngineTask::Network(task) => super::network::run_network_task(id, task, event_tx, cancellation),
     EngineTask::Sleep(task) => {
       thread::sleep(task.duration);
       let _ = event_tx.send(EngineEvent::Time(TimeAsyncEvent::SleepFinished {
@@ -585,47 +590,6 @@ fn run_image_task(
       }
     }
   }
-}
-
-fn run_network_task(
-  task_id: TaskId,
-  task: NetworkTask,
-  event_tx: &Sender<EngineEvent>,
-) -> Result<(), String> {
-  match task {
-    NetworkTask::Get { url } => match reqwest::blocking::get(&url) {
-      Ok(response) => {
-        let status = response.status().as_u16();
-        match response.text() {
-          Ok(body) => {
-            let _ = event_tx.send(EngineEvent::Network(NetworkEvent::GetFinished {
-              task_id,
-              url,
-              status,
-              body,
-            }));
-            Ok(())
-          }
-          Err(error) => {
-            send_network_error(event_tx, task_id, url, error.to_string());
-            Err(error.to_string())
-          }
-        }
-      }
-      Err(error) => {
-        send_network_error(event_tx, task_id, url, error.to_string());
-        Err(error.to_string())
-      }
-    },
-  }
-}
-
-fn send_network_error(event_tx: &Sender<EngineEvent>, task_id: TaskId, url: String, error: String) {
-  let _ = event_tx.send(EngineEvent::Network(NetworkEvent::Failed {
-    task_id,
-    url,
-    error,
-  }));
 }
 
 fn set_task_state(

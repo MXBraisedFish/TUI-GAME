@@ -6,7 +6,6 @@ mod code_highlight;
 mod event;
 pub(crate) mod export;
 mod file;
-mod game;
 mod host_object;
 mod i18n;
 mod image;
@@ -16,7 +15,6 @@ mod layout;
 mod log;
 mod lua;
 mod network;
-mod overlay;
 mod package;
 mod popup;
 mod random;
@@ -51,7 +49,7 @@ pub use animation::{
 };
 pub use async_runtime::{
   AsyncRuntime, EngineEvent, EngineTask, FileEvent, FileTask, ImageEvent, ImageTask,
-  ManagedThreadId, NetworkEvent, NetworkTask, SleepTask, TaskId, TaskState, TimeAsyncEvent,
+  ManagedThreadId, SleepTask, TaskId, TaskState, TimeAsyncEvent,
 };
 pub use canvas::{CanvasCell, CanvasService};
 pub use clipboard::ClipboardService;
@@ -61,7 +59,6 @@ pub use code_highlight::{
 pub use event::EngineEventQueue;
 pub use export::{ExportAsyncEvent, ExportService, ExportTask};
 pub use file::FileService;
-pub use game::GameService;
 pub use host_object::{HostArea, HostAreaId, HostAreaKind, HostObjectPool};
 pub use i18n::{I18nService, LanguageRegistryEntry};
 pub use image::{ImageConvertParams, ImageService};
@@ -73,9 +70,23 @@ pub use input::{
 pub use input_method::{ImPolicy, InputMethodService};
 pub use layout::{LayoutService, Rect, Size};
 pub use log::{LogService, LogSource};
-pub use lua::LuaService;
-pub use network::NetworkService;
-pub use overlay::OverlayService;
+pub use lua::{
+  GameService, LuaActionState, LuaAnimationEvent, LuaAnimationEventKind, LuaBudgetKind,
+  LuaCallbackLifetime, LuaEnqueueError, LuaErrorStage, LuaEventBroker, LuaEventCallbackId,
+  LuaEventData, LuaEventDelivery, LuaEventError, LuaEventErrorCode, LuaEventRoute,
+  LuaExecutionBudget, LuaExecutionStats, LuaFileEvent, LuaFileOperation, LuaFileOutcome,
+  LuaHitAreaEvent, LuaHyperlinkEvent, LuaImageEvent, LuaImageOutcome, LuaMarkdownEvent,
+  LuaNetworkBody, LuaNetworkEvent, LuaNetworkOutcome, LuaPolicy, LuaRuntimeEvent,
+  LuaScrollBoxEvent, LuaService, LuaSession, LuaSessionDiagnostics, LuaSessionError,
+  LuaSessionKind, LuaSessionSpec, LuaSessionState, LuaSessionToken, LuaTaskOperation,
+  LuaTextInputEvent, LuaTimerEvent, LuaTimerEventKind, LuaTimerKind, MAX_LUA_EVENTS_PER_FRAME,
+  MAX_LUA_NETWORK_TASKS_PER_SESSION, MAX_LUA_PENDING_EVENTS, ScreensaverService,
+};
+pub use network::{
+  NetworkError, NetworkErrorCode, NetworkEvent, NetworkHeader, NetworkMethod, NetworkRequest,
+  NetworkRequestBody, NetworkRequestStatus, NetworkResponse, NetworkResponseBody,
+  NetworkResponseMode, NetworkService, NetworkSubmitError, NetworkTask,
+};
 pub use package::{
   PackageAsset, PackageEvent, PackageInfo, PackageListEntry, PackageService, PackageSource,
   PackageType,
@@ -159,7 +170,7 @@ pub struct EngineServices {
   pub ui: UiService,
   pub game: GameService,
   pub image: ImageService,
-  pub overlay: OverlayService,
+  pub screensaver: ScreensaverService,
   pub storage: StorageService,
   pub export: ExportService,
   pub lua: LuaService,
@@ -215,10 +226,10 @@ impl EngineServices {
       ui: UiService::new(),
       game: GameService::new(),
       image: ImageService::new(Some(image_cache_dir)),
-      overlay: OverlayService::new(),
+      screensaver: ScreensaverService::new(),
       storage,
       export: ExportService::new(),
-      lua: LuaService::new(&mut log),
+      lua: LuaService::new(),
       render: RenderService::new(),
       log,
       i18n: I18nService::new(),

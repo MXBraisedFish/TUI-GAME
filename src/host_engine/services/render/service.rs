@@ -26,6 +26,17 @@ impl RenderService {
     self.draw_text_target(canvas, Target::Base, params);
   }
 
+  /// 在基础层的有符号坐标上绘制文本，超出画布的部分由 Canvas 裁剪。
+  pub fn draw_text_at(
+    &mut self,
+    canvas: &mut CanvasService,
+    x: i32,
+    y: i32,
+    params: &DrawTextParams,
+  ) {
+    self.draw_text_target_at(canvas, Target::Base, x, y, params);
+  }
+
   /// 在指定切片上绘制文本，返回是否绘制成功（切片不可见时返回 false）。
   pub fn draw_text_on(
     &mut self,
@@ -34,6 +45,17 @@ impl RenderService {
     params: &DrawTextParams,
   ) -> bool {
     canvas.text_on(slice, params)
+  }
+
+  pub fn draw_text_at_on(
+    &mut self,
+    canvas: &mut CanvasService,
+    slice: SliceId,
+    x: i32,
+    y: i32,
+    params: &DrawTextParams,
+  ) -> bool {
+    canvas.text_at_on(slice, x, y, params)
   }
 
   /// 在指定滚动盒子的虚拟内容区上绘制文本。
@@ -46,9 +68,30 @@ impl RenderService {
     canvas.text_in_scroll_box(id, params)
   }
 
+  pub fn draw_text_at_in_scroll_box(
+    &mut self,
+    canvas: &mut CanvasService,
+    id: ScrollBoxId,
+    x: i32,
+    y: i32,
+    params: &DrawTextParams,
+  ) -> bool {
+    canvas.text_at_in_scroll_box(id, x, y, params)
+  }
+
   /// 在宿主层上绘制文本（用于顶层 UI 元素）。
   pub(crate) fn draw_host_text(&mut self, canvas: &mut CanvasService, params: &DrawTextParams) {
     self.draw_text_target(canvas, Target::Host, params);
+  }
+
+  pub(crate) fn draw_host_text_at(
+    &mut self,
+    canvas: &mut CanvasService,
+    x: i32,
+    y: i32,
+    params: &DrawTextParams,
+  ) {
+    self.draw_text_target_at(canvas, Target::Host, x, y, params);
   }
 
   /// 在宿主最高层上绘制文本。
@@ -56,12 +99,22 @@ impl RenderService {
     self.draw_text_target(canvas, Target::Top, params);
   }
 
+  pub(crate) fn draw_top_text_at(
+    &mut self,
+    canvas: &mut CanvasService,
+    x: i32,
+    y: i32,
+    params: &DrawTextParams,
+  ) {
+    self.draw_text_target_at(canvas, Target::Top, x, y, params);
+  }
+
   /// 在基础层上绘制填充矩形。
   pub fn draw_filled_rect(
     &mut self,
     canvas: &mut CanvasService,
-    x: u16,
-    y: u16,
+    x: impl Into<i32>,
+    y: impl Into<i32>,
     width: u16,
     height: u16,
     fill_char: Option<String>,
@@ -71,8 +124,8 @@ impl RenderService {
     self.draw_filled_rect_target(
       canvas,
       Target::Base,
-      x,
-      y,
+      x.into(),
+      y.into(),
       width,
       height,
       fill_char,
@@ -87,8 +140,8 @@ impl RenderService {
     &mut self,
     canvas: &mut CanvasService,
     slice: SliceId,
-    x: u16,
-    y: u16,
+    x: impl Into<i32>,
+    y: impl Into<i32>,
     width: u16,
     height: u16,
     fill_char: Option<String>,
@@ -101,8 +154,8 @@ impl RenderService {
     self.draw_filled_rect_target(
       canvas,
       Target::Slice(slice),
-      x,
-      y,
+      x.into(),
+      y.into(),
       width,
       height,
       fill_char,
@@ -118,8 +171,8 @@ impl RenderService {
     &mut self,
     canvas: &mut CanvasService,
     id: ScrollBoxId,
-    x: u16,
-    y: u16,
+    x: impl Into<i32>,
+    y: impl Into<i32>,
     width: u16,
     height: u16,
     fill_char: Option<String>,
@@ -132,8 +185,8 @@ impl RenderService {
     self.draw_filled_rect_target(
       canvas,
       Target::ScrollBox(id),
-      x,
-      y,
+      x.into(),
+      y.into(),
       width,
       height,
       fill_char,
@@ -148,8 +201,8 @@ impl RenderService {
   pub(crate) fn draw_host_filled_rect(
     &mut self,
     canvas: &mut CanvasService,
-    x: u16,
-    y: u16,
+    x: impl Into<i32>,
+    y: impl Into<i32>,
     width: u16,
     height: u16,
     fill_char: Option<String>,
@@ -159,8 +212,8 @@ impl RenderService {
     self.draw_filled_rect_target(
       canvas,
       Target::Host,
-      x,
-      y,
+      x.into(),
+      y.into(),
       width,
       height,
       fill_char,
@@ -174,8 +227,8 @@ impl RenderService {
   pub(crate) fn draw_top_filled_rect(
     &mut self,
     canvas: &mut CanvasService,
-    x: u16,
-    y: u16,
+    x: impl Into<i32>,
+    y: impl Into<i32>,
     width: u16,
     height: u16,
     fill_char: Option<String>,
@@ -185,8 +238,8 @@ impl RenderService {
     self.draw_filled_rect_target(
       canvas,
       Target::Top,
-      x,
-      y,
+      x.into(),
+      y.into(),
       width,
       height,
       fill_char,
@@ -200,8 +253,8 @@ impl RenderService {
     &mut self,
     canvas: &mut CanvasService,
     target: Target,
-    x: u16,
-    y: u16,
+    x: i32,
+    y: i32,
     width: u16,
     height: u16,
     fill_char: Option<String>,
@@ -218,12 +271,12 @@ impl RenderService {
 
     let fill_str: String = std::iter::repeat(ch).take(width as usize).collect();
     for row in 0..height {
-      self.draw_text_target(
+      self.draw_text_target_at(
         canvas,
         target,
+        x,
+        y.saturating_add(i32::from(row)),
         &DrawTextParams {
-          x,
-          y: y.saturating_add(row),
           text: fill_str.clone(),
           fg: fill_fg.clone(),
           bg: fill_bg.clone(),
@@ -237,8 +290,8 @@ impl RenderService {
   pub fn draw_border_rect(
     &mut self,
     canvas: &mut CanvasService,
-    x: u16,
-    y: u16,
+    x: impl Into<i32>,
+    y: impl Into<i32>,
     width: u16,
     height: u16,
     border_style: &BorderStyle,
@@ -250,8 +303,8 @@ impl RenderService {
     self.draw_border_rect_target(
       canvas,
       Target::Base,
-      x,
-      y,
+      x.into(),
+      y.into(),
       width,
       height,
       border_style,
@@ -268,8 +321,8 @@ impl RenderService {
     &mut self,
     canvas: &mut CanvasService,
     slice: SliceId,
-    x: u16,
-    y: u16,
+    x: impl Into<i32>,
+    y: impl Into<i32>,
     width: u16,
     height: u16,
     border_style: &BorderStyle,
@@ -284,8 +337,8 @@ impl RenderService {
     self.draw_border_rect_target(
       canvas,
       Target::Slice(slice),
-      x,
-      y,
+      x.into(),
+      y.into(),
       width,
       height,
       border_style,
@@ -303,8 +356,8 @@ impl RenderService {
     &mut self,
     canvas: &mut CanvasService,
     id: ScrollBoxId,
-    x: u16,
-    y: u16,
+    x: impl Into<i32>,
+    y: impl Into<i32>,
     width: u16,
     height: u16,
     border_style: &BorderStyle,
@@ -319,8 +372,8 @@ impl RenderService {
     self.draw_border_rect_target(
       canvas,
       Target::ScrollBox(id),
-      x,
-      y,
+      x.into(),
+      y.into(),
       width,
       height,
       border_style,
@@ -337,8 +390,8 @@ impl RenderService {
   pub(crate) fn draw_host_border_rect(
     &mut self,
     canvas: &mut CanvasService,
-    x: u16,
-    y: u16,
+    x: impl Into<i32>,
+    y: impl Into<i32>,
     width: u16,
     height: u16,
     border_style: &BorderStyle,
@@ -350,8 +403,8 @@ impl RenderService {
     self.draw_border_rect_target(
       canvas,
       Target::Host,
-      x,
-      y,
+      x.into(),
+      y.into(),
       width,
       height,
       border_style,
@@ -367,8 +420,8 @@ impl RenderService {
   pub(crate) fn draw_top_border_rect(
     &mut self,
     canvas: &mut CanvasService,
-    x: u16,
-    y: u16,
+    x: impl Into<i32>,
+    y: impl Into<i32>,
     width: u16,
     height: u16,
     border_style: &BorderStyle,
@@ -380,8 +433,8 @@ impl RenderService {
     self.draw_border_rect_target(
       canvas,
       Target::Top,
-      x,
-      y,
+      x.into(),
+      y.into(),
       width,
       height,
       border_style,
@@ -397,8 +450,8 @@ impl RenderService {
     &mut self,
     canvas: &mut CanvasService,
     target: Target,
-    x: u16,
-    y: u16,
+    x: i32,
+    y: i32,
     width: u16,
     height: u16,
     border_style: &BorderStyle,
@@ -441,7 +494,14 @@ impl RenderService {
 
     self.draw_border_cell(canvas, target, x, y, lt_ch, &lt_s);
     self.draw_border_span(canvas, target, x.saturating_add(1), y, t_ch, mid_w, &t_s);
-    self.draw_border_cell(canvas, target, x.saturating_add(width - 1), y, rt_ch, &rt_s);
+    self.draw_border_cell(
+      canvas,
+      target,
+      x.saturating_add(i32::from(width - 1)),
+      y,
+      rt_ch,
+      &rt_s,
+    );
 
     let fill_text = fill_bg.as_ref().map(|_| {
       std::iter::repeat(' ')
@@ -449,25 +509,32 @@ impl RenderService {
         .collect::<String>()
     });
     for row in 1..=mid_h {
-      let cy = y.saturating_add(row);
+      let cy = y.saturating_add(i32::from(row));
       self.draw_border_cell(canvas, target, x, cy, l_ch, &l_s);
       if let Some(fill_text) = &fill_text {
-        self.draw_text_target(
+        self.draw_text_target_at(
           canvas,
           target,
+          x.saturating_add(1),
+          cy,
           &DrawTextParams {
-            x: x.saturating_add(1),
-            y: cy,
             text: fill_text.clone(),
             bg: fill_bg.clone(),
             ..Default::default()
           },
         );
       }
-      self.draw_border_cell(canvas, target, x.saturating_add(width - 1), cy, r_ch, &r_s);
+      self.draw_border_cell(
+        canvas,
+        target,
+        x.saturating_add(i32::from(width - 1)),
+        cy,
+        r_ch,
+        &r_s,
+      );
     }
 
-    let bot_y = y.saturating_add(height - 1);
+    let bot_y = y.saturating_add(i32::from(height - 1));
     self.draw_border_cell(canvas, target, x, bot_y, lb_ch, &lb_s);
     self.draw_border_span(
       canvas,
@@ -481,7 +548,7 @@ impl RenderService {
     self.draw_border_cell(
       canvas,
       target,
-      x.saturating_add(width - 1),
+      x.saturating_add(i32::from(width - 1)),
       bot_y,
       rb_ch,
       &rb_s,
@@ -492,17 +559,17 @@ impl RenderService {
     &mut self,
     canvas: &mut CanvasService,
     target: Target,
-    x: u16,
-    y: u16,
+    x: i32,
+    y: i32,
     ch: char,
     style: &TextStyle,
   ) {
-    self.draw_text_target(
+    self.draw_text_target_at(
       canvas,
       target,
+      x,
+      y,
       &DrawTextParams {
-        x,
-        y,
         text: ch.to_string(),
         fg: style.foreground.clone(),
         bg: style.background.clone(),
@@ -523,19 +590,19 @@ impl RenderService {
     &mut self,
     canvas: &mut CanvasService,
     target: Target,
-    x: u16,
-    y: u16,
+    x: i32,
+    y: i32,
     ch: char,
     count: u16,
     style: &TextStyle,
   ) {
     let text: String = std::iter::repeat(ch).take(count as usize).collect();
-    self.draw_text_target(
+    self.draw_text_target_at(
       canvas,
       target,
+      x,
+      y,
       &DrawTextParams {
-        x,
-        y,
         text,
         fg: style.foreground.clone(),
         bg: style.background.clone(),
@@ -567,19 +634,35 @@ impl RenderService {
     }
   }
 
+  /// 在指定 Surface 的有符号局部坐标上绘制文本。
+  pub fn draw_text_at_on_surface(
+    &mut self,
+    canvas: &mut CanvasService,
+    surface: SurfaceId,
+    x: i32,
+    y: i32,
+    params: &DrawTextParams,
+  ) -> bool {
+    match surface {
+      SurfaceId::Slice(id) => self.draw_text_at_on(canvas, id, x, y, params),
+      SurfaceId::ScrollBox(id) => self.draw_text_at_in_scroll_box(canvas, id, x, y, params),
+    }
+  }
+
   /// 在指定 Surface 上绘制填充矩形。
   pub fn draw_filled_rect_on_surface(
     &mut self,
     canvas: &mut CanvasService,
     surface: SurfaceId,
-    x: u16,
-    y: u16,
+    x: impl Into<i32>,
+    y: impl Into<i32>,
     width: u16,
     height: u16,
     fill_char: Option<String>,
     fill_fg: Option<TextColor>,
     fill_bg: Option<TextColor>,
   ) -> bool {
+    let (x, y) = (x.into(), y.into());
     match surface {
       SurfaceId::Slice(id) => {
         self.draw_filled_rect_on(canvas, id, x, y, width, height, fill_char, fill_fg, fill_bg)
@@ -595,8 +678,8 @@ impl RenderService {
     &mut self,
     canvas: &mut CanvasService,
     surface: SurfaceId,
-    x: u16,
-    y: u16,
+    x: impl Into<i32>,
+    y: impl Into<i32>,
     width: u16,
     height: u16,
     border_style: &BorderStyle,
@@ -605,6 +688,7 @@ impl RenderService {
     fill_bg: Option<TextColor>,
     border_attrs: Option<TextStyle>,
   ) -> bool {
+    let (x, y) = (x.into(), y.into());
     match surface {
       SurfaceId::Slice(id) => self.draw_border_rect_on(
         canvas,
@@ -651,6 +735,27 @@ impl RenderService {
       }
       Target::Host => canvas.host_text(params),
       Target::Top => canvas.top_text(params),
+    }
+  }
+
+  fn draw_text_target_at(
+    &mut self,
+    canvas: &mut CanvasService,
+    target: Target,
+    x: i32,
+    y: i32,
+    params: &DrawTextParams,
+  ) {
+    match target {
+      Target::Base => canvas.text_at(x, y, params),
+      Target::Slice(id) => {
+        canvas.text_at_on(id, x, y, params);
+      }
+      Target::ScrollBox(id) => {
+        canvas.text_at_in_scroll_box(id, x, y, params);
+      }
+      Target::Host => canvas.host_text_at(x, y, params),
+      Target::Top => canvas.top_text_at(x, y, params),
     }
   }
 }

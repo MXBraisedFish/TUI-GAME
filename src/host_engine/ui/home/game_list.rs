@@ -25,7 +25,10 @@ pub enum GameListCommand {
   ScrollInfoUp,
   ScrollInfoDown,
   SubmitJump(String),
-  Confirm,
+  Confirm {
+    source: PackageSource,
+    mod_id: String,
+  },
 }
 
 /// 游戏列表页面布局信息。
@@ -388,7 +391,10 @@ impl GameListUi {
           self.toggle_list_style();
           None
         }
-        "game_list.confirm" => Some(GameListCommand::Confirm),
+        "game_list.confirm" => self.selected_entry().map(|entry| GameListCommand::Confirm {
+          source: entry.source,
+          mod_id: entry.mod_id,
+        }),
         "game_list.list.back" => Some(GameListCommand::Back),
         _ => None,
       },

@@ -451,6 +451,7 @@ fn popup_key(value: RecordingPopupMode) -> &'static str {
 fn auto_split_key(value: AutoSplitDuration) -> &'static str {
   match value {
     AutoSplitDuration::Off => "recording_settings.auto_split.nope",
+    AutoSplitDuration::Minutes3 => "recording_settings.auto_split.3",
     AutoSplitDuration::Minutes5 => "recording_settings.auto_split.5",
     AutoSplitDuration::Minutes10 => "recording_settings.auto_split.10",
   }
@@ -518,6 +519,32 @@ mod tests {
     assert_eq!(profile.popup, RecordingPopupMode::All);
     assert_eq!(profile.capture_frame_rate, RecordingFrameRate::Fps60);
     assert_eq!(profile.auto_recording, AutoRecordingMode::Off);
-    assert_eq!(profile.auto_split, AutoSplitDuration::Minutes10);
+    assert_eq!(profile.auto_split, AutoSplitDuration::Minutes3);
+  }
+
+  #[test]
+  fn auto_split_cycles_through_three_minutes() {
+    let values = [
+      AutoSplitDuration::Off,
+      AutoSplitDuration::Minutes3,
+      AutoSplitDuration::Minutes5,
+      AutoSplitDuration::Minutes10,
+    ];
+
+    for (current, next) in values.into_iter().zip(values.into_iter().cycle().skip(1)) {
+      assert_eq!(current.next(), next);
+    }
+    assert_eq!(
+      AutoSplitDuration::Minutes3.duration(),
+      Some(std::time::Duration::from_secs(180))
+    );
+    assert_eq!(
+      serde_json::to_string(&AutoSplitDuration::Minutes3).unwrap(),
+      "\"minutes3\""
+    );
+    assert_eq!(
+      serde_json::from_str::<AutoSplitDuration>("\"minutes3\"").unwrap(),
+      AutoSplitDuration::Minutes3
+    );
   }
 }
