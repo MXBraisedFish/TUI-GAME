@@ -1,12 +1,10 @@
-# Lua 事件参考
+# 事件参考文档
 
-本文档说明当前 Lua 运行时能够识别的全部事件结构。
+本文档列出了你的游戏可以通过 `HandleEvent(event)` 收到的所有事件类型及其数据结构。
 
-系统与生命周期事件由宿主自动产生。服务和交互对象事件只会发送给拥有对应对象或异步请求的 Lua Session。部分事件对应的 Lua 创建 API 尚未开放；本文档中存在事件定义不代表 Lua 目前已经可以调用其创建 API。
+## 事件结构
 
-## 事件信封
-
-所有传递给 Lua 的事件都使用相同的信封结构：
+所有事件都遵循同一个外层结构：
 
 ```lua
 {
@@ -20,123 +18,120 @@
 }
 ```
 
-| 字段 | Lua 类型 | 含义 |
+| 字段 | 类型 | 说明 |
 |---|---|---|
-| `type` | `string` | 事件分类，所有可用值见下文。 |
-| `sequence` | `integer` | Runtime 全局单调递增的事件序号。事件可能按 Session 过滤，因此序号不连续是正常情况。 |
-| `frame` | `integer` | 事件入队时所处的宿主帧。 |
-| `data` | `table` | 对应事件类型的数据。 |
+| `type` | `string` | 事件类型，所有可选值见下文。 |
+| `sequence` | `integer` | 全局递增的事件序号。事件会按 Session 过滤，序号不连续是正常的。 |
+| `frame` | `integer` | 事件产生时所在的帧号。 |
+| `data` | `table` | 具体的事件数据，结构由 `type` 决定。 |
 
-事件只会被传递给 `HandleEvent(event)` 或对应操作注册的回调函数，两者不会重复接收。同一字段不存在时，在 Lua 中读取结果为 `nil`。
+读取不存在的字段会得到 `nil`。
 
-每个 Session 拥有独立的 FIFO 队列。每个宿主帧最多投递 128 个事件，最多允许 1,024 个事件等待处理。Lua 处理当前批次时新产生的事件会延迟到下一宿主帧。
+事件会传递给 `HandleEvent(event)` 或你在创建对象／发起请求时注册的回调函数，两者不会重复收到同一条事件。
 
-## Session 路由
+每个 Session 有独立的事件队列，每帧最多接收 128 条事件，队列上限为 1024 条。当前帧新产生的事件会推迟到下一帧处理。
 
-| 事件分类 | 游戏 Session | 屏保 Session |
-|---|---:|---:|
-| 动作与鼠标输入 | 是 | 否 |
-| 终端尺寸与焦点 | 是 | 是 |
-| 屏保生命周期 | 是 | 否 |
-| Session 自己创建的计时器与动画 | 是 | 是 |
-| Session 自己创建的文件请求结果 | 是 | 仅限读取 |
-| Session 自己创建的图片请求结果 | 是 | 是 |
-| Session 自己创建的网络请求结果 | 是 | 是，但需经过未来的权限 API |
-| Session 自己创建的交互 UI 对象 | 是 | 否 |
+## 哪些事件归哪个 Session
 
-屏保运行期间，游戏不会收到 `action`、`mouse` 或交互 UI 对象事件，但仍可收到 `resize`、`focus`、屏保生命周期事件及游戏自身后台操作的结果。
+| 事件来源 | 游戏 Session | 屏保 Session |
+|---|---|---|
+| 动作按键、鼠标输入 | ✓ | ✗ |
+| 终端尺寸变化、焦点变化 | ✓ | ✓ |
+| 屏保启动／停止 | ✓ | ✗ |
+| 自己创建的计时器、动画 | ✓ | ✓ |
+| 自己发起的文件请求 | ✓ | 只读 |
+| 自己发起的图片转换 | ✓ | ✓ |
+| 自己发起的网络请求 | ✓ | 待权限 API |
+| 自己的音频对象 | ✓ | ✓ |
+| 自己创建的交互 UI 对象 | ✓ | ✗ |
 
-原始终端按键、宿主 UI、日志、弹窗、包扫描、截屏、录屏、数据导出、视频导出以及通用宿主任务事件不会暴露给 Lua。
+屏保运行期间，游戏收不到 `action`、`mouse` 和交互 UI 事件，但 `resize`、`focus`、屏保生命周期以及后台操作的结果依然可以收到。
 
-## 系统与生命周期事件
+## 系统事件
 
 ### `action`
 
-全局宿主动作优先消费输入，剩余游戏动作才会发送给当前游戏。屏保运行期间不会发送。
+按键动作事件。屏保期间不会发送。
 
-| `data` 字段 | Lua 类型 | 含义 |
+| `data` 字段 | 类型 | 说明 |
 |---|---|---|
-| `action` | `string` | 游戏包定义的动作 ID，不会暴露原始按键。 |
-| `state` | `string` | `pressed`、`held` 或 `released`。 |
+| `action` | `string` | 在游戏包中定义的动作 ID（不会暴露原始按键）。 |
+| `state` | `string` | `pressed`（按下）、`held`（按住）、`released`（释放）。 |
 
 ### `mouse`
 
-终端处于聚焦状态，且鼠标事件发生在 Base 可视区域内时发送给当前游戏。坐标从零开始，并且相对于 Base 区域。
+鼠标事件。仅当终端处于聚焦状态且鼠标落在游戏可视区域内时发送，坐标相对于游戏区域左上角，从 0 开始。
 
-| `data` 字段 | Lua 类型 | 含义 |
+| `data` 字段 | 类型 | 说明 |
 |---|---|---|
-| `kind` | `string` | `pressed`、`released`、`moved`、`dragged`、`held` 或 `scrolled`。 |
-| `button` | `string \| nil` | `left`、`middle` 或 `right`；事件不包含鼠标按键时不存在。 |
-| `scroll` | `string \| nil` | `up`、`down`、`left` 或 `right`；仅滚轮事件存在。 |
-| `x` | `integer` | 从零开始的水平单元格坐标。 |
-| `y` | `integer` | 从零开始的垂直单元格坐标。 |
+| `kind` | `string` | `pressed`、`released`、`moved`、`dragged`、`held`、`scrolled`。 |
+| `button` | `string \| nil` | `left`、`middle`、`right`；非按键事件不出现。 |
+| `scroll` | `string \| nil` | 滚轮方向：`up`、`down`、`left`、`right`；仅 `scrolled` 事件出现。 |
+| `x` | `integer` | 水平单元格坐标（从 0 开始）。 |
+| `y` | `integer` | 垂直单元格坐标（从 0 开始）。 |
 
 ### `resize`
 
-终端尺寸发生变化时发送，同时投递给当前游戏和屏保 Session。
+终端尺寸变化时发送，游戏和屏保都会收到。
 
-| `data` 字段 | Lua 类型 | 含义 |
+| `data` 字段 | 类型 | 说明 |
 |---|---|---|
-| `width` | `integer` | 新的终端宽度，单位为单元格。 |
-| `height` | `integer` | 新的终端高度，单位为单元格。 |
+| `width` | `integer` | 终端宽度（单元格）。 |
+| `height` | `integer` | 终端高度（单元格）。 |
 
 ### `focus`
 
-终端获得或失去焦点时发送，同时投递给当前游戏和屏保 Session。
+终端焦点变化时发送，游戏和屏保都会收到。
 
-| `data` 字段 | Lua 类型 | 含义 |
+| `data` 字段 | 类型 | 说明 |
 |---|---|---|
-| `gained` | `boolean` | 获得焦点时为 `true`，失去焦点时为 `false`。 |
+| `gained` | `boolean` | `true` 获得焦点，`false` 失去焦点。 |
 
-宿主不会在焦点丢失后自动生成所有动作的 `released` 事件。游戏应在 `gained == false` 时自行清理持续按下状态。
+> 失去焦点时不会自动生成按键的 `released` 事件。建议收到 `gained == false` 时自行重置按键状态。
 
 ### `screensaver_started`
 
-屏保 Session 成功启动后发送给游戏。
-
-`data` 为空表。
+屏保启动时发送给游戏。`data` 为空表。
 
 ### `screensaver_stopped`
 
-当前屏保 Session 停止后发送给游戏。
+屏保停止时发送给游戏。`data` 为空表。
 
-`data` 为空表。
+## 计时器与动画事件
 
-## 时间与动画事件
-
-这些事件只会发送给创建对应计时器或动画的 Session。所有 ID 都是 Session 内部的不透明整数，不是宿主对象 ID。
+这些事件只会发给创建它们的 Session。ID 都是 Session 内部的不透明整数。
 
 ### `timer`
 
-所属计时器触发或结束时发送。
+计时器触发或结束时发送。
 
-| `data` 字段 | Lua 类型 | 含义 |
+| `data` 字段 | 类型 | 说明 |
 |---|---|---|
-| `id` | `integer` | Session 内部的计时器 ID。 |
-| `timer_kind` | `string` | `timer`、`delay`、`repeat` 或 `sleep`。 |
-| `kind` | `string` | `tick` 或 `finished`。 |
-| `executed_count` | `integer \| nil` | 已执行次数，仅重复计时器存在。 |
+| `id` | `integer` | Session 内部计时器 ID。 |
+| `timer_kind` | `string` | 计时器类型：`timer`、`delay`、`repeat`、`sleep`。 |
+| `kind` | `string` | 事件类型：`tick`（触发）或 `finished`（结束）。 |
+| `executed_count` | `integer \| nil` | 已执行的次数，仅重复计时器的 `tick` 事件出现。 |
 
-`timer` 和 `delay` 当前只产生 `finished`；重复计时器产生 `tick`，并在结束时产生 `finished`；异步休眠产生 `finished`。
+`timer` 和 `delay` 只在结束时产生 `finished`；重复计时器每次触发产生 `tick`，最后产生 `finished`；异步休眠只在结束时产生 `finished`。
 
 ### `animation`
 
-所属动画的生命周期发生变化、到达标记或完成循环时发送。
+动画生命周期变化时发送。
 
-| `data` 字段 | Lua 类型 | 含义 |
+| `data` 字段 | 类型 | 说明 |
 |---|---|---|
-| `id` | `integer` | Session 内部的动画 ID。 |
-| `kind` | `string` | `started`、`marker`、`loop`、`finished` 或 `cancelled`。 |
-| `name` | `string \| nil` | 标记名称，仅当 `kind == "marker"` 时存在。 |
-| `completed` | `integer \| nil` | 已完成的循环次数，仅当 `kind == "loop"` 时存在。 |
+| `id` | `integer` | Session 内部动画 ID。 |
+| `kind` | `string` | 事件类型：`started`、`marker`、`loop`、`finished`、`cancelled`。 |
+| `name` | `string \| nil` | 标记名称，仅 `kind == "marker"` 时出现。 |
+| `completed` | `integer \| nil` | 已完成的循环次数，仅 `kind == "loop"` 时出现。 |
 
-## 异步服务事件
+## 异步请求结果
 
-服务事件是 Session 自有异步请求的最终结果。宿主任务 ID 永远不会暴露给 Lua。如果提交操作时注册了回调，则完整事件信封只发送给该回调；否则发送给 `HandleEvent`。
+以下事件是你发起的异步请求的最终结果。如果你在发起请求时注册了回调，事件会直接发给该回调，否则发给 `HandleEvent`。
 
-### 通用错误对象
+### 错误对象
 
-失败的服务事件包含：
+失败时 `data` 中会包含一个 `error` 表：
 
 ```lua
 error = {
@@ -145,127 +140,143 @@ error = {
 }
 ```
 
-| 字段 | Lua 类型 | 含义 |
+| 字段 | 类型 | 说明 |
 |---|---|---|
-| `code` | `string` | 稳定、可供程序判断的错误码。 |
-| `message` | `string` | 供开发者阅读的净化错误信息，不含宿主路径、任务 ID、请求头、正文或调用栈。 |
+| `code` | `string` | 稳定的错误码，可用于程序逻辑判断。 |
+| `message` | `string` | 供阅读的错误描述，不含路径、ID、请求内容等内部信息。 |
 
-错误码可能为：`invalid_request`、`permission_denied`、`not_found`、`too_large`、`invalid_utf8`、`cancelled`、`timeout`、`io`、`network`、`unsupported` 或 `internal`。
+错误码一览：`invalid_request`、`permission_denied`、`not_found`、`too_large`、`invalid_utf8`、`cancelled`、`timeout`、`io`、`network`、`unsupported`、`decode`、`backend_unavailable`、`internal`。
 
 ### `file`
 
-所属文件请求结束时发送。屏保只能收到读取操作的结果。
+文件操作完成时发送。屏保只能收到读结果。
 
-| `data` 字段 | Lua 类型 | 含义 |
+| `data` 字段 | 类型 | 说明 |
 |---|---|---|
-| `request_id` | `integer` | Session 内部的请求 ID。 |
-| `kind` | `string` | `read_text`、`read_bytes`、`write_text` 或 `write_bytes`。 |
-| `path` | `string` | Lua 提交的虚拟路径，不会是宿主绝对路径。 |
-| `ok` | `boolean` | 操作是否成功。 |
+| `request_id` | `integer` | Session 内部请求 ID。 |
+| `kind` | `string` | `read_text`、`read_bytes`、`write_text`、`write_bytes`。 |
+| `path` | `string` | 你提交的路径（不会暴露引擎内部路径）。 |
+| `ok` | `boolean` | 是否成功。 |
 | `text` | `string \| nil` | `read_text` 成功时返回的 UTF-8 文本。 |
-| `bytes` | `string \| nil` | `read_bytes` 成功时返回的 Lua 二进制字符串。 |
-| `error` | `table \| nil` | `ok == false` 时存在的通用错误对象。 |
+| `bytes` | `string \| nil` | `read_bytes` 成功时返回的二进制串。 |
+| `error` | `table \| nil` | 失败时的错误对象。 |
 
-写入成功时不包含结果正文。`text` 和 `bytes` 互斥。
+写操作成功时不返回正文。`text` 和 `bytes` 互斥。
 
 ### `image`
 
-所属图片转换请求结束时发送。
+图片转换完成时发送。
 
-| `data` 字段 | Lua 类型 | 含义 |
+| `data` 字段 | 类型 | 说明 |
 |---|---|---|
-| `request_id` | `integer` | Session 内部的请求 ID。 |
+| `request_id` | `integer` | Session 内部请求 ID。 |
 | `kind` | `string` | 固定为 `convert`。 |
-| `ok` | `boolean` | 转换是否成功。 |
-| `output` | `string \| nil` | 成功时的转换结果 ID 或虚拟输出路径。 |
-| `error` | `table \| nil` | `ok == false` 时存在的通用错误对象。 |
+| `ok` | `boolean` | 是否成功。 |
+| `output` | `string \| nil` | 成功时的输出路径或 ID。 |
+| `error` | `table \| nil` | 失败时的错误对象。 |
 
 ### `network`
 
-所属 HTTP 请求完成、失败或取消时发送一次。404、500 等 HTTP 错误状态属于正常响应，因此使用 `ok = true`。
+HTTP 请求完成时发送。注意：HTTP 层面的 404、500 等状态码属于正常完成，此时 `ok` 为 `true`。
 
-| `data` 字段 | Lua 类型 | 含义 |
+| `data` 字段 | 类型 | 说明 |
 |---|---|---|
-| `request_id` | `integer` | Session 内部的请求 ID。 |
+| `request_id` | `integer` | Session 内部请求 ID。 |
 | `kind` | `string` | `get` 或 `post`。 |
-| `url` | `string` | 原始规范化请求 URL。 |
-| `ok` | `boolean` | HTTP 交互是否正常完成。 |
-| `final_url` | `string \| nil` | 重定向后的最终 URL，仅成功时存在。 |
-| `status` | `integer \| nil` | HTTP 状态码，仅成功时存在。 |
-| `headers` | `table<string, string> \| nil` | 经过过滤且键名为小写的响应头，仅成功时存在。 |
-| `text` | `string \| nil` | 文本响应模式下经过严格 UTF-8 验证的正文。 |
-| `bytes` | `string \| nil` | 二进制响应模式下的 Lua 二进制字符串。 |
-| `error` | `table \| nil` | `ok == false` 时存在的通用错误对象。 |
+| `url` | `string` | 请求的规范化 URL。 |
+| `ok` | `boolean` | 网络交互是否正常完成。 |
+| `final_url` | `string \| nil` | 重定向后的最终 URL，仅成功时出现。 |
+| `status` | `integer \| nil` | HTTP 状态码，仅成功时出现。 |
+| `headers` | `table<string, string> \| nil` | 过滤后的响应头（键名为小写），仅成功时出现。 |
+| `text` | `string \| nil` | 文本模式下的响应正文（UTF-8 验证）。 |
+| `bytes` | `string \| nil` | 二进制模式下的响应正文。 |
+| `error` | `table \| nil` | 失败时的错误对象。 |
 
-`text` 和 `bytes` 互斥。Lua 网络提交 API 与包级网络权限声明尚未开放，但事件结构和宿主路由已经完成。
+`text` 和 `bytes` 互斥。
 
-## 交互 UI 对象事件
+## 音频事件
 
-这些事件仅提供给游戏，并且只由当前游戏 Session 自己拥有的 UI 对象产生。所有 ID 都是 Session 内部的不透明整数。宿主 UI 对象不会产生 Lua 事件。
+### `audio`
+
+你的音频对象加载或播放状态发生变化时发送。
+
+| `data` 字段 | 类型 | 说明 |
+|---|---|---|
+| `id` | `integer` | Session 内部音频对象 ID。 |
+| `kind` | `string` | `ready`、`started`、`paused`、`resumed`、`stopped`、`finished`、`failed`。 |
+| `duration_ms` | `integer \| nil` | 音频时长（毫秒），仅 `ready` 和 `finished` 出现。 |
+| `position_ms` | `integer \| nil` | 播放位置（毫秒），仅 `started`、`paused`、`resumed` 出现。 |
+| `error` | `table \| nil` | `failed` 时的错误对象。音频特有错误码：`decode`、`backend_unavailable`。 |
+
+同一个音频对象的每次状态变化都会发给同一个回调。`finished` 后不会自动回收对象（允许重播），只有你手动删除或 Session 停止时才回收。
+
+## 交互 UI 事件
+
+以下事件仅游戏 Session 可收到，由你自己的 UI 对象产生。ID 均为 Session 内部不透明整数。
 
 ### `hit_area`
 
-所属点击区域收到鼠标交互时发送。
+点击区域收到鼠标交互时发送。
 
-| `data` 字段 | Lua 类型 | 含义 |
+| `data` 字段 | 类型 | 说明 |
 |---|---|---|
-| `id` | `integer` | Session 内部的点击区域 ID。 |
-| `kind` | `string` | `hover_enter`、`hover_move`、`hover_leave`、`press`、`release`、`click` 或 `drag`。 |
+| `id` | `integer` | Session 内部点击区域 ID。 |
+| `kind` | `string` | `hover_enter`、`hover_move`、`hover_leave`、`press`、`release`、`click`、`drag`。 |
 | `x` | `integer` | 事件水平坐标。 |
 | `y` | `integer` | 事件垂直坐标。 |
-| `button` | `string \| nil` | 按键事件中的 `left`、`middle` 或 `right`。 |
-| `dx` | `integer \| nil` | 水平拖动距离，仅 `drag` 存在。 |
-| `dy` | `integer \| nil` | 垂直拖动距离，仅 `drag` 存在。 |
+| `button` | `string \| nil` | `left`、`middle`、`right`（按键事件）。 |
+| `dx` | `integer \| nil` | 水平拖动距离，仅 `drag` 出现。 |
+| `dy` | `integer \| nil` | 垂直拖动距离，仅 `drag` 出现。 |
 
 ### `hyperlink`
 
-所属超链接被点击时发送。
+超链接被点击时发送。
 
-| `data` 字段 | Lua 类型 | 含义 |
+| `data` 字段 | 类型 | 说明 |
 |---|---|---|
-| `id` | `integer` | Session 内部的超链接 ID。 |
+| `id` | `integer` | Session 内部超链接 ID。 |
 | `kind` | `string` | 固定为 `clicked`。 |
-| `link` | `string` | 超链接目标。 |
+| `link` | `string` | 链接目标 URL。 |
 
 ### `markdown`
 
-所属 Markdown 视图中的链接被点击时发送。
+Markdown 视图中的链接被点击时发送。
 
-| `data` 字段 | Lua 类型 | 含义 |
+| `data` 字段 | 类型 | 说明 |
 |---|---|---|
-| `id` | `integer` | Session 内部的 Markdown 视图 ID。 |
+| `id` | `integer` | Session 内部 Markdown 视图 ID。 |
 | `kind` | `string` | 固定为 `link_clicked`。 |
 | `href` | `string` | 链接目标。 |
 | `text` | `string` | 链接显示文本。 |
 
 ### `text_input`
 
-所属文本输入框的交互状态或内容发生变化时发送。
+文本输入框状态发生变化时发送。
 
-| `data` 字段 | Lua 类型 | 含义 |
+| `data` 字段 | 类型 | 说明 |
 |---|---|---|
-| `id` | `integer` | Session 内部的文本输入框 ID。 |
-| `kind` | `string` | `focused`、`blurred`、`changed`、`submit`、`cancel`、`pressed` 或 `pressed_outside`。 |
-| `value` | `string \| nil` | `changed`、`submit` 和 `cancel` 事件中的当前文本。 |
+| `id` | `integer` | Session 内部文本输入框 ID。 |
+| `kind` | `string` | `focused`、`blurred`、`changed`、`submit`、`cancel`、`pressed`、`pressed_outside`。 |
+| `value` | `string \| nil` | 当前文本内容（`changed`、`submit`、`cancel` 事件）。 |
 
 ### `scroll_box`
 
-所属滚动框的滚动位置发生变化时发送。
+滚动框滚动时发送。
 
-| `data` 字段 | Lua 类型 | 含义 |
+| `data` 字段 | 类型 | 说明 |
 |---|---|---|
-| `id` | `integer` | Session 内部的滚动框 ID。 |
+| `id` | `integer` | Session 内部滚动框 ID。 |
 | `kind` | `string` | 固定为 `scrolled`。 |
-| `x` | `integer` | 新的水平滚动偏移。 |
-| `y` | `integer` | 新的垂直滚动偏移。 |
+| `x` | `integer` | 当前水平滚动位置。 |
+| `y` | `integer` | 当前垂直滚动位置。 |
 
-## 队列事件合并
+## 事件合并
 
-为避免高频输入耗尽 Session 队列，宿主可以使用最新事件替换以下尚未处理的旧事件：
+为防止高频输入塞满队列，引擎会自动合并队列中尚未处理的同类事件，合并规则如下：
 
-- `resize`
-- 类型与鼠标按键均相同的 `mouse.moved` 或 `mouse.held`
-- 同一对象的 `hit_area.hover_move`
-- 同一对象的 `scroll_box`
+- `resize`：保留最新的一条。
+- `mouse`：同一类型的 `moved` 或 `held` 事件保留最新的。
+- `hit_area`：同一对象的 `hover_move` 保留最新的。
+- `scroll_box`：同一对象的滚动事件保留最新的。
 
-按下、释放、拖动、滚轮、焦点、生命周期、计时器、动画及异步完成事件不会被合并。
+以下事件不会被合并：按下、释放、拖动、滚轮、焦点、生命周期、计时器、动画以及所有异步完成事件。
