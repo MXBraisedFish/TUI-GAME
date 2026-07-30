@@ -4,16 +4,17 @@ use std::{
 };
 
 use crate::host_engine::services::{
-  EngineEvent, FileEvent, ImageEvent, NetworkError, NetworkErrorCode, NetworkEvent, NetworkMethod,
-  NetworkResponseBody, NetworkResponseMode, TaskId, TimeAsyncEvent,
+  AudioAsyncEvent, AudioErrorCode, AudioId, EngineEvent, FileEvent, ImageEvent, NetworkError,
+  NetworkErrorCode, NetworkEvent, NetworkMethod, NetworkResponseBody, NetworkResponseMode, TaskId,
+  TimeAsyncEvent,
 };
 
 use super::super::LuaSessionKind;
 use super::{
-  LuaEventData, LuaEventError, LuaEventErrorCode, LuaFileEvent, LuaFileOperation, LuaFileOutcome,
-  LuaImageEvent, LuaImageOutcome, LuaNetworkBody, LuaNetworkEvent, LuaNetworkOutcome,
-  LuaRuntimeEvent, LuaTimerEvent, LuaTimerEventKind, LuaTimerKind, sanitize_io_error,
-  sanitize_network_error,
+  LuaAudioEvent, LuaAudioEventKind, LuaEventData, LuaEventError, LuaEventErrorCode, LuaFileEvent,
+  LuaFileOperation, LuaFileOutcome, LuaImageEvent, LuaImageOutcome, LuaNetworkBody,
+  LuaNetworkEvent, LuaNetworkOutcome, LuaRuntimeEvent, LuaTimerEvent, LuaTimerEventKind,
+  LuaTimerKind, sanitize_io_error, sanitize_network_error,
 };
 
 pub const MAX_LUA_EVENTS_PER_FRAME: usize = 128;
@@ -69,6 +70,13 @@ struct LuaTaskRoute {
   operation: LuaTaskOperation,
 }
 
+#[derive(Clone, Debug)]
+struct LuaAudioRoute {
+  token: LuaSessionToken,
+  local_id: u64,
+  route: LuaEventRoute,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum LuaEnqueueError {
   InactiveSession(LuaSessionKind),
@@ -79,9 +87,11 @@ pub enum LuaEnqueueError {
   },
   QueueOverflow(LuaSessionToken),
   TaskAlreadyRegistered(TaskId),
+  AudioAlreadyRegistered(AudioId),
   NetworkTaskLimit(LuaSessionToken),
   InvalidVirtualPath,
   StaleTaskCompletion(TaskId),
+  StaleAudioEvent(AudioId),
 }
 
 #[derive(Default)]
@@ -135,8 +145,11 @@ pub struct LuaEventBroker {
   game: SessionQueue,
   screensaver: SessionQueue,
   tasks: HashMap<TaskId, LuaTaskRoute>,
+  audio: HashMap<AudioId, LuaAudioRoute>,
   discarded_tasks: HashSet<TaskId>,
+  discarded_audio: HashSet<AudioId>,
   orphaned_tasks: Vec<TaskId>,
+  orphaned_audio: Vec<AudioId>,
   next_sequence: u64,
 }
 
@@ -146,8 +159,11 @@ impl LuaEventBroker {
       game: SessionQueue::default(),
       screensaver: SessionQueue::default(),
       tasks: HashMap::new(),
+      audio: HashMap::new(),
       discarded_tasks: HashSet::new(),
+      discarded_audio: HashSet::new(),
       orphaned_tasks: Vec::new(),
+      orphaned_audio: Vec::new(),
       next_sequence: 1,
     }
   }
@@ -177,6 +193,22 @@ impl LuaEventBroker {
         self.tasks.remove(&task_id);
         self.discarded_tasks.insert(task_id);
         self.orphaned_tasks.push(task_id);
+      }
+      let discarded: Vec<AudioId> = self
+        .audio
+        .iter()
+        .filter_map(|(audio_id, route)| {
+          let active = match route.token.kind {
+            LuaSessionKind::Game => game_token,
+            LuaSessionKind::Screensaver => screensaver_token,
+          };
+          (!active.is_some_and(|active| active == route.token)).then_some(*audio_id)
+        })
+        .collect();
+      for audio_id in discarded {
+        self.audio.remove(&audio_id);
+        self.discarded_audio.insert(audio_id);
+        self.orphaned_audio.push(audio_id);
       }
     }
   }
@@ -302,8 +334,47 @@ impl LuaEventBroker {
     removed
   }
 
+  pub fn register_audio(
+    &mut self,
+    audio_id: AudioId,
+    token: LuaSessionToken,
+    local_id: u64,
+    route: LuaEventRoute,
+  ) -> Result<(), LuaEnqueueError> {
+    let Some(active) = self.active_token(token.kind) else {
+      return Err(LuaEnqueueError::InactiveSession(token.kind));
+    };
+    if active != token {
+      return Err(LuaEnqueueError::StaleSession(token));
+    }
+    if self.audio.contains_key(&audio_id) {
+      return Err(LuaEnqueueError::AudioAlreadyRegistered(audio_id));
+    }
+    self.audio.insert(
+      audio_id,
+      LuaAudioRoute {
+        token,
+        local_id,
+        route,
+      },
+    );
+    Ok(())
+  }
+
+  pub fn unregister_audio(&mut self, audio_id: AudioId) -> bool {
+    let removed = self.audio.remove(&audio_id).is_some();
+    if removed {
+      self.discarded_audio.insert(audio_id);
+    }
+    removed
+  }
+
   pub fn take_orphaned_tasks(&mut self) -> Vec<TaskId> {
     std::mem::take(&mut self.orphaned_tasks)
+  }
+
+  pub fn take_orphaned_audio(&mut self) -> Vec<AudioId> {
+    std::mem::take(&mut self.orphaned_audio)
   }
 
   /// 翻译已经登记所有权的异步服务终态事件。
@@ -315,6 +386,24 @@ impl LuaEventBroker {
     frame: u64,
     event: &EngineEvent,
   ) -> Result<Option<u64>, LuaEnqueueError> {
+    if let EngineEvent::Audio(event) = event {
+      if !event.has_valid_identity() {
+        return Ok(None);
+      }
+      let Some(audio_id) = event.audio_id() else {
+        return Ok(None);
+      };
+      let Some(owner) = self.audio.get(&audio_id).cloned() else {
+        if self.discarded_audio.remove(&audio_id) {
+          return Err(LuaEnqueueError::StaleAudioEvent(audio_id));
+        }
+        return Ok(None);
+      };
+      let Some(data) = translate_audio_event(owner.local_id, event) else {
+        return Ok(None);
+      };
+      return self.push_owned(owner.token, frame, data, owner.route);
+    }
     let Some(task_id) = service_event_task_id(event) else {
       return Ok(None);
     };
@@ -406,6 +495,68 @@ impl LuaEventBroker {
       LuaSessionKind::Screensaver => &mut self.screensaver,
     }
   }
+}
+
+fn translate_audio_event(local_id: u64, event: &AudioAsyncEvent) -> Option<LuaEventData> {
+  let (kind, duration, position, error) = match event {
+    AudioAsyncEvent::Ready { duration, .. } => {
+      (LuaAudioEventKind::Ready, Some(*duration), None, None)
+    }
+    AudioAsyncEvent::Started { position, .. } => {
+      (LuaAudioEventKind::Started, None, Some(*position), None)
+    }
+    AudioAsyncEvent::Paused { position, .. } => {
+      (LuaAudioEventKind::Paused, None, Some(*position), None)
+    }
+    AudioAsyncEvent::Resumed { position, .. } => {
+      (LuaAudioEventKind::Resumed, None, Some(*position), None)
+    }
+    AudioAsyncEvent::Stopped { .. } => (LuaAudioEventKind::Stopped, None, None, None),
+    AudioAsyncEvent::Finished { duration, .. } => (
+      LuaAudioEventKind::Finished,
+      Some(*duration),
+      Some(*duration),
+      None,
+    ),
+    AudioAsyncEvent::Failed { error, .. } => (
+      LuaAudioEventKind::Failed,
+      None,
+      None,
+      Some(sanitize_audio_error(error.code)),
+    ),
+    AudioAsyncEvent::BackendFailed { .. }
+    | AudioAsyncEvent::CaptureSaved { .. }
+    | AudioAsyncEvent::CaptureFailed { .. } => return None,
+  };
+  Some(LuaEventData::Audio(LuaAudioEvent {
+    id: local_id,
+    kind,
+    duration_ms: duration.map(duration_millis),
+    position_ms: position.map(duration_millis),
+    error,
+  }))
+}
+
+fn duration_millis(duration: std::time::Duration) -> u64 {
+  duration.as_millis().min(u64::MAX as u128) as u64
+}
+
+fn sanitize_audio_error(code: AudioErrorCode) -> LuaEventError {
+  let code = match code {
+    AudioErrorCode::InvalidId
+    | AudioErrorCode::InvalidVolume
+    | AudioErrorCode::InvalidState
+    | AudioErrorCode::TypeInUse
+    | AudioErrorCode::InvalidPath => LuaEventErrorCode::InvalidRequest,
+    AudioErrorCode::NotFound => LuaEventErrorCode::NotFound,
+    AudioErrorCode::PermissionDenied => LuaEventErrorCode::PermissionDenied,
+    AudioErrorCode::TooLarge => LuaEventErrorCode::TooLarge,
+    AudioErrorCode::Unsupported => LuaEventErrorCode::Unsupported,
+    AudioErrorCode::Decode => LuaEventErrorCode::Decode,
+    AudioErrorCode::BackendUnavailable => LuaEventErrorCode::BackendUnavailable,
+    AudioErrorCode::RuntimeClosed | AudioErrorCode::Internal => LuaEventErrorCode::Internal,
+  };
+  LuaEventError::sanitized(code)
 }
 
 impl Default for LuaEventBroker {
@@ -575,7 +726,7 @@ mod tests {
 
   use super::*;
   use crate::host_engine::services::{
-    KeyState, LuaActionState, LuaSessionKind, MouseEvent, MouseEventKind,
+    AudioError, AudioPoolId, KeyState, LuaActionState, LuaSessionKind, MouseEvent, MouseEventKind,
   };
 
   fn token(kind: LuaSessionKind, generation: u64) -> LuaSessionToken {
@@ -1052,6 +1203,139 @@ mod tests {
         ..
       })
     ));
+  }
+
+  fn audio_id(index: u32, generation: u32) -> AudioId {
+    AudioId {
+      pool_id: AudioPoolId(7),
+      index,
+      generation,
+    }
+  }
+
+  #[test]
+  fn audio_events_keep_the_persistent_callback_and_hide_host_ids() {
+    let game = token(LuaSessionKind::Game, 4);
+    let host_id = audio_id(3, 8);
+    let callback = LuaEventCallbackId(29);
+    let mut broker = LuaEventBroker::new();
+    broker.synchronize_sessions(Some(game), None);
+    broker
+      .register_audio(host_id, game, 12, LuaEventRoute::Callback(callback))
+      .unwrap();
+
+    for event in [
+      AudioAsyncEvent::Ready {
+        pool_id: host_id.pool_id,
+        audio_id: host_id,
+        duration: std::time::Duration::from_millis(1_250),
+      },
+      AudioAsyncEvent::Finished {
+        pool_id: host_id.pool_id,
+        audio_id: host_id,
+        duration: std::time::Duration::from_millis(1_250),
+      },
+      AudioAsyncEvent::Started {
+        pool_id: host_id.pool_id,
+        audio_id: host_id,
+        position: std::time::Duration::from_millis(25),
+      },
+    ] {
+      broker
+        .route_engine_event(10, &EngineEvent::Audio(event))
+        .unwrap();
+    }
+
+    let deliveries = broker.drain_frame(LuaSessionKind::Game);
+    assert_eq!(deliveries.len(), 3);
+    assert!(
+      deliveries
+        .iter()
+        .all(|delivery| delivery.route == LuaEventRoute::Callback(callback))
+    );
+    assert!(matches!(
+      deliveries[0].event.data,
+      LuaEventData::Audio(LuaAudioEvent {
+        id: 12,
+        kind: LuaAudioEventKind::Ready,
+        duration_ms: Some(1_250),
+        ..
+      })
+    ));
+    assert!(matches!(
+      deliveries[2].event.data,
+      LuaEventData::Audio(LuaAudioEvent {
+        id: 12,
+        kind: LuaAudioEventKind::Started,
+        position_ms: Some(25),
+        ..
+      })
+    ));
+  }
+
+  #[test]
+  fn audio_failures_are_sanitized_and_stale_generations_are_removed() {
+    let first = token(LuaSessionKind::Screensaver, 1);
+    let second = token(LuaSessionKind::Screensaver, 2);
+    let host_id = audio_id(4, 1);
+    let mut broker = LuaEventBroker::new();
+    broker.synchronize_sessions(None, Some(first));
+    broker
+      .register_audio(host_id, first, 5, LuaEventRoute::HandleEvent)
+      .unwrap();
+    broker
+      .route_engine_event(
+        11,
+        &EngineEvent::Audio(AudioAsyncEvent::Failed {
+          pool_id: host_id.pool_id,
+          audio_id: host_id,
+          error: AudioError::new(
+            AudioErrorCode::Decode,
+            r#"decoder failed at C:\private\secret.wav"#,
+          ),
+        }),
+      )
+      .unwrap();
+    let delivery = broker
+      .drain_frame(LuaSessionKind::Screensaver)
+      .pop()
+      .unwrap();
+    assert!(matches!(
+      delivery.event.data,
+      LuaEventData::Audio(LuaAudioEvent {
+        id: 5,
+        kind: LuaAudioEventKind::Failed,
+        error: Some(LuaEventError {
+          code: LuaEventErrorCode::Decode,
+          ref message,
+        }),
+        ..
+      }) if !message.contains("private") && !message.contains("C:\\")
+    ));
+
+    broker.synchronize_sessions(None, Some(second));
+    assert_eq!(broker.take_orphaned_audio(), vec![host_id]);
+    assert!(matches!(
+      broker.route_engine_event(
+        12,
+        &EngineEvent::Audio(AudioAsyncEvent::Stopped {
+          pool_id: host_id.pool_id,
+          audio_id: host_id,
+        }),
+      ),
+      Err(LuaEnqueueError::StaleAudioEvent(actual)) if actual == host_id
+    ));
+    assert!(
+      broker
+        .route_engine_event(
+          12,
+          &EngineEvent::Audio(AudioAsyncEvent::BackendFailed {
+            error: AudioError::sanitized(AudioErrorCode::BackendUnavailable),
+          }),
+        )
+        .unwrap()
+        .is_none()
+    );
   }
 
   #[test]

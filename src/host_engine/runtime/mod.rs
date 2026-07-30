@@ -26,7 +26,7 @@ use crate::host_engine::services::{
   LuaEventBroker, LuaEventData, LuaSessionError, LuaSessionKind, LuaSessionToken, PackageEvent,
   PackageListEntry, PopupDismissEvent, PopupRequest, RandomGeneratorId, RandomSeed, RecordingState,
   Rect, ScreenshotAsyncEvent, ScreenshotDoubleAction, ScreenshotService, ScreenshotTask,
-  SystemEvent, TaskId, TextColor, UiEvent, UiObjectPoolOwner, VideoAsyncEvent,
+  SystemEvent, TaskId, TextColor, UiEvent, UiObjectPoolOwner, VideoAsyncEvent, VideoExportStage,
   translate_action_map,
 };
 use crate::host_engine::ui::{
@@ -96,6 +96,7 @@ enum VideoExportToastState {
   Loading,
   Succeeded,
   Failed,
+  AudioFailed,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -332,8 +333,7 @@ pub fn run(services: &mut EngineServices, world: &mut RuntimeWorld) -> ExitState
     &services.text_input,
     &services.scroll_box,
   );
-  let mut input_demo_ui =
-    InputDemoUi::init(&services.hit_area, &services.slice, &services.scroll_box);
+  let mut input_demo_ui = InputDemoUi::init(&services.hit_area, &services.progress_bar);
   let mut window_size_ui = WindowSizeWarningUi::init(&services.hit_area);
   let mut language_loading_ui = LanguageLoadingUi::init(&services.progress_bar, &services.time);
   let mut export_loading_ui = ExportLoadingUi::init(&services.progress_bar, &services.time);
@@ -403,6 +403,12 @@ pub fn run(services: &mut EngineServices, world: &mut RuntimeWorld) -> ExitState
       crate::host_engine::services::AnimationClock::Game,
       frame_delta,
     );
+    if let Some(objects) = services.game.objects_mut() {
+      update_lua_object_pool(objects, &services.time, &services.animation, frame_delta);
+    }
+    if let Some(objects) = services.screensaver.objects_mut() {
+      update_lua_object_pool(objects, &services.time, &services.animation, frame_delta);
+    }
     top_toolbar.update(frame_delta);
 
     services
@@ -735,12 +741,15 @@ pub fn run(services: &mut EngineServices, world: &mut RuntimeWorld) -> ExitState
   services
     .async_runtime
     .cancel_tasks(lua_event_router.take_orphaned_tasks());
+  for audio_id in lua_event_router.take_orphaned_audio() {
+    let _ = services.audio.remove_owned(audio_id);
+  }
 
   if matches!(
     services.recording.state(),
     RecordingState::Recording | RecordingState::Paused
   ) {
-    let _ = services.recording.stop(&services.async_runtime);
+    let _ = stop_recording(services);
   }
 
   ExitState::new()
@@ -762,6 +771,20 @@ fn update_exit_preparation(
   delta: Duration,
   exception_elapsed: &mut Duration,
 ) {
+  if matches!(
+    world.state.closing_state(),
+    Some(RuntimeClosingState::Requested)
+  ) {
+    if matches!(
+      services.recording.state(),
+      RecordingState::Recording | RecordingState::Paused
+    ) {
+      let _ = stop_recording(services);
+    }
+    if services.recording.state() != RecordingState::Stopped {
+      return;
+    }
+  }
   let exports_active = !pending_images.is_empty() || services.video.active_export_count() > 0;
   match world.state.closing_state() {
     Some(RuntimeClosingState::Requested) => {
@@ -939,7 +962,11 @@ fn apply_video_events(events: &[VideoAsyncEvent], services: &mut EngineServices)
     let state = match event {
       VideoAsyncEvent::Preparing { .. } => Some(VideoExportToastState::Loading),
       VideoAsyncEvent::Saved { .. } => Some(VideoExportToastState::Succeeded),
-      VideoAsyncEvent::Failed { .. } => Some(VideoExportToastState::Failed),
+      VideoAsyncEvent::Failed { stage, .. } => Some(if *stage == VideoExportStage::Audio {
+        VideoExportToastState::AudioFailed
+      } else {
+        VideoExportToastState::Failed
+      }),
       VideoAsyncEvent::Progress { .. } | VideoAsyncEvent::Finalizing { .. } => None,
     };
     if let Some(state) = state {
@@ -1076,7 +1103,7 @@ fn popup_color(kind: ScreenshotModeToastKind) -> TextColor {
         g: 215,
         b: 105,
       },
-      VideoExportToastState::Failed => TextColor::Rgb {
+      VideoExportToastState::Failed | VideoExportToastState::AudioFailed => TextColor::Rgb {
         r: 255,
         g: 76,
         b: 76,
@@ -1156,6 +1183,7 @@ fn screenshot_toast_text(services: &EngineServices, kind: ScreenshotModeToastKin
         VideoExportToastState::Loading => "recording.mode.export.loading",
         VideoExportToastState::Succeeded => "recording.mode.export.success",
         VideoExportToastState::Failed => "recording.mode.export.failed",
+        VideoExportToastState::AudioFailed => "recording.mode.export.audio_failed",
       },
     ),
   }
@@ -1681,6 +1709,28 @@ fn synchronize_lua_event_sessions(services: &mut EngineServices, router: &mut Lu
   services
     .async_runtime
     .cancel_tasks(router.take_orphaned_tasks());
+  for audio_id in router.take_orphaned_audio() {
+    let _ = services.audio.remove_owned(audio_id);
+  }
+}
+
+fn update_lua_object_pool(
+  objects: &mut crate::host_engine::services::LuaObjectPool,
+  time: &crate::host_engine::services::TimeService,
+  animation: &crate::host_engine::services::AnimationService,
+  frame_delta: Duration,
+) {
+  time.update(objects.runtime_mut(), frame_delta);
+  animation.update(
+    objects.runtime_mut(),
+    crate::host_engine::services::AnimationClock::Ui,
+    frame_delta,
+  );
+  animation.update(
+    objects.runtime_mut(),
+    crate::host_engine::services::AnimationClock::Game,
+    frame_delta,
+  );
 }
 
 fn handle_lua_queue_overflow(
@@ -2008,11 +2058,27 @@ fn handle_host_chord_input(
     match services.recording.state() {
       RecordingState::Recording => {
         if services.recording.pause() {
+          if let Some(capture_id) = services.recording.audio_capture()
+            && let Err(error) = services.audio.pause_capture(capture_id)
+          {
+            services.log.warn(
+              LogSource::Audio,
+              format!("failed to pause recording audio capture: {error}"),
+            );
+          }
           show_recording_popup(services, RecordingPopupKind::Pause);
         }
       }
       RecordingState::Paused => {
         if services.recording.resume() {
+          if let Some(capture_id) = services.recording.audio_capture()
+            && let Err(error) = services.audio.resume_capture(capture_id)
+          {
+            services.log.warn(
+              LogSource::Audio,
+              format!("failed to resume recording audio capture: {error}"),
+            );
+          }
           show_recording_popup(services, RecordingPopupKind::Resume);
         }
       }
@@ -2125,7 +2191,7 @@ fn toggle_recording(services: &mut EngineServices, auto: &mut AutoRecordingRunti
       }
     }
     RecordingState::Recording | RecordingState::Paused => {
-      if services.recording.stop(&services.async_runtime) {
+      if stop_recording(services) {
         auto.manually_stopped = true;
         auto.restart_after_split = false;
         services
@@ -2153,9 +2219,37 @@ fn start_recording(services: &mut EngineServices) -> bool {
       .capture_frame_rate
       .value(),
   );
-  services
+  if !services
     .recording
     .start(frame, frame_rate, &services.storage)
+  {
+    return false;
+  }
+  if let Some(path) = services.recording.pending_audio_path() {
+    match services.audio.start_capture(path) {
+      Ok(capture_id) => {
+        let _ = services.recording.attach_audio_capture(capture_id);
+      }
+      Err(error) => services.log.warn(
+        LogSource::Audio,
+        format!("recording started without audio because capture could not start: {error}"),
+      ),
+    }
+  }
+  true
+}
+
+fn stop_recording(services: &mut EngineServices) -> bool {
+  if let Some(capture_id) = services.recording.audio_capture()
+    && let Err(error) = services.audio.stop_capture(capture_id)
+  {
+    let _ = services.recording.detach_audio_capture(capture_id);
+    services.log.warn(
+      LogSource::Audio,
+      format!("recording audio capture could not be finalized: {error}"),
+    );
+  }
+  services.recording.stop(&services.async_runtime)
 }
 
 fn update_auto_recording(services: &mut EngineServices, auto: &mut AutoRecordingRuntime) {
@@ -2173,7 +2267,7 @@ fn update_auto_recording(services: &mut EngineServices, auto: &mut AutoRecording
       .duration()
       .is_some_and(|duration| services.recording.snapshot().active_duration >= duration)
   {
-    if services.recording.stop(&services.async_runtime) {
+    if stop_recording(services) {
       auto.restart_after_split = true;
     }
     return;

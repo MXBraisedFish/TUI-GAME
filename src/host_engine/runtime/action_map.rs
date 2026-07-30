@@ -376,7 +376,7 @@ fn load_action_map(
   name: &str,
 ) {
   let bindings = translate_action_map(action_map)
-    .unwrap_or_else(|_| panic!("failed to translate {name} action map"));
+    .unwrap_or_else(|error| panic!("failed to translate {name} action map: {error:?}"));
   services.input.load_key_bindings(bindings);
 }
 

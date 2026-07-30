@@ -1,0 +1,63 @@
+use crate::host_engine::services::{
+  RuntimeObjectPool, RuntimeObjectPoolOwner, UiObjectPool, UiObjectPoolOwner,
+};
+
+/// 单个 Lua Session 拥有的全部宿主管理对象。
+///
+/// UI 对象与非 UI 运行时对象使用现有宿主对象池，因而继续沿用各服务的
+/// 显式 ID API。Game 与 Screensaver Session 各自持有一个实例，彼此隔离。
+pub struct LuaObjectPool {
+  ui: UiObjectPool,
+  runtime: RuntimeObjectPool,
+}
+
+impl LuaObjectPool {
+  pub fn new() -> Self {
+    Self {
+      ui: UiObjectPool::new(),
+      runtime: RuntimeObjectPool::new(),
+    }
+  }
+
+  pub fn ui(&self) -> &UiObjectPool {
+    &self.ui
+  }
+
+  pub fn ui_mut(&mut self) -> &mut UiObjectPool {
+    &mut self.ui
+  }
+
+  pub fn runtime(&self) -> &RuntimeObjectPool {
+    &self.runtime
+  }
+
+  pub fn runtime_mut(&mut self) -> &mut RuntimeObjectPool {
+    &mut self.runtime
+  }
+}
+
+impl Default for LuaObjectPool {
+  fn default() -> Self {
+    Self::new()
+  }
+}
+
+impl UiObjectPoolOwner for LuaObjectPool {
+  fn objects(&self) -> &UiObjectPool {
+    self.ui()
+  }
+
+  fn objects_mut(&mut self) -> &mut UiObjectPool {
+    self.ui_mut()
+  }
+}
+
+impl RuntimeObjectPoolOwner for LuaObjectPool {
+  fn runtime_objects(&self) -> &RuntimeObjectPool {
+    self.runtime()
+  }
+
+  fn runtime_objects_mut(&mut self) -> &mut RuntimeObjectPool {
+    self.runtime_mut()
+  }
+}

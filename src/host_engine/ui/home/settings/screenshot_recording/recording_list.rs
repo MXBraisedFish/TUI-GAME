@@ -12,11 +12,10 @@ impl MediaListSpec for RecordingListSpec {
   const SUPPORTS_DURATION: bool = true;
 
   fn action_map() -> Vec<ActionMapEntry> {
-    actions(&[
+    let mut entries = actions(&[
       ("recording_list.scroll_up", "w"),
       ("recording_list.scroll_down", "s"),
       ("recording_list.scroll_left", "a"),
-      // D 在列表聚焦时删除，在信息栏聚焦时向右移动。
       ("recording_list.del", "d"),
       ("recording_list.scroll_right", "d"),
       ("recording_list.focus_up", "up"),
@@ -32,9 +31,12 @@ impl MediaListSpec for RecordingListSpec {
       ("recording_list.play_pause", "space"),
       ("recording_list.skip_forward", "right"),
       ("recording_list.rewind", "left"),
+      ("recording_list.volume_down", "-"),
+      ("recording_list.volume_up", "="),
       ("recording_list.zoom", "z"),
       ("recording_list.export", "1"),
-    ])
+    ]);
+    entries
   }
 
   fn left_hint_keys() -> &'static [&'static str] {
@@ -57,6 +59,7 @@ impl MediaListSpec for RecordingListSpec {
       "action.back",
       "action.play",
       "action.skip",
+      "warning.sound",
       "action.switch",
       "action.zoom.in",
       "action.export",
@@ -67,6 +70,7 @@ impl MediaListSpec for RecordingListSpec {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::host_engine::services::translate_action_map;
 
   #[test]
   fn info_hints_use_existing_translation_keys_in_display_order() {
@@ -77,6 +81,7 @@ mod tests {
         "action.back",
         "action.play",
         "action.skip",
+        "warning.sound",
         "action.switch",
         "action.zoom.in",
         "action.export",
@@ -88,6 +93,20 @@ mod tests {
         .any(|entry| entry.action == "recording_list.export" && entry.keys == [["1"]])
     );
     let actions = RecordingListSpec::action_map();
+    assert!(
+      actions
+        .iter()
+        .any(|entry| entry.action == "recording_list.volume_down" && entry.keys == [["-"]])
+    );
+    assert!(actions.iter().any(|entry| {
+      entry.action == "recording_list.volume_up"
+        && entry.keys
+          == vec![
+            vec!["left_shift", "="],
+            vec!["right_shift", "="],
+            vec!["k+"],
+          ]
+    }));
     let delete = actions
       .iter()
       .position(|entry| entry.action == "recording_list.del")
@@ -97,5 +116,11 @@ mod tests {
       .position(|entry| entry.action == "recording_list.scroll_right")
       .unwrap();
     assert!(delete < scroll_right);
+  }
+
+  #[test]
+  fn every_recording_list_action_uses_valid_input_tokens() {
+    translate_action_map(&RecordingListSpec::action_map())
+      .expect("recording list action map should be translatable");
   }
 }

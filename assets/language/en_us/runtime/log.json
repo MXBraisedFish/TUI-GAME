@@ -11,6 +11,7 @@
   "log.service.render": "Render",
   "log.service.input": "Input",
   "log.service.storage": "Storage",
+  "log.service.audio": "Audio",
   "log.service.package": "Package",
   "log.service.lua": "Lua",
   "log.service.game": "Game",

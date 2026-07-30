@@ -26,6 +26,7 @@
   "recording_list.warning": "<fg:red>Are you sure you want to delete this recording?\nThis action cannot be undone!</fg>",
   "recording_list.warning.yes": "{key:recording_list.warning_yes} Delete",
   "recording_list.warning.no": "{key:recording_list.warning_no} Cancel",
+  "recording_list.warning.sound": "[-]/[+] Volume",
   "recording_list.list.sort.name": "Name",
   "recording_list.list.sort.time": "Date",
   "recording_list.list.sort.duration": "Duration",

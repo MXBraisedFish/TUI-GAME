@@ -1,5 +1,6 @@
 {
   "recording.mode.export.loading": "Exporting Video...",
   "recording.mode.export.success": "Video Exported",
-  "recording.mode.export.failed": "Failed to Export Video"
+  "recording.mode.export.failed": "Failed to Export Video",
+  "recording.mode.export.audio_failed": "Audio export failed; FFmpeg with H.264/AAC support is required"
 }

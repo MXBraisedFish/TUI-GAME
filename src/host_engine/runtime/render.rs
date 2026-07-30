@@ -549,7 +549,7 @@ pub(super) fn route_render(
         &mut services.canvas,
         &services.layout,
         &services.hit_area,
-        &services.scroll_box,
+        &services.progress_bar,
       );
     }
     Some(UiNodeKind::ExitWarning) => {

@@ -150,6 +150,8 @@ pub enum LuaEventErrorCode {
   Io,
   Network,
   Unsupported,
+  Decode,
+  BackendUnavailable,
   Internal,
 }
 
@@ -166,6 +168,8 @@ impl LuaEventErrorCode {
       Self::Io => "io",
       Self::Network => "network",
       Self::Unsupported => "unsupported",
+      Self::Decode => "decode",
+      Self::BackendUnavailable => "backend_unavailable",
       Self::Internal => "internal",
     }
   }
@@ -192,6 +196,8 @@ impl LuaEventError {
         LuaEventErrorCode::Io => "I/O operation failed",
         LuaEventErrorCode::Network => "network operation failed",
         LuaEventErrorCode::Unsupported => "operation is not supported",
+        LuaEventErrorCode::Decode => "audio resource could not be decoded",
+        LuaEventErrorCode::BackendUnavailable => "audio output is unavailable",
         LuaEventErrorCode::Internal => "internal operation failed",
       }
       .to_string(),
@@ -290,6 +296,40 @@ pub struct LuaScrollBoxEvent {
   pub y: u16,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LuaAudioEventKind {
+  Ready,
+  Started,
+  Paused,
+  Resumed,
+  Stopped,
+  Finished,
+  Failed,
+}
+
+impl LuaAudioEventKind {
+  pub fn as_str(self) -> &'static str {
+    match self {
+      Self::Ready => "ready",
+      Self::Started => "started",
+      Self::Paused => "paused",
+      Self::Resumed => "resumed",
+      Self::Stopped => "stopped",
+      Self::Finished => "finished",
+      Self::Failed => "failed",
+    }
+  }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LuaAudioEvent {
+  pub id: u64,
+  pub kind: LuaAudioEventKind,
+  pub duration_ms: Option<u64>,
+  pub position_ms: Option<u64>,
+  pub error: Option<LuaEventError>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum LuaEventData {
   Action {
@@ -317,6 +357,7 @@ pub enum LuaEventData {
   File(LuaFileEvent),
   Image(LuaImageEvent),
   Network(LuaNetworkEvent),
+  Audio(LuaAudioEvent),
   HitArea(LuaHitAreaEvent),
   Hyperlink(LuaHyperlinkEvent),
   Markdown(LuaMarkdownEvent),
@@ -338,6 +379,7 @@ impl LuaEventData {
       Self::File(_) => "file",
       Self::Image(_) => "image",
       Self::Network(_) => "network",
+      Self::Audio(_) => "audio",
       Self::HitArea(_) => "hit_area",
       Self::Hyperlink(_) => "hyperlink",
       Self::Markdown(_) => "markdown",
@@ -435,6 +477,7 @@ impl LuaEventData {
         | Self::Animation(_)
         | Self::Image(_)
         | Self::Network(_) => true,
+        Self::Audio(_) => true,
       },
     }
   }
@@ -544,6 +587,15 @@ impl LuaEventData {
             data.set("ok", false)?;
             data.set("error", error_table(lua, error)?)?;
           }
+        }
+      }
+      Self::Audio(event) => {
+        data.set("id", event.id)?;
+        data.set("kind", event.kind.as_str())?;
+        data.set("duration_ms", event.duration_ms)?;
+        data.set("position_ms", event.position_ms)?;
+        if let Some(error) = &event.error {
+          data.set("error", error_table(lua, error)?)?;
         }
       }
       Self::HitArea(event) => {
@@ -851,6 +903,16 @@ mod tests {
         "network",
       ),
       (
+        LuaEventData::Audio(LuaAudioEvent {
+          id: 6,
+          kind: LuaAudioEventKind::Ready,
+          duration_ms: Some(1_200),
+          position_ms: None,
+          error: None,
+        }),
+        "audio",
+      ),
+      (
         LuaEventData::HitArea(LuaHitAreaEvent {
           id: 6,
           kind: "drag",
@@ -921,5 +983,28 @@ mod tests {
     .to_lua_table(&lua)
     .unwrap();
     assert_eq!(timer.get::<Value>("executed_count").unwrap(), Value::Nil);
+
+    let audio = LuaEventData::Audio(LuaAudioEvent {
+      id: 9,
+      kind: LuaAudioEventKind::Failed,
+      duration_ms: None,
+      position_ms: None,
+      error: Some(LuaEventError::sanitized(
+        LuaEventErrorCode::BackendUnavailable,
+      )),
+    })
+    .to_lua_table(&lua)
+    .unwrap();
+    assert_eq!(audio.get::<String>("kind").unwrap(), "failed");
+    assert_eq!(audio.get::<Value>("duration_ms").unwrap(), Value::Nil);
+    assert_eq!(audio.get::<Value>("position_ms").unwrap(), Value::Nil);
+    assert_eq!(
+      audio
+        .get::<Table>("error")
+        .unwrap()
+        .get::<String>("code")
+        .unwrap(),
+      "backend_unavailable"
+    );
   }
 }

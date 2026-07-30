@@ -1,5 +1,6 @@
 pub(crate) mod animation;
 mod async_runtime;
+mod audio;
 mod canvas;
 mod clipboard;
 mod code_highlight;
@@ -51,6 +52,11 @@ pub use async_runtime::{
   AsyncRuntime, EngineEvent, EngineTask, FileEvent, FileTask, ImageEvent, ImageTask,
   ManagedThreadId, SleepTask, TaskId, TaskState, TimeAsyncEvent,
 };
+pub use audio::{
+  AudioAsyncEvent, AudioCaptureId, AudioError, AudioErrorCode, AudioId, AudioObject,
+  AudioObjectPool, AudioPoolId, AudioService, AudioSource, AudioState, AudioType, AudioTypeId,
+  ResolvedAudioFile,
+};
 pub use canvas::{CanvasCell, CanvasService};
 pub use clipboard::ClipboardService;
 pub use code_highlight::{
@@ -71,16 +77,17 @@ pub use input_method::{ImPolicy, InputMethodService};
 pub use layout::{LayoutService, Rect, Size};
 pub use log::{LogService, LogSource};
 pub use lua::{
-  GameService, LuaActionState, LuaAnimationEvent, LuaAnimationEventKind, LuaBudgetKind,
-  LuaCallbackLifetime, LuaEnqueueError, LuaErrorStage, LuaEventBroker, LuaEventCallbackId,
-  LuaEventData, LuaEventDelivery, LuaEventError, LuaEventErrorCode, LuaEventRoute,
-  LuaExecutionBudget, LuaExecutionStats, LuaFileEvent, LuaFileOperation, LuaFileOutcome,
-  LuaHitAreaEvent, LuaHyperlinkEvent, LuaImageEvent, LuaImageOutcome, LuaMarkdownEvent,
-  LuaNetworkBody, LuaNetworkEvent, LuaNetworkOutcome, LuaPolicy, LuaRuntimeEvent,
-  LuaScrollBoxEvent, LuaService, LuaSession, LuaSessionDiagnostics, LuaSessionError,
-  LuaSessionKind, LuaSessionSpec, LuaSessionState, LuaSessionToken, LuaTaskOperation,
-  LuaTextInputEvent, LuaTimerEvent, LuaTimerEventKind, LuaTimerKind, MAX_LUA_EVENTS_PER_FRAME,
-  MAX_LUA_NETWORK_TASKS_PER_SESSION, MAX_LUA_PENDING_EVENTS, ScreensaverService,
+  GameService, LuaActionState, LuaAnimationEvent, LuaAnimationEventKind, LuaAudioEvent,
+  LuaAudioEventKind, LuaBudgetKind, LuaCallbackLifetime, LuaEnqueueError, LuaErrorStage,
+  LuaEventBroker, LuaEventCallbackId, LuaEventData, LuaEventDelivery, LuaEventError,
+  LuaEventErrorCode, LuaEventRoute, LuaExecutionBudget, LuaExecutionStats, LuaFileEvent,
+  LuaFileOperation, LuaFileOutcome, LuaHitAreaEvent, LuaHyperlinkEvent, LuaImageEvent,
+  LuaImageOutcome, LuaMarkdownEvent, LuaNetworkBody, LuaNetworkEvent, LuaNetworkOutcome,
+  LuaObjectPool, LuaPolicy, LuaRuntimeEvent, LuaScrollBoxEvent, LuaService, LuaSession,
+  LuaSessionDiagnostics, LuaSessionError, LuaSessionKind, LuaSessionSpec, LuaSessionState,
+  LuaSessionToken, LuaTaskOperation, LuaTextInputEvent, LuaTimerEvent, LuaTimerEventKind,
+  LuaTimerKind, MAX_LUA_EVENTS_PER_FRAME, MAX_LUA_NETWORK_TASKS_PER_SESSION,
+  MAX_LUA_PENDING_EVENTS, ScreensaverService,
 };
 pub use network::{
   NetworkError, NetworkErrorCode, NetworkEvent, NetworkHeader, NetworkMethod, NetworkRequest,
@@ -94,8 +101,8 @@ pub use package::{
 pub use popup::{PopupDismissEvent, PopupRequest, PopupService, PopupView};
 pub use random::RandomService;
 pub use recording::{
-  RecordingAsyncEvent, RecordingPlayback, RecordingPlaybackMetadata, RecordingService,
-  RecordingSnapshot, RecordingState, RecordingTask, load_recording_playback,
+  RecordingAsyncEvent, RecordingAudioMetadata, RecordingPlayback, RecordingPlaybackMetadata,
+  RecordingService, RecordingSnapshot, RecordingState, RecordingTask, load_recording_playback,
   load_recording_playback_metadata,
 };
 pub use render::{BorderStyle, RenderService};
@@ -143,6 +150,7 @@ pub use write_barrier::{WriteBarrier, WriteBarrierSnapshot};
 pub struct EngineServices {
   pub async_runtime: AsyncRuntime,
   pub engine_events: EngineEventQueue,
+  pub audio: AudioService,
   pub file: FileService,
   pub network: NetworkService,
   pub random: RandomService,
@@ -193,10 +201,13 @@ impl EngineServices {
     let storage = StorageService::new(&mut log);
     let _ = log.set_output_path(storage.tui_log_path());
     let image_cache_dir = storage.path("data/cache/images");
+    let async_runtime = AsyncRuntime::new();
+    let audio = AudioService::new(async_runtime.event_sender());
 
     Self {
-      async_runtime: AsyncRuntime::new(),
+      async_runtime,
       engine_events: EngineEventQueue::new(),
+      audio,
       file: FileService::new(),
       network: NetworkService::new(),
       random: RandomService::new(),

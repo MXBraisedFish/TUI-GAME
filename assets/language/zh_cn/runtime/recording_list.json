@@ -26,6 +26,7 @@
   "recording_list.warning": "<fg:red>确定要删除当前录屏吗？\n该操作不可撤回！</fg>",
   "recording_list.warning.yes": "{key:recording_list.warning_yes} 删除",
   "recording_list.warning.no": "{key:recording_list.warning_no} 取消",
+  "recording_list.warning.sound": "[-]/[+] 音量",
   "recording_list.list.sort.name": "录屏名",
   "recording_list.list.sort.time": "时间",
   "recording_list.list.sort.duration": "时长",

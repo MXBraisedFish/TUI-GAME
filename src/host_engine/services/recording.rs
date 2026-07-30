@@ -11,11 +11,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::host_engine::services::storage::atomic_write;
 use crate::host_engine::services::{
-  AsyncRuntime, CanvasCell, ComposedCell, ComposedFrame, EngineEvent, EngineTask, StorageService,
-  TaskId, TerminalColor, TextColor,
+  AsyncRuntime, AudioAsyncEvent, AudioCaptureId, CanvasCell, ComposedCell, ComposedFrame,
+  EngineEvent, EngineTask, StorageService, TaskId, TerminalColor, TextColor,
 };
 
-const RECORDING_SCHEMA_VERSION: u32 = 2;
+const RECORDING_SCHEMA_VERSION: u32 = 3;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum RecordingState {
@@ -41,6 +41,15 @@ pub struct RecordingPlaybackMetadata {
   pub max_width: u16,
   pub max_height: u16,
   pub duration_us: u64,
+  pub audio: Option<RecordingAudioMetadata>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RecordingAudioMetadata {
+  pub path: PathBuf,
+  pub sample_rate: u32,
+  pub channels: u16,
+  pub duration_us: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -58,6 +67,8 @@ struct PlaybackDocument {
   frame_rate: Option<u16>,
   canvas: PlaybackCanvas,
   duration_us: PlaybackDurations,
+  #[serde(default)]
+  audio: Option<PlaybackAudio>,
   palette: Vec<PlaybackCell>,
   initial: PlaybackInitialFrame,
   events: Vec<PlaybackFrameEvent>,
@@ -70,6 +81,8 @@ struct PlaybackHeader {
   frame_rate: Option<u16>,
   canvas: PlaybackCanvas,
   duration_us: PlaybackDurations,
+  #[serde(default)]
+  audio: Option<PlaybackAudio>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
@@ -81,6 +94,15 @@ struct PlaybackCanvas {
 #[derive(Clone, Copy, Debug, Deserialize)]
 struct PlaybackDurations {
   active: u64,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct PlaybackAudio {
+  file: String,
+  codec: String,
+  sample_rate: u32,
+  channels: u16,
+  duration_us: u64,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -139,6 +161,8 @@ pub struct RecordingService {
   state: RecordingState,
   session: Option<RecordingSession>,
   finalizing_task: Option<TaskId>,
+  finalizing_audio_path: Option<PathBuf>,
+  pending_document: Option<PendingRecordingDocument>,
   last_snapshot: RecordingSnapshot,
   last_presented_frame: Option<ComposedFrame>,
 }
@@ -158,6 +182,14 @@ struct RecordingSession {
   palette: Vec<RecordedCell>,
   initial: RecordedInitialFrame,
   events: Vec<RecordedFrameEvent>,
+  audio_capture: Option<AudioCaptureId>,
+  audio_path: PathBuf,
+}
+
+struct PendingRecordingDocument {
+  capture_id: AudioCaptureId,
+  document: RecordingDocument,
+  path: PathBuf,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -169,6 +201,8 @@ struct RecordingDocument {
   frame_rate: Option<u16>,
   canvas: RecordedCanvas,
   duration_us: RecordedDurations,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  audio: Option<RecordedAudio>,
   palette: Vec<RecordedCell>,
   initial: RecordedInitialFrame,
   events: Vec<RecordedFrameEvent>,
@@ -185,6 +219,15 @@ struct RecordedDurations {
   active: u64,
   paused: u64,
   wall: u64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct RecordedAudio {
+  file: String,
+  codec: &'static str,
+  sample_rate: u32,
+  channels: u16,
+  duration_us: u64,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -237,6 +280,8 @@ impl RecordingService {
       state: RecordingState::Stopped,
       session: None,
       finalizing_task: None,
+      finalizing_audio_path: None,
+      pending_document: None,
       last_snapshot: RecordingSnapshot::default(),
       last_presented_frame: None,
     }
@@ -284,6 +329,8 @@ impl RecordingService {
     let now = Instant::now();
     let started_at = Local::now().to_rfc3339_opts(SecondsFormat::Millis, true);
     let filename = Local::now().format("%Y%m%d_%H%M%S_%3f.json").to_string();
+    let path = storage.recording_cache_dir_path().join(filename);
+    let audio_path = path.with_extension("audio.wav");
     let mut palette = vec![RecordedCell::empty()];
     let recorded_initial = encode_initial(&initial, &mut palette);
     self.session = Some(RecordingSession {
@@ -294,15 +341,54 @@ impl RecordingService {
       run_started: now,
       paused_duration: Duration::ZERO,
       pause_started: None,
-      path: storage.recording_cache_dir_path().join(filename),
+      path,
       max_width: initial.width(),
       max_height: initial.height(),
       last_frame: initial,
       palette,
       initial: recorded_initial,
       events: Vec::new(),
+      audio_capture: None,
+      audio_path,
     });
     self.state = RecordingState::Recording;
+    true
+  }
+
+  pub fn pending_audio_path(&self) -> Option<PathBuf> {
+    self
+      .session
+      .as_ref()
+      .filter(|_| self.state == RecordingState::Recording)
+      .map(|session| session.audio_path.clone())
+  }
+
+  pub fn attach_audio_capture(&mut self, capture_id: AudioCaptureId) -> bool {
+    let Some(session) = self.session.as_mut() else {
+      return false;
+    };
+    if self.state != RecordingState::Recording || session.audio_capture.is_some() {
+      return false;
+    }
+    session.audio_capture = Some(capture_id);
+    true
+  }
+
+  pub fn audio_capture(&self) -> Option<AudioCaptureId> {
+    self
+      .session
+      .as_ref()
+      .and_then(|session| session.audio_capture)
+  }
+
+  pub fn detach_audio_capture(&mut self, capture_id: AudioCaptureId) -> bool {
+    let Some(session) = self.session.as_mut() else {
+      return false;
+    };
+    if session.audio_capture != Some(capture_id) {
+      return false;
+    }
+    session.audio_capture = None;
     true
   }
 
@@ -374,17 +460,83 @@ impl RecordingService {
         paused: duration_us(paused),
         wall: duration_us(wall),
       },
+      audio: None,
       palette: session.palette,
       initial: session.initial,
       events: session.events,
     };
-    let task_id = async_runtime.submit(EngineTask::Recording(RecordingTask {
-      document,
-      path: session.path,
-    }));
-    self.finalizing_task = Some(task_id);
+    if let Some(capture_id) = session.audio_capture {
+      self.pending_document = Some(PendingRecordingDocument {
+        capture_id,
+        document,
+        path: session.path,
+      });
+    } else {
+      self.submit_document(document, session.path, async_runtime);
+    }
     self.state = RecordingState::Finalizing;
     true
+  }
+
+  pub(crate) fn handle_audio_event(
+    &mut self,
+    event: &AudioAsyncEvent,
+    async_runtime: &AsyncRuntime,
+  ) {
+    let capture_id = match event {
+      AudioAsyncEvent::CaptureSaved { capture_id, .. }
+      | AudioAsyncEvent::CaptureFailed { capture_id, .. } => *capture_id,
+      _ => return,
+    };
+    if self
+      .session
+      .as_ref()
+      .is_some_and(|session| session.audio_capture == Some(capture_id))
+    {
+      let _ = self.detach_audio_capture(capture_id);
+      return;
+    }
+    let Some(pending) = self.pending_document.take() else {
+      return;
+    };
+    if pending.capture_id != capture_id {
+      self.pending_document = Some(pending);
+      return;
+    }
+    let mut pending = pending;
+    if let AudioAsyncEvent::CaptureSaved {
+      path,
+      sample_rate,
+      channels,
+      duration,
+      ..
+    } = event
+      && path == &pending.path.with_extension("audio.wav")
+      && let Some(file) = path.file_name().and_then(|file| file.to_str())
+    {
+      pending.document.audio = Some(RecordedAudio {
+        file: file.to_string(),
+        codec: "pcm_s16le",
+        sample_rate: *sample_rate,
+        channels: *channels,
+        duration_us: duration_us(*duration),
+      });
+    }
+    self.submit_document(pending.document, pending.path, async_runtime);
+  }
+
+  fn submit_document(
+    &mut self,
+    document: RecordingDocument,
+    path: PathBuf,
+    async_runtime: &AsyncRuntime,
+  ) {
+    self.finalizing_audio_path = document
+      .audio
+      .as_ref()
+      .map(|audio| path.with_file_name(&audio.file));
+    let task_id = async_runtime.submit(EngineTask::Recording(RecordingTask { document, path }));
+    self.finalizing_task = Some(task_id);
   }
 
   pub(crate) fn capture_presented_frame(&mut self, frame: &ComposedFrame) {
@@ -426,6 +578,12 @@ impl RecordingService {
       }
     };
     if self.finalizing_task == Some(task_id) {
+      if matches!(event, RecordingAsyncEvent::Failed { .. })
+        && let Some(audio_path) = self.finalizing_audio_path.take()
+      {
+        let _ = fs::remove_file(audio_path);
+      }
+      self.finalizing_audio_path = None;
       self.finalizing_task = None;
       self.state = RecordingState::Stopped;
     }
@@ -468,22 +626,26 @@ pub fn load_recording_playback_metadata(path: &Path) -> Option<RecordingPlayback
 
   let header: PlaybackHeader = serde_json::from_slice(&bytes).ok()?;
   playback_metadata(
+    path,
     header.schema_version,
     header.started_at,
     header.frame_rate,
     header.canvas,
     header.duration_us,
+    header.audio,
   )
 }
 
 pub fn load_recording_playback(path: &Path) -> Option<RecordingPlayback> {
   let document: PlaybackDocument = serde_json::from_reader(fs::File::open(path).ok()?).ok()?;
   let metadata = playback_metadata(
+    path,
     document.schema_version,
     document.started_at.clone(),
     document.frame_rate,
     document.canvas,
     document.duration_us,
+    document.audio.clone(),
   )?;
   validate_playback_document(&document, &metadata)?;
   let palette = document
@@ -539,13 +701,15 @@ impl RecordingPlayback {
 }
 
 fn playback_metadata(
+  document_path: &Path,
   schema_version: u32,
   started_at: String,
   frame_rate: Option<u16>,
   canvas: PlaybackCanvas,
   duration_us: PlaybackDurations,
+  audio: Option<PlaybackAudio>,
 ) -> Option<RecordingPlaybackMetadata> {
-  if !matches!(schema_version, 1 | RECORDING_SCHEMA_VERSION)
+  if !matches!(schema_version, 1 | 2 | RECORDING_SCHEMA_VERSION)
     || started_at.is_empty()
     || canvas.max_width == 0
     || canvas.max_height == 0
@@ -553,12 +717,40 @@ fn playback_metadata(
   {
     return None;
   }
+  let audio = match audio {
+    Some(audio) => Some(playback_audio_metadata(document_path, audio)?),
+    None => None,
+  };
   Some(RecordingPlaybackMetadata {
     started_at,
     frame_rate,
     max_width: canvas.max_width,
     max_height: canvas.max_height,
     duration_us: duration_us.active,
+    audio,
+  })
+}
+
+fn playback_audio_metadata(
+  document_path: &Path,
+  audio: PlaybackAudio,
+) -> Option<RecordingAudioMetadata> {
+  let relative = Path::new(&audio.file);
+  if audio.codec != "pcm_s16le"
+    || audio.sample_rate == 0
+    || audio.channels == 0
+    || audio.duration_us == 0
+    || relative.is_absolute()
+    || relative.components().count() != 1
+    || relative.file_name().and_then(|name| name.to_str()) != Some(audio.file.as_str())
+  {
+    return None;
+  }
+  Some(RecordingAudioMetadata {
+    path: document_path.parent()?.join(relative),
+    sample_rate: audio.sample_rate,
+    channels: audio.channels,
+    duration_us: audio.duration_us,
   })
 }
 
@@ -999,10 +1191,11 @@ mod tests {
         size: [120, 30],
         changes: Vec::new(),
       }],
+      audio: None,
     };
 
     let value = serde_json::to_value(document).unwrap();
-    assert_eq!(value["schema_version"], 2);
+    assert_eq!(value["schema_version"], 3);
     assert_eq!(value["frame_rate"], 60);
     assert_eq!(value["duration_us"]["active"], 2_000_000);
     assert_eq!(value["events"][0]["time_us"], 16_667);
@@ -1039,6 +1232,34 @@ mod tests {
     );
     assert!(load_recording_playback(&path).is_some());
     fs::remove_file(path).unwrap();
+  }
+
+  #[test]
+  fn playback_resolves_only_safe_sibling_audio_metadata() {
+    let path = playback_file(playback_document(RECORDING_SCHEMA_VERSION, Some(60)));
+    let document = fs::read_to_string(&path).unwrap().replacen(
+      ",\"palette\"",
+      ",\"audio\":{\"file\":\"recording.audio.wav\",\"codec\":\"pcm_s16le\",\"sample_rate\":48000,\"channels\":2,\"duration_us\":2000000},\"palette\"",
+      1,
+    );
+    fs::write(&path, document).unwrap();
+    let metadata = load_recording_playback_metadata(&path).unwrap();
+    let audio = metadata.audio.unwrap();
+    assert_eq!(audio.path, path.with_file_name("recording.audio.wav"));
+    assert_eq!(audio.sample_rate, 48_000);
+    assert_eq!(audio.channels, 2);
+
+    let invalid_path = playback_file(playback_document(RECORDING_SCHEMA_VERSION, Some(60)));
+    let invalid = fs::read_to_string(&invalid_path).unwrap().replacen(
+      ",\"palette\"",
+      ",\"audio\":{\"file\":\"../outside.wav\",\"codec\":\"pcm_s16le\",\"sample_rate\":48000,\"channels\":2,\"duration_us\":2000000},\"palette\"",
+      1,
+    );
+    fs::write(&invalid_path, invalid).unwrap();
+    assert!(load_recording_playback_metadata(&invalid_path).is_none());
+
+    fs::remove_file(path).unwrap();
+    fs::remove_file(invalid_path).unwrap();
   }
 
   #[test]

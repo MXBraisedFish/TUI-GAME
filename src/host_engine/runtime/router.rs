@@ -684,6 +684,8 @@ pub(super) fn route_update(
         world.clock.delta_time(),
         &services.scroll_box,
         &services.layout,
+        &mut services.audio,
+        &services.storage,
       ),
     Some(UiNodeKind::RecordingList) => settings_ui
       .screenshot_recording_mut()
@@ -692,6 +694,8 @@ pub(super) fn route_update(
         world.clock.delta_time(),
         &services.scroll_box,
         &services.layout,
+        &mut services.audio,
+        &services.storage,
       ),
     Some(UiNodeKind::SecuritySettings) => {
       security_uis.settings.update(world.clock.delta_time());
@@ -731,7 +735,16 @@ pub(super) fn route_update(
         apply_terminal_check_command(command, terminal_check_ui, services, world);
       }
     }
-    Some(UiNodeKind::InputDemo) => input_demo_ui.update(),
+    Some(UiNodeKind::InputDemo) => {
+      if input_demo_ui.update(
+        &mut services.audio,
+        &services.storage,
+        &services.progress_bar,
+      ) {
+        services.canvas.request_render();
+        services.presenter.request_render();
+      }
+    }
     _ => {}
   }
   route_component_events(

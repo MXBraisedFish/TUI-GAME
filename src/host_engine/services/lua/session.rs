@@ -17,6 +17,7 @@ use serde_json::{Map as JsonMap, Number as JsonNumber, Value as JsonValue};
 use crate::host_engine::services::Size;
 
 use super::events::{LuaEventCallbackId, LuaEventDelivery, LuaEventRoute, LuaRuntimeEvent};
+use super::object_pool::LuaObjectPool;
 use super::policy::{LuaBudgetKind, LuaExecutionBudget, LuaPolicy};
 
 const REQUIRED_CALLBACKS: &[&str] = &["Init", "HandleEvent", "Update", "UpdateFrame", "Render"];
@@ -142,6 +143,7 @@ pub struct LuaSession {
   terminal_size: Size,
   state: LuaSessionState,
   last_stats: LuaExecutionStats,
+  objects: Option<LuaObjectPool>,
   event_callbacks: HashMap<LuaEventCallbackId, LuaRegisteredCallback>,
   next_event_callback_id: u64,
 }
@@ -197,6 +199,7 @@ impl LuaSession {
       terminal_size: spec.terminal_size,
       state: LuaSessionState::Loading,
       last_stats: LuaExecutionStats::default(),
+      objects: Some(LuaObjectPool::new()),
       event_callbacks: HashMap::new(),
       next_event_callback_id: 1,
     };
@@ -243,11 +246,19 @@ impl LuaSession {
     self.lua.used_memory()
   }
 
+  pub fn objects(&self) -> Option<&LuaObjectPool> {
+    self.objects.as_ref()
+  }
+
+  pub fn objects_mut(&mut self) -> Option<&mut LuaObjectPool> {
+    self.objects.as_mut()
+  }
+
   pub fn handle_event(&mut self, event: &LuaRuntimeEvent) -> Result<(), LuaSessionError> {
     let event = match self.event_table(event, LuaErrorStage::Callback, "HandleEvent") {
       Ok(event) => event,
       Err(error) => {
-        self.state = LuaSessionState::Faulted;
+        self.mark_faulted();
         return Err(error);
       }
     };
@@ -325,11 +336,12 @@ impl LuaSession {
     if self.state == LuaSessionState::Stopped {
       return;
     }
+    self.state = LuaSessionState::Stopped;
     for (_, callback) in self.event_callbacks.drain() {
       let _ = self.lua.remove_registry_value(callback.key);
     }
+    self.objects.take();
     let _ = self.lua.gc_collect();
-    self.state = LuaSessionState::Stopped;
   }
 
   fn context_table(&self, continue_data: Option<&JsonValue>) -> Result<Table, LuaSessionError> {
@@ -412,7 +424,7 @@ impl LuaSession {
     let event_table = match self.event_table(event, LuaErrorStage::EventCallback, "EventCallback") {
       Ok(event) => event,
       Err(error) => {
-        self.state = LuaSessionState::Faulted;
+        self.mark_faulted();
         return Err(error);
       }
     };
@@ -433,13 +445,13 @@ impl LuaSession {
           ..stats
         };
         if let Err(error) = self.lua.gc_step() {
-          self.state = LuaSessionState::Faulted;
+          self.mark_faulted();
           return Err(self.error(LuaErrorStage::EventCallback, Some("EventCallback"), error));
         }
         Ok(())
       }
       Err(failure) => {
-        self.state = LuaSessionState::Faulted;
+        self.mark_faulted();
         Err(self.execution_error(LuaErrorStage::EventCallback, "EventCallback", failure))
       }
     }
@@ -463,9 +475,14 @@ impl LuaSession {
     }
     let result = self.invoke_required(callback, args, budget_kind, LuaErrorStage::Callback);
     if result.is_err() {
-      self.state = LuaSessionState::Faulted;
+      self.mark_faulted();
     }
     result
+  }
+
+  fn mark_faulted(&mut self) {
+    self.state = LuaSessionState::Faulted;
+    self.objects.take();
   }
 
   fn invoke_required<A>(
@@ -1184,7 +1201,7 @@ mod tests {
 
   #[test]
   fn creates_isolated_game_and_screensaver_vms() {
-    let first = LuaSession::load(
+    let mut first = LuaSession::load(
       spec(
         &valid_script("private_value = 'game'"),
         LuaSessionKind::Game,
@@ -1213,6 +1230,21 @@ mod tests {
       first.environment_value("_G").to_pointer(),
       second.environment_value("_G").to_pointer()
     );
+
+    let first_pool_id = first.objects().unwrap().ui().id();
+    let second_pool_id = second.objects().unwrap().ui().id();
+    assert_ne!(first_pool_id, second_pool_id);
+
+    let time = crate::host_engine::services::TimeService::new();
+    let timer = time.create_count_up(first.objects_mut().unwrap().runtime_mut());
+    assert_eq!(
+      time.state(first.objects().unwrap().runtime(), timer),
+      Some(crate::host_engine::services::TimerState::Idle)
+    );
+    assert_eq!(time.state(second.objects().unwrap().runtime(), timer), None);
+
+    first.stop();
+    assert!(first.objects().is_none());
   }
 
   #[test]
@@ -1291,6 +1323,7 @@ mod tests {
     let error = session.update().unwrap_err();
     assert_eq!(error.stage, LuaErrorStage::ExecutionLimit);
     assert_eq!(session.state(), LuaSessionState::Faulted);
+    assert!(session.objects().is_none());
   }
 
   #[test]

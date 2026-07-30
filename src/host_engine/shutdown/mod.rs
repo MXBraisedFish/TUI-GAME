@@ -8,6 +8,7 @@ pub fn close(services: &mut EngineServices, mut world: RuntimeWorld, _exit_state
   let write_barrier = services.async_runtime.write_barrier();
   write_barrier.stop_new_writes();
   services.async_runtime.stop_all_managed_threads();
+  services.audio.shutdown();
   write_barrier.wait();
   services.async_runtime.shutdown();
   for (path, error) in write_barrier.snapshot().failed {

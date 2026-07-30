@@ -14,6 +14,7 @@ use crossbeam_channel::{Receiver, Sender, unbounded};
 
 use super::{
   WriteBarrier,
+  audio::AudioAsyncEvent,
   export::{self, ExportAsyncEvent, ExportTask},
   image::{ImageConvertParams, ImageService},
   input::{KeyEvent, SystemEvent},
@@ -159,6 +160,7 @@ pub enum EngineEvent {
   File(FileEvent),
   Image(ImageEvent),
   Network(NetworkEvent),
+  Audio(AudioAsyncEvent),
   Time(TimeAsyncEvent),
   TaskFinished { id: TaskId },
   TaskFailed { id: TaskId, error: String },

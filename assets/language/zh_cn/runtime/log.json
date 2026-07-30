@@ -11,6 +11,7 @@
   "log.service.render": "渲染",
   "log.service.input": "输入",
   "log.service.storage": "存储",
+  "log.service.audio": "音频",
   "log.service.package": "包管理",
   "log.service.lua": "Lua",
   "log.service.game": "游戏",

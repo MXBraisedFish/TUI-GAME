@@ -14,15 +14,16 @@ use serde_json::Value;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::host_engine::services::{
-  ActionMapEntry, BorderStyle, CanvasCell, CanvasService, ComposedCell, ComposedFrame,
-  DrawTextParams, HitAreaEvent, HitAreaId, HitAreaOptions, HitAreaService, I18nService, KeyState,
-  LayoutService, MouseButton, Overflow, ProgressBarFillOrigin, ProgressBarId, ProgressBarOptions,
-  ProgressBarSegmentStyle, ProgressBarService, RecordingPlayback, Rect, RenderService,
-  RichTextParams, RichTextService, RuntimeObjectPool, RuntimeObjectPoolOwner, ScreenshotRect,
-  ScrollBoxId, ScrollBoxOptions, ScrollBoxService, ScrollbarLayout, ScrollbarPolicy,
-  ScrollbarVisibility, Size, TerminalColor, TextColor, TextInputEvent, TextInputId, TextInputMode,
-  TextInputOptions, TextInputRenderParams, TextInputService, TextStyle, UiEvent, UiObjectPool,
-  UiObjectPoolOwner, load_recording_playback, load_recording_playback_metadata,
+  ActionMapEntry, AudioId, AudioService, AudioSource, AudioState, BorderStyle, CanvasCell,
+  CanvasService, ComposedCell, ComposedFrame, DrawTextParams, HitAreaEvent, HitAreaId,
+  HitAreaOptions, HitAreaService, I18nService, KeyState, LayoutService, MouseButton, Overflow,
+  ProgressBarFillOrigin, ProgressBarId, ProgressBarOptions, ProgressBarSegmentStyle,
+  ProgressBarService, RecordingPlayback, Rect, RenderService, RichTextParams, RichTextService,
+  RuntimeObjectPool, RuntimeObjectPoolOwner, ScreenshotRect, ScrollBoxId, ScrollBoxOptions,
+  ScrollBoxService, ScrollbarLayout, ScrollbarPolicy, ScrollbarVisibility, Size, StorageService,
+  TerminalColor, TextColor, TextInputEvent, TextInputId, TextInputMode, TextInputOptions,
+  TextInputRenderParams, TextInputService, TextStyle, UiEvent, UiObjectPool, UiObjectPoolOwner,
+  load_recording_playback, load_recording_playback_metadata,
 };
 
 const HINT_COLOR: TextColor = TextColor::Rgb {
@@ -237,6 +238,11 @@ struct RecordingPlayer {
   elapsed_us: u64,
   next_event: usize,
   playing: bool,
+  volume: f32,
+  audio_id: Option<AudioId>,
+  audio_playing: bool,
+  audio_seek_pending: bool,
+  audio_volume_pending: bool,
 }
 
 impl RecordingPlayer {
@@ -249,6 +255,11 @@ impl RecordingPlayer {
       elapsed_us: 0,
       next_event: 0,
       playing: false,
+      volume: 1.0,
+      audio_id: None,
+      audio_playing: false,
+      audio_seek_pending: false,
+      audio_volume_pending: false,
     }
   }
 
@@ -268,6 +279,7 @@ impl RecordingPlayer {
       self.elapsed_us.saturating_add(delta_us as u64)
     };
     self.seek_to(target);
+    self.audio_seek_pending = true;
   }
 
   fn seek_to(&mut self, target_us: u64) {
@@ -291,6 +303,12 @@ impl RecordingPlayer {
     self.elapsed_us = 0;
     self.next_event = 0;
     self.playing = false;
+    self.audio_seek_pending = true;
+  }
+
+  fn adjust_volume(&mut self, delta: f32) {
+    self.volume = (self.volume + delta).clamp(0.0, 1.0);
+    self.audio_volume_pending = true;
   }
 }
 
@@ -537,6 +555,7 @@ pub struct MediaListUi<S: MediaListSpec> {
   load_rx: Option<Receiver<MediaLoadResult>>,
   loading_path: Option<PathBuf>,
   player: Option<RecordingPlayer>,
+  stale_audio_ids: Vec<AudioId>,
   media_offset: (u16, u16),
   reload_elapsed: Duration,
   marker: PhantomData<S>,
@@ -654,6 +673,7 @@ impl<S: MediaListSpec> MediaListUi<S> {
       load_rx: None,
       loading_path: None,
       player: None,
+      stale_audio_ids: Vec::new(),
       media_offset: (0, 0),
       reload_elapsed: Duration::ZERO,
       objects,
@@ -793,7 +813,8 @@ impl<S: MediaListSpec> MediaListUi<S> {
     self.sort_field = SortField::Name;
     self.last_list_scroll_y = 0;
     self.zoomed = false;
-    self.player = None;
+    self.discard_player();
+    self.stale_audio_ids.clear();
     self.media_offset = (0, 0);
     self.pending_notice = None;
     let _ = text_input.clear(&mut self.objects, self.search_input);
@@ -892,13 +913,23 @@ impl<S: MediaListSpec> MediaListUi<S> {
   }
 
   pub fn finish_delete(&mut self, path: &Path) -> io::Result<()> {
+    let audio_path = S::SUPPORTS_DURATION
+      .then(|| load_recording_playback_metadata(path))
+      .flatten()
+      .and_then(|metadata| metadata.audio.map(|audio| audio.path))
+      .or_else(|| S::SUPPORTS_DURATION.then(|| path.with_extension("audio.wav")));
     fs::remove_file(path)?;
+    if let Some(audio_path) = audio_path
+      && audio_path.is_file()
+    {
+      let _ = fs::remove_file(audio_path);
+    }
     self.entries.retain(|entry| entry.path != path);
     self.selected = self
       .selected
       .min(self.filtered_entries().len().saturating_sub(1));
     self.pending_delete = None;
-    self.player = None;
+    self.discard_player();
     self.loading_path = None;
     self.request_selected_load();
     Ok(())
@@ -919,7 +950,7 @@ impl<S: MediaListSpec> MediaListUi<S> {
     let previous = self.selected;
     self.move_selection(dy as isize);
     if self.selected != previous {
-      self.player = None;
+      self.discard_player();
       let _ = service.scroll_to(&mut self.objects, self.info_scroll, 0, 0, layout);
     }
     self.ensure_selection_visible(service, layout);
@@ -938,7 +969,17 @@ impl<S: MediaListSpec> MediaListUi<S> {
     let _ = service.scroll_by(&mut self.objects, self.info_scroll, dx, dy, layout);
   }
 
-  pub fn update(&mut self, dt: Duration, service: &ScrollBoxService, layout: &LayoutService) {
+  pub fn update(
+    &mut self,
+    dt: Duration,
+    service: &ScrollBoxService,
+    layout: &LayoutService,
+    audio: &mut AudioService,
+    storage: &StorageService,
+  ) {
+    for audio_id in self.stale_audio_ids.drain(..) {
+      let _ = audio.remove(self.objects.audio_mut(), audio_id);
+    }
     self.reload_elapsed += dt;
     if self.reload_elapsed >= Duration::from_millis(500) {
       self.reload_elapsed = Duration::ZERO;
@@ -1022,10 +1063,15 @@ impl<S: MediaListSpec> MediaListUi<S> {
     }
     self.request_selected_load();
     self.sync_player_to_selection();
-    if self.active == ActivePanel::Info {
-      if let Some(player) = self.player.as_mut() {
+    if let Some(mut player) = self.player.take() {
+      if player.recording.metadata().audio.is_some() {
+        if self.active == ActivePanel::Info || player.audio_id.is_some() {
+          Self::sync_player_audio(&mut player, audio, self.objects.audio_mut(), storage);
+        }
+      } else if self.active == ActivePanel::Info {
         player.update(dt);
       }
+      self.player = Some(player);
     }
     for event in service.drain_scroll_events(&mut self.objects) {
       let crate::host_engine::services::ScrollBoxEvent::Scrolled { id, y, .. } = event;
@@ -1037,6 +1083,63 @@ impl<S: MediaListSpec> MediaListUi<S> {
       if delta != 0 {
         self.clamp_selection_to_list_view(service, layout);
       }
+    }
+  }
+
+  fn sync_player_audio(
+    player: &mut RecordingPlayer,
+    audio: &mut AudioService,
+    pool: &mut crate::host_engine::services::AudioObjectPool,
+    storage: &StorageService,
+  ) {
+    let Some(metadata) = player.recording.metadata().audio.as_ref() else {
+      return;
+    };
+    if player.audio_id.is_none() {
+      let Ok(source) = storage.resolve_recording_audio(&metadata.path) else {
+        player.playing = false;
+        return;
+      };
+      let Ok(audio_id) = audio.create(pool, AudioSource::File(source), None) else {
+        player.playing = false;
+        return;
+      };
+      let _ = audio.set_volume(pool, audio_id, player.volume);
+      player.audio_id = Some(audio_id);
+      player.audio_seek_pending = true;
+      player.audio_volume_pending = false;
+    }
+    let Some(audio_id) = player.audio_id else {
+      return;
+    };
+    if player.audio_volume_pending {
+      let _ = audio.set_volume(pool, audio_id, player.volume);
+      player.audio_volume_pending = false;
+    }
+    let audio_state = audio.state(pool, audio_id);
+    if player.audio_seek_pending
+      && !matches!(audio_state, Some(AudioState::Created | AudioState::Loading))
+    {
+      let _ = audio.seek(pool, audio_id, Duration::from_micros(player.elapsed_us));
+      player.audio_seek_pending = false;
+    }
+    if player.playing != player.audio_playing {
+      if player.playing {
+        let _ = audio.play(pool, audio_id);
+      } else {
+        let _ = audio.pause(pool, audio_id);
+      }
+      player.audio_playing = player.playing;
+    }
+    if player.playing
+      && let Some(position) = audio.position(pool, audio_id)
+    {
+      player.seek_to(position.as_micros().min(u64::MAX as u128) as u64);
+    }
+    if audio.is_finished(pool, audio_id) {
+      player.playing = false;
+      player.audio_playing = false;
+      player.seek_to(player.recording.metadata().duration_us);
     }
   }
 
@@ -1111,7 +1214,7 @@ impl<S: MediaListSpec> MediaListUi<S> {
       UiEvent::TextInput(TextInputEvent::Changed { id, value }) if *id == self.search_input => {
         self.search = value.clone();
         self.selected = 0;
-        self.player = None;
+        self.discard_player();
         return None;
       }
       UiEvent::HitArea(HitAreaEvent::HoverEnter { id, .. }) => {
@@ -1179,7 +1282,7 @@ impl<S: MediaListSpec> MediaListUi<S> {
       }
       ".order" if self.active == ActivePanel::List => {
         self.ascending = !self.ascending;
-        self.player = None;
+        self.discard_player();
         None
       }
       ".sort" if self.active == ActivePanel::List => {
@@ -1188,7 +1291,7 @@ impl<S: MediaListSpec> MediaListUi<S> {
           SortField::Time if S::SUPPORTS_DURATION => SortField::Duration,
           _ => SortField::Name,
         };
-        self.player = None;
+        self.discard_player();
         None
       }
       ".modify" if self.active == ActivePanel::List && !self.filtered_entries().is_empty() => {
@@ -1237,6 +1340,20 @@ impl<S: MediaListSpec> MediaListUi<S> {
         self.sync_player_to_selection();
         if let Some(player) = self.player.as_mut() {
           player.seek_by(-(PLAYBACK_SEEK_US as i64));
+        }
+        None
+      }
+      ".volume_down" if self.active == ActivePanel::Info && S::SUPPORTS_DURATION => {
+        self.sync_player_to_selection();
+        if let Some(player) = self.player.as_mut() {
+          player.adjust_volume(-0.1);
+        }
+        None
+      }
+      ".volume_up" if self.active == ActivePanel::Info && S::SUPPORTS_DURATION => {
+        self.sync_player_to_selection();
+        if let Some(player) = self.player.as_mut() {
+          player.adjust_volume(0.1);
         }
         None
       }
@@ -1781,7 +1898,7 @@ impl<S: MediaListSpec> MediaListUi<S> {
 
   fn sync_player_to_selection(&mut self) {
     if !S::SUPPORTS_DURATION {
-      self.player = None;
+      self.discard_player();
       return;
     }
     let selected = self
@@ -1794,7 +1911,7 @@ impl<S: MediaListSpec> MediaListUi<S> {
           .map(|recording| (entry.path.clone(), Arc::clone(recording)))
       });
     let Some((path, recording)) = selected else {
-      self.player = None;
+      self.discard_player();
       return;
     };
     if self
@@ -1804,7 +1921,14 @@ impl<S: MediaListSpec> MediaListUi<S> {
     {
       return;
     }
+    self.discard_player();
     self.player = Some(RecordingPlayer::new(path, recording));
+  }
+
+  fn discard_player(&mut self) {
+    if let Some(audio_id) = self.player.take().and_then(|player| player.audio_id) {
+      self.stale_audio_ids.push(audio_id);
+    }
   }
 
   fn reset_selected_player(&mut self) {
@@ -2109,6 +2233,7 @@ impl<S: MediaListSpec> MediaListUi<S> {
         "action.play"
       },
       "action.skip",
+      "warning.sound",
       "action.zoom.out",
       "action.export",
     ];
@@ -2189,21 +2314,21 @@ impl<S: MediaListSpec> MediaListUi<S> {
       self.active = ActivePanel::Info;
     } else if id == self.order_area && clicked {
       self.ascending = !self.ascending;
-      self.player = None;
+      self.discard_player();
     } else if id == self.sort_area && clicked {
       self.sort_field = match self.sort_field {
         SortField::Name => SortField::Time,
         SortField::Time if S::SUPPORTS_DURATION => SortField::Duration,
         _ => SortField::Name,
       };
-      self.player = None;
+      self.discard_player();
     } else if let Some(index) = self.item_areas.iter().position(|area| *area == id) {
       self.active = ActivePanel::List;
       self.pause_player();
       self.selected = index;
     }
     if self.selected != previous_selected {
-      self.player = None;
+      self.discard_player();
     } else if previous_active != ActivePanel::Info && self.active == ActivePanel::Info {
       self.reset_selected_player();
     }

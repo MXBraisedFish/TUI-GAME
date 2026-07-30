@@ -7,6 +7,7 @@ use std::{
 use super::bootstrap::ensure_storage_layout;
 use super::layout;
 use super::profile::DisplaySettingsProfile;
+use crate::host_engine::services::{AudioError, AudioErrorCode, ResolvedAudioFile};
 use crate::host_engine::services::{LogService, LogSource};
 
 /// 存储服务：管理应用根目录，提供各子路径的构建方法，并在初始化时确保目录结构存在。
@@ -113,6 +114,58 @@ impl StorageService {
     self.path(layout::ASSETS_LANGUAGE_DIR)
   }
 
+  /// Resolve a host audio asset under the deployed assets directory.
+  pub fn resolve_audio_asset(&self, relative: &Path) -> Result<ResolvedAudioFile, AudioError> {
+    if relative.as_os_str().is_empty()
+      || relative.is_absolute()
+      || !relative
+        .components()
+        .all(|part| matches!(part, std::path::Component::Normal(_)))
+    {
+      return Err(AudioError::sanitized(AudioErrorCode::InvalidPath));
+    }
+    let root = self.root_dir.join("assets");
+    let canonical_deployment = self
+      .root_dir
+      .canonicalize()
+      .map_err(|_| AudioError::sanitized(AudioErrorCode::NotFound))?;
+    let canonical_root = root
+      .canonicalize()
+      .map_err(|_| AudioError::sanitized(AudioErrorCode::NotFound))?;
+    let candidate = root.join(relative);
+    let canonical_file = candidate
+      .canonicalize()
+      .map_err(|_| AudioError::sanitized(AudioErrorCode::NotFound))?;
+    if !canonical_root.is_dir()
+      || !canonical_root.starts_with(&canonical_deployment)
+      || !canonical_file.is_file()
+      || !canonical_file.starts_with(&canonical_root)
+    {
+      return Err(AudioError::sanitized(AudioErrorCode::PermissionDenied));
+    }
+    Ok(ResolvedAudioFile::new(canonical_file))
+  }
+
+  pub fn resolve_recording_audio(&self, path: &Path) -> Result<ResolvedAudioFile, AudioError> {
+    if !path.is_absolute() {
+      return Err(AudioError::sanitized(AudioErrorCode::InvalidPath));
+    }
+    let root = self.recording_cache_dir_path();
+    let canonical_root = root
+      .canonicalize()
+      .map_err(|_| AudioError::sanitized(AudioErrorCode::NotFound))?;
+    let canonical_file = path
+      .canonicalize()
+      .map_err(|_| AudioError::sanitized(AudioErrorCode::NotFound))?;
+    if !canonical_root.is_dir()
+      || !canonical_file.is_file()
+      || !canonical_file.starts_with(&canonical_root)
+    {
+      return Err(AudioError::sanitized(AudioErrorCode::PermissionDenied));
+    }
+    Ok(ResolvedAudioFile::new(canonical_file))
+  }
+
   pub fn language_registry_path(&self) -> PathBuf {
     self.path(layout::LANGUAGE_REGISTRY_FILE)
   }
@@ -196,4 +249,51 @@ fn resolve_root_dir(log: &mut LogService) -> PathBuf {
     "Could not resolve root directory, falling back to '.'",
   );
   PathBuf::from(".")
+}
+
+#[cfg(test)]
+mod tests {
+  use std::time::{SystemTime, UNIX_EPOCH};
+
+  use super::*;
+
+  #[test]
+  fn host_audio_assets_are_canonical_and_cannot_escape_assets() {
+    let nonce = SystemTime::now()
+      .duration_since(UNIX_EPOCH)
+      .unwrap()
+      .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+      "tui-game-storage-audio-{}-{nonce}",
+      std::process::id()
+    ));
+    std::fs::create_dir_all(root.join("assets/audio")).unwrap();
+    std::fs::write(root.join("assets/audio/test.wav"), b"test").unwrap();
+    std::fs::write(root.join("outside.wav"), b"outside").unwrap();
+    let storage = StorageService::from_root_for_test(root.clone());
+
+    let resolved = storage
+      .resolve_audio_asset(Path::new("audio/test.wav"))
+      .unwrap();
+    assert_eq!(
+      resolved.path(),
+      root.join("assets/audio/test.wav").canonicalize().unwrap()
+    );
+    assert!(matches!(
+      storage.resolve_audio_asset(Path::new("../outside.wav")),
+      Err(AudioError {
+        code: AudioErrorCode::InvalidPath,
+        ..
+      })
+    ));
+    assert!(matches!(
+      storage.resolve_audio_asset(&root.join("outside.wav")),
+      Err(AudioError {
+        code: AudioErrorCode::InvalidPath,
+        ..
+      })
+    ));
+
+    std::fs::remove_dir_all(root).unwrap();
+  }
 }

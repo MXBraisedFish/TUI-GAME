@@ -1,6 +1,7 @@
 use super::*;
 use crate::host_engine::services::{
-  EngineEvent, ExportAsyncEvent, NetworkEvent, ScreenshotAsyncEvent, VideoAsyncEvent,
+  AudioAsyncEvent, EngineEvent, ExportAsyncEvent, NetworkEvent, ScreenshotAsyncEvent,
+  VideoAsyncEvent,
 };
 
 pub(super) struct RuntimeEngineEvents {
@@ -28,6 +29,10 @@ pub(super) fn drain_engine_events(
         LuaEnqueueError::StaleTaskCompletion(task_id) => services.log.debug(
           LogSource::Lua,
           format!("Discarded stale Lua task completion: {task_id:?}"),
+        ),
+        LuaEnqueueError::StaleAudioEvent(audio_id) => services.log.debug(
+          LogSource::Lua,
+          format!("Discarded stale Lua audio event: {audio_id:?}"),
         ),
         error => services.log.warn(
           LogSource::Lua,
@@ -191,6 +196,48 @@ pub(super) fn drain_engine_events(
           ),
         }
         network_events.push(event);
+      }
+      EngineEvent::Audio(event) => {
+        services.audio.handle_engine_event(&event);
+        services
+          .recording
+          .handle_audio_event(&event, &services.async_runtime);
+        match &event {
+          AudioAsyncEvent::Failed {
+            pool_id,
+            audio_id,
+            error,
+          } => services.log.warn(
+            LogSource::Audio,
+            format!(
+              "Audio object {audio_id:?} in pool {pool_id:?} failed: {}",
+              error.code.as_str()
+            ),
+          ),
+          AudioAsyncEvent::BackendFailed { error } => services.log.warn(
+            LogSource::Audio,
+            format!("Audio backend unavailable: {}", error.code.as_str()),
+          ),
+          AudioAsyncEvent::CaptureFailed {
+            capture_id,
+            path,
+            error,
+          } => services.log.warn(
+            LogSource::Audio,
+            format!(
+              "Audio capture {capture_id:?} failed for {}: {}",
+              path.display(),
+              error.code.as_str()
+            ),
+          ),
+          AudioAsyncEvent::Ready { .. }
+          | AudioAsyncEvent::Started { .. }
+          | AudioAsyncEvent::Paused { .. }
+          | AudioAsyncEvent::Resumed { .. }
+          | AudioAsyncEvent::Stopped { .. }
+          | AudioAsyncEvent::Finished { .. }
+          | AudioAsyncEvent::CaptureSaved { .. } => {}
+        }
       }
       EngineEvent::File(_)
       | EngineEvent::Image(_)

@@ -124,11 +124,23 @@ pub(super) fn apply_input_demo_command(
 ) {
   match command {
     InputDemoCommand::Back => {
-      input_demo_ui.leave();
+      input_demo_ui.leave(&mut services.audio);
       world.state.pop_ui_node();
       reset_input_demo_ui(input_demo_ui, services);
     }
+    InputDemoCommand::TogglePlayback => input_demo_ui.toggle_playback(&mut services.audio),
+    InputDemoCommand::Stop => input_demo_ui.stop(&mut services.audio),
+    InputDemoCommand::Restart => input_demo_ui.restart(&mut services.audio),
+    InputDemoCommand::VolumeDown => {
+      input_demo_ui.adjust_volume(&mut services.audio, -0.1);
+    }
+    InputDemoCommand::VolumeUp => {
+      input_demo_ui.adjust_volume(&mut services.audio, 0.1);
+    }
+    InputDemoCommand::ToggleLoop => input_demo_ui.toggle_loop(&mut services.audio),
   }
+  services.canvas.request_render();
+  services.presenter.request_render();
 }
 
 pub(super) fn apply_settings_command(
@@ -1543,7 +1555,7 @@ fn reset_language_select_ui(ui: &mut LanguageSelectUi, services: &mut EngineServ
 
 fn reset_input_demo_ui(ui: &mut InputDemoUi, services: &mut EngineServices) {
   clear_exiting_pool(ui.objects_mut(), services);
-  *ui = InputDemoUi::init(&services.hit_area, &services.slice, &services.scroll_box);
+  *ui = InputDemoUi::init(&services.hit_area, &services.progress_bar);
 }
 
 pub(super) fn apply_export_settings_command(

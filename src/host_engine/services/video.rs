@@ -79,6 +79,7 @@ pub enum VideoAsyncEvent {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum VideoExportStage {
   Parse,
+  Audio,
   Font,
   Rasterize,
   Encode,
@@ -90,6 +91,7 @@ impl fmt::Display for VideoExportStage {
   fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
     formatter.write_str(match self {
       Self::Parse => "parse",
+      Self::Audio => "audio",
       Self::Font => "font",
       Self::Rasterize => "rasterize",
       Self::Encode => "encode",
@@ -333,7 +335,50 @@ fn export_recording(
   event_tx: &Sender<EngineEvent>,
   cancellation: &TaskCancellation,
 ) -> Result<(), VideoExportError> {
-  if let Some(encoder) = resolve_ffmpeg_encoder(task.profile.gpu_acceleration) {
+  let playback = load_recording_playback(&task.source_path)
+    .ok_or_else(|| VideoExportError::new(VideoExportStage::Parse, "recording JSON is invalid"))?;
+  let audio = playback.metadata().audio.as_ref();
+  if let Some(audio) = audio {
+    if !audio.path.is_file() {
+      return Err(VideoExportError::new(
+        VideoExportStage::Audio,
+        "recording audio sidecar is missing",
+      ));
+    }
+    let encoders =
+      resolve_ffmpeg_encoders(task.profile.gpu_acceleration, true).ok_or_else(|| {
+        VideoExportError::new(
+          VideoExportStage::Audio,
+          "FFmpeg with H.264 and AAC encoding support is required",
+        )
+      })?;
+    let mut last_error = None;
+    for encoder in encoders {
+      match export_recording_ffmpeg(
+        task_id,
+        task,
+        temporary_path,
+        event_tx,
+        encoder,
+        cancellation,
+      ) {
+        Ok(()) => return Ok(()),
+        Err(error) => {
+          last_error = Some(VideoExportError::new(
+            VideoExportStage::Audio,
+            error.to_string(),
+          ));
+          cleanup_temporary_file(temporary_path);
+        }
+      }
+    }
+    return Err(last_error.unwrap_or_else(|| {
+      VideoExportError::new(VideoExportStage::Audio, "FFmpeg audio export failed")
+    }));
+  }
+  if let Some(encoder) = resolve_ffmpeg_encoders(task.profile.gpu_acceleration, false)
+    .and_then(|encoders| encoders.into_iter().next())
+  {
     match export_recording_ffmpeg(
       task_id,
       task,
@@ -512,6 +557,8 @@ fn export_recording_ffmpeg(
   let bitrate_text = bitrate.to_string();
   let keyframe_interval =
     (u32::from(frame_rate) * u32::from(task.profile.keyframe_interval_seconds)).to_string();
+  let audio = metadata.audio.as_ref();
+  let duration_seconds = format!("{:.6}", metadata.duration_us as f64 / 1_000_000.0);
 
   let mut command = Command::new("ffmpeg");
   command.args([
@@ -530,7 +577,17 @@ fn export_recording_ffmpeg(
     &frame_rate_text,
     "-i",
     "pipe:0",
-    "-an",
+  ]);
+  if let Some(audio) = audio {
+    command.arg("-i").arg(&audio.path);
+  }
+  command.args(["-map", "0:v:0"]);
+  if audio.is_some() {
+    command.args(["-map", "1:a:0"]);
+  } else {
+    command.arg("-an");
+  }
+  command.args([
     "-c:v",
     encoder,
     "-b:v",
@@ -539,9 +596,20 @@ fn export_recording_ffmpeg(
     &keyframe_interval,
     "-pix_fmt",
     "yuv420p",
-    "-f",
-    "mp4",
   ]);
+  if audio.is_some() {
+    command.args([
+      "-c:a",
+      "aac",
+      "-b:a",
+      "192k",
+      "-af",
+      "apad",
+      "-t",
+      &duration_seconds,
+    ]);
+  }
+  command.args(["-f", "mp4"]);
   command
     .arg(temporary_path)
     .stdin(Stdio::piped())
@@ -626,10 +694,10 @@ fn export_recording_ffmpeg(
   Ok(())
 }
 
-fn resolve_ffmpeg_encoder(mode: RecordingGpuAcceleration) -> Option<&'static str> {
-  if mode == RecordingGpuAcceleration::Off {
-    return None;
-  }
+fn resolve_ffmpeg_encoders(
+  mode: RecordingGpuAcceleration,
+  require_audio: bool,
+) -> Option<Vec<&'static str>> {
   let mut command = Command::new("ffmpeg");
   command.args(["-hide_banner", "-encoders"]);
   command.stdin(Stdio::null()).stderr(Stdio::null());
@@ -639,6 +707,9 @@ fn resolve_ffmpeg_encoder(mode: RecordingGpuAcceleration) -> Option<&'static str
     .ok()
     .filter(|output| output.status.success())?;
   let encoders = String::from_utf8_lossy(&output.stdout);
+  if require_audio && !encoders.lines().any(|line| line.contains(" aac ")) {
+    return None;
+  }
   let requested: &[&str] = match mode {
     RecordingGpuAcceleration::Off => &[],
     RecordingGpuAcceleration::Auto => auto_encoder_order(),
@@ -647,10 +718,15 @@ fn resolve_ffmpeg_encoder(mode: RecordingGpuAcceleration) -> Option<&'static str
     RecordingGpuAcceleration::Intel => &["h264_qsv"],
     RecordingGpuAcceleration::Apple => &["h264_videotoolbox"],
   };
-  requested
+  let mut available = requested
     .iter()
     .copied()
-    .find(|encoder| encoders.contains(encoder))
+    .filter(|encoder| encoders.contains(encoder))
+    .collect::<Vec<_>>();
+  if require_audio && encoders.contains("libx264") && !available.contains(&"libx264") {
+    available.push("libx264");
+  }
+  (!available.is_empty()).then_some(available)
 }
 
 #[cfg(target_os = "macos")]

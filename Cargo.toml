@@ -33,6 +33,8 @@ chrono = { version = "0.4.45", default-features = true, features = ["clock"] }
 rand = "0.10.2"
 rand_chacha = "0.10"
 reqwest = { version = "0.13.4", default-features = false, features = ["blocking", "json", "rustls", "gzip", "brotli", "deflate", "zstd"] }
+rodio = { version = "0.22.2", default-features = false, features = ["playback", "flac", "mp3", "mp4", "vorbis", "wav"] }
+hound = "3.5"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
 mp4 = "0.14.0"
 openh264 = "0.9.7"

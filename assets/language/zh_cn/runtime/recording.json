@@ -1,5 +1,6 @@
 {
   "recording.mode.export.loading": "视频正在导出",
   "recording.mode.export.success": "视频已导出",
-  "recording.mode.export.failed": "视频导出失败"
+  "recording.mode.export.failed": "视频导出失败",
+  "recording.mode.export.audio_failed": "音频导出失败，需要支持 H.264/AAC 的 FFmpeg"
 }

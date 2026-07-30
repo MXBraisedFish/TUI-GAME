@@ -5,6 +5,7 @@ use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::host_engine::services::input::InputActionEvent;
+use crate::host_engine::services::{AudioObjectPool, AudioPoolId};
 use interactives::hit_area::{HitAreaEvent, HitAreaId, HitAreaObjects};
 use interactives::hyperlink::{HyperlinkEvent, HyperlinkId, HyperlinkObjects};
 use interactives::text_input::{TextInputEvent, TextInputObjects};
@@ -20,6 +21,7 @@ static NEXT_POOL_ID: AtomicU64 = AtomicU64::new(1);
 /// UI 对象池，存储所有 UI 组件的共享状态
 pub struct UiObjectPool {
   id: u64,
+  audio: AudioObjectPool,
   render_order: u64,
   pub(crate) events: VecDeque<UiComponentEvent>,
   pub(crate) surfaces: Vec<SurfaceId>,
@@ -101,8 +103,10 @@ impl UiComponentEvent {
 
 impl UiObjectPool {
   pub fn new() -> Self {
+    let id = NEXT_POOL_ID.fetch_add(1, Ordering::Relaxed);
     Self {
-      id: NEXT_POOL_ID.fetch_add(1, Ordering::Relaxed),
+      id,
+      audio: AudioObjectPool::new(AudioPoolId(id)),
       render_order: 0,
       events: VecDeque::new(),
       surfaces: Vec::new(),
@@ -119,6 +123,14 @@ impl UiObjectPool {
 
   pub(crate) fn id(&self) -> u64 {
     self.id
+  }
+
+  pub fn audio(&self) -> &AudioObjectPool {
+    &self.audio
+  }
+
+  pub fn audio_mut(&mut self) -> &mut AudioObjectPool {
+    &mut self.audio
   }
 
   pub(crate) fn next_render_order(&mut self) -> u64 {

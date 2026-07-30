@@ -459,6 +459,24 @@ impl PackageService {
     Ok(canonical_entry)
   }
 
+  /// Resolve a package audio asset without permitting access outside its assets directory.
+  pub fn resolve_audio_asset(
+    &self,
+    package: &PackageInfo,
+    relative: &Path,
+  ) -> Result<
+    crate::host_engine::services::ResolvedAudioFile,
+    crate::host_engine::services::AudioError,
+  > {
+    resolve_package_file(&package.path, Path::new("assets"), relative)
+      .map(crate::host_engine::services::ResolvedAudioFile::new)
+      .ok_or_else(|| {
+        crate::host_engine::services::AudioError::sanitized(
+          crate::host_engine::services::AudioErrorCode::InvalidPath,
+        )
+      })
+  }
+
   pub fn mod_games(&self) -> Vec<PackageListEntry> {
     self
       .games()

@@ -5,7 +5,7 @@ use serde_json::Value as JsonValue;
 use crate::host_engine::services::{PackageSource, Size};
 
 use super::{
-  LuaEventDelivery, LuaExecutionStats, LuaSession, LuaSessionError, LuaSessionKind,
+  LuaEventDelivery, LuaExecutionStats, LuaObjectPool, LuaSession, LuaSessionError, LuaSessionKind,
   LuaSessionState, LuaSessionToken,
 };
 
@@ -134,6 +134,14 @@ impl GameService {
 
   pub fn package_source(&self) -> Option<&PackageSource> {
     self.package_source.as_ref()
+  }
+
+  pub fn objects(&self) -> Option<&LuaObjectPool> {
+    self.session.as_ref().and_then(LuaSession::objects)
+  }
+
+  pub fn objects_mut(&mut self) -> Option<&mut LuaObjectPool> {
+    self.session.as_mut().and_then(LuaSession::objects_mut)
   }
 
   pub fn target_fps(&self) -> Option<u32> {
@@ -273,6 +281,7 @@ mod tests {
   #[test]
   fn each_started_session_receives_a_new_generation() {
     let mut service = GameService::new();
+    assert!(service.objects().is_none());
     service.start(
       test_session(),
       PackageSource::Mod,
@@ -283,8 +292,10 @@ mod tests {
       },
     );
     let first = service.session_token().unwrap();
+    assert!(service.objects().is_some());
     service.stop(false);
     assert!(service.session_token().is_none());
+    assert!(service.objects().is_none());
 
     service.start(
       test_session(),
