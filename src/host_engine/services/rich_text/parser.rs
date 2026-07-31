@@ -434,4 +434,26 @@ mod tests {
       "ABC"
     );
   }
+
+  #[test]
+  fn semantic_color_aliases_apply_to_foreground_and_background() {
+    let rt = parse("f%<fg:gray>A<fg:bright_gray>B<fg:white><bg:grey>C", None);
+
+    assert_eq!(
+      rt.segments[0].style.foreground,
+      Some(TextColor::Terminal(TerminalColor::BrightBlack))
+    );
+    assert_eq!(
+      rt.segments[1].style.foreground,
+      Some(TextColor::Terminal(TerminalColor::White))
+    );
+    assert_eq!(
+      rt.segments[2].style.foreground,
+      Some(TextColor::Terminal(TerminalColor::BrightWhite))
+    );
+    assert_eq!(
+      rt.segments[2].style.background,
+      Some(TextColor::Terminal(TerminalColor::BrightBlack))
+    );
+  }
 }

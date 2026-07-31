@@ -28,16 +28,16 @@ fn parse_terminal_color(value: &str) -> Option<TerminalColor> {
     "blue" => Some(TerminalColor::Blue),
     "magenta" => Some(TerminalColor::Magenta),
     "cyan" => Some(TerminalColor::Cyan),
-    "white" => Some(TerminalColor::White),
 
-    "bright_black" => Some(TerminalColor::BrightBlack),
+    "bright_black" | "gray" | "grey" => Some(TerminalColor::BrightBlack),
+    "dark_white" | "bright_gray" | "bright_grey" => Some(TerminalColor::White),
     "bright_red" => Some(TerminalColor::BrightRed),
     "bright_green" => Some(TerminalColor::BrightGreen),
     "bright_yellow" => Some(TerminalColor::BrightYellow),
     "bright_blue" => Some(TerminalColor::BrightBlue),
     "bright_magenta" => Some(TerminalColor::BrightMagenta),
     "bright_cyan" => Some(TerminalColor::BrightCyan),
-    "bright_white" => Some(TerminalColor::BrightWhite),
+    "bright_white" | "white" => Some(TerminalColor::BrightWhite),
 
     _ => None,
   }
@@ -55,6 +55,38 @@ fn parse_hex_color(value: &str) -> Option<TextColor> {
   let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
 
   Some(TextColor::Rgb { r, g, b })
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn semantic_gray_aliases_map_to_terminal_palette() {
+    for name in ["bright_black", "gray", "grey"] {
+      assert_eq!(
+        parse_text_color(name),
+        Some(TextColor::Terminal(TerminalColor::BrightBlack))
+      );
+    }
+
+    for name in ["dark_white", "bright_gray", "bright_grey"] {
+      assert_eq!(
+        parse_text_color(name),
+        Some(TextColor::Terminal(TerminalColor::White))
+      );
+    }
+  }
+
+  #[test]
+  fn semantic_white_uses_bright_white_and_keeps_formal_alias() {
+    for name in ["white", "bright_white"] {
+      assert_eq!(
+        parse_text_color(name),
+        Some(TextColor::Terminal(TerminalColor::BrightWhite))
+      );
+    }
+  }
 }
 
 fn parse_rgb_color(value: &str) -> Option<TextColor> {

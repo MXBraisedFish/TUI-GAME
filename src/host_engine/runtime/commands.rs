@@ -518,6 +518,7 @@ pub(super) fn apply_recording_list_command(
       }
     }
     RecordingListCommand::ExportRecording { path } => {
+      services.ffmpeg.refresh_if_missing();
       let profile = services
         .storage
         .read_recording_profile_or_default(&mut services.log);
@@ -528,6 +529,7 @@ pub(super) fn apply_recording_list_command(
       if let Err(error) = services.video.submit_recording_export(
         &services.async_runtime,
         &services.storage,
+        &services.ffmpeg,
         path.clone(),
         fonts,
         profile,
@@ -585,6 +587,7 @@ fn show_delete_blocked_popup(services: &mut EngineServices, namespace: &str, key
     duration: Duration::from_secs(2),
     dismiss_on: Vec::new(),
     replaceable: true,
+    persistent: false,
   });
 }
 

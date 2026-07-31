@@ -20,6 +20,8 @@ pub struct PopupRequest {
   pub dismiss_on: Vec<PopupDismissEvent>,
   /// 当前弹窗是否允许被之后到来的弹窗替换。
   pub replaceable: bool,
+  /// 是否持续显示，直至调用方显式清理弹窗。
+  pub persistent: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -63,6 +65,9 @@ impl PopupService {
     let Some(active) = &mut self.active else {
       return;
     };
+    if active.request.persistent {
+      return;
+    }
     active.elapsed = active.elapsed.saturating_add(dt);
     if active.elapsed >= active.request.duration {
       self.active = None;
@@ -109,6 +114,7 @@ mod tests {
       duration: Duration::from_secs(2),
       dismiss_on: vec![PopupDismissEvent::RecordingControl],
       replaceable,
+      persistent: false,
     }
   }
 
@@ -129,5 +135,20 @@ mod tests {
     service.show(request("short", true));
     service.update(Duration::from_secs(2));
     assert!(service.view().is_none());
+  }
+
+  #[test]
+  fn persistent_popup_does_not_expire_or_accept_replacement() {
+    let mut service = PopupService::new();
+    let mut persistent = request("stopping", false);
+    persistent.persistent = true;
+    persistent.dismiss_on.clear();
+
+    assert!(service.show(persistent));
+    service.update(Duration::MAX);
+
+    assert_eq!(service.view().unwrap().text, "stopping");
+    assert!(!service.dismiss(PopupDismissEvent::RecordingControl));
+    assert!(!service.show(request("replacement", true)));
   }
 }

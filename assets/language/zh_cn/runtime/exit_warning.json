@@ -9,6 +9,7 @@
   "exit_warning.stop.tip.export.auto_exit": "{key:exit_warning.tip_export_auto_exit} 导出完成后自动退出",
   "exit_warning.stop.tip.export.back": "{key:exit_warning.tip_export_back} 返回",
   "exit_warning.stop.tip.export.exit": "{key:exit_warning.tip_export_exit} 立即退出",
+  "exit_warning.stop.tip.export.stopping": "正在关闭服务...",
 
   "exit_warning.title.exception": "异常退出",
   "exit_warning.exception.tip": "程序发生异常并即将退出。\n可查看日志了解详细信息。\n如需提交 Bug，请附上相关日志。",

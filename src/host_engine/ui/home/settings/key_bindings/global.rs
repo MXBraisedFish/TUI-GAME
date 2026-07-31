@@ -281,6 +281,7 @@ impl GlobalKeyBindingsUi {
         duration: Duration::from_secs(2),
         dismiss_on: Vec::new(),
         replaceable: true,
+        persistent: false,
       }))
     }
   }

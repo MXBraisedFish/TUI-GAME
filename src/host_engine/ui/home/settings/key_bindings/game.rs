@@ -742,6 +742,7 @@ impl GameKeyBindingsUi {
         duration: Duration::from_secs(2),
         dismiss_on: Vec::new(),
         replaceable: true,
+        persistent: false,
       }))
     } else {
       Some(GameKeyBindingsCommand::Back(self.profile.clone()))

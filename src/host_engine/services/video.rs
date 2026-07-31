@@ -20,15 +20,16 @@ use openh264::{
 
 use crate::host_engine::services::async_runtime::TaskCancellation;
 use crate::host_engine::services::{
-  AsyncRuntime, EngineEvent, EngineTask, RecordingExportQuality, RecordingGpuAcceleration,
-  RecordingProfile, ScreenshotRect, StorageService, TaskId, load_recording_playback,
-  screenshot::TerminalFrameRasterizer,
+  AsyncRuntime, EngineEvent, EngineTask, FfmpegInstallation, FfmpegService, RecordingExportQuality,
+  RecordingGpuAcceleration, RecordingProfile, ScreenshotRect, StorageService, TaskId,
+  load_recording_playback, screenshot::TerminalFrameRasterizer,
 };
 
 #[derive(Clone, Debug)]
 pub struct VideoExportTask {
   pub source_path: PathBuf,
   pub output_path: PathBuf,
+  pub ffmpeg: Option<FfmpegInstallation>,
   pub fonts: Vec<String>,
   pub profile: RecordingProfile,
 }
@@ -149,6 +150,7 @@ impl VideoService {
     &mut self,
     async_runtime: &AsyncRuntime,
     storage: &StorageService,
+    ffmpeg: &FfmpegService,
     source_path: PathBuf,
     fonts: Vec<String>,
     profile: RecordingProfile,
@@ -170,6 +172,7 @@ impl VideoService {
       let task_id = async_runtime.submit(EngineTask::Video(VideoExportTask {
         source_path: source_path.clone(),
         output_path: output_path.clone(),
+        ffmpeg: ffmpeg.installation().cloned(),
         fonts,
         profile,
       }));
@@ -345,50 +348,42 @@ fn export_recording(
         "recording audio sidecar is missing",
       ));
     }
-    let encoders =
-      resolve_ffmpeg_encoders(task.profile.gpu_acceleration, true).ok_or_else(|| {
-        VideoExportError::new(
-          VideoExportStage::Audio,
-          "FFmpeg with H.264 and AAC encoding support is required",
-        )
-      })?;
-    let mut last_error = None;
-    for encoder in encoders {
+    if let Some(ffmpeg) = task.ffmpeg.as_ref() {
+      for encoder in ffmpeg_encoders(task.profile.gpu_acceleration, true, ffmpeg) {
+        match export_recording_ffmpeg(
+          task_id,
+          task,
+          temporary_path,
+          event_tx,
+          ffmpeg.executable(),
+          encoder,
+          cancellation,
+        ) {
+          Ok(()) => return Ok(()),
+          Err(_) => {
+            cleanup_temporary_file(temporary_path);
+          }
+        }
+      }
+    }
+  }
+
+  if audio.is_none()
+    && let Some(ffmpeg) = task.ffmpeg.as_ref()
+  {
+    for encoder in ffmpeg_encoders(task.profile.gpu_acceleration, false, ffmpeg) {
       match export_recording_ffmpeg(
         task_id,
         task,
         temporary_path,
         event_tx,
+        ffmpeg.executable(),
         encoder,
         cancellation,
       ) {
         Ok(()) => return Ok(()),
-        Err(error) => {
-          last_error = Some(VideoExportError::new(
-            VideoExportStage::Audio,
-            error.to_string(),
-          ));
-          cleanup_temporary_file(temporary_path);
-        }
+        Err(_) => cleanup_temporary_file(temporary_path),
       }
-    }
-    return Err(last_error.unwrap_or_else(|| {
-      VideoExportError::new(VideoExportStage::Audio, "FFmpeg audio export failed")
-    }));
-  }
-  if let Some(encoder) = resolve_ffmpeg_encoders(task.profile.gpu_acceleration, false)
-    .and_then(|encoders| encoders.into_iter().next())
-  {
-    match export_recording_ffmpeg(
-      task_id,
-      task,
-      temporary_path,
-      event_tx,
-      encoder,
-      cancellation,
-    ) {
-      Ok(()) => return Ok(()),
-      Err(_) => cleanup_temporary_file(temporary_path),
     }
   }
   export_recording_openh264(task_id, task, temporary_path, event_tx, cancellation)
@@ -533,6 +528,7 @@ fn export_recording_ffmpeg(
   task: &VideoExportTask,
   temporary_path: &Path,
   event_tx: &Sender<EngineEvent>,
+  ffmpeg: &Path,
   encoder: &'static str,
   cancellation: &TaskCancellation,
 ) -> Result<(), VideoExportError> {
@@ -560,7 +556,7 @@ fn export_recording_ffmpeg(
   let audio = metadata.audio.as_ref();
   let duration_seconds = format!("{:.6}", metadata.duration_us as f64 / 1_000_000.0);
 
-  let mut command = Command::new("ffmpeg");
+  let mut command = Command::new(ffmpeg);
   command.args([
     "-hide_banner",
     "-loglevel",
@@ -614,7 +610,7 @@ fn export_recording_ffmpeg(
     .arg(temporary_path)
     .stdin(Stdio::piped())
     .stdout(Stdio::null())
-    .stderr(Stdio::null());
+    .stderr(Stdio::piped());
   suppress_command_window(&mut command);
   let mut child = command
     .spawn()
@@ -681,34 +677,36 @@ fn export_recording_ffmpeg(
     );
   }
   drop(stdin);
-  let status = child
-    .wait()
+  let output = child
+    .wait_with_output()
     .map_err(|error| VideoExportError::new(VideoExportStage::Encode, error.to_string()))?;
-  if !status.success() {
+  if !output.status.success() {
+    let detail = String::from_utf8_lossy(&output.stderr);
+    let detail = detail.trim();
+    let detail = if detail.is_empty() {
+      "no FFmpeg error detail was reported"
+    } else {
+      detail
+    };
     return Err(VideoExportError::new(
       VideoExportStage::Encode,
-      format!("FFmpeg {encoder} encoder failed with {status}"),
+      format!(
+        "FFmpeg {encoder} encoder failed with {}: {detail}",
+        output.status
+      ),
     ));
   }
   let _ = event_tx.send(EngineEvent::Video(VideoAsyncEvent::Finalizing { task_id }));
   Ok(())
 }
 
-fn resolve_ffmpeg_encoders(
+fn ffmpeg_encoders(
   mode: RecordingGpuAcceleration,
   require_audio: bool,
-) -> Option<Vec<&'static str>> {
-  let mut command = Command::new("ffmpeg");
-  command.args(["-hide_banner", "-encoders"]);
-  command.stdin(Stdio::null()).stderr(Stdio::null());
-  suppress_command_window(&mut command);
-  let output = command
-    .output()
-    .ok()
-    .filter(|output| output.status.success())?;
-  let encoders = String::from_utf8_lossy(&output.stdout);
-  if require_audio && !encoders.lines().any(|line| line.contains(" aac ")) {
-    return None;
+  ffmpeg: &FfmpegInstallation,
+) -> Vec<&'static str> {
+  if require_audio && !ffmpeg.supports_encoder("aac") {
+    return Vec::new();
   }
   let requested: &[&str] = match mode {
     RecordingGpuAcceleration::Off => &[],
@@ -721,12 +719,12 @@ fn resolve_ffmpeg_encoders(
   let mut available = requested
     .iter()
     .copied()
-    .filter(|encoder| encoders.contains(encoder))
+    .filter(|encoder| ffmpeg.supports_encoder(encoder))
     .collect::<Vec<_>>();
-  if require_audio && encoders.contains("libx264") && !available.contains(&"libx264") {
+  if require_audio && ffmpeg.supports_encoder("libx264") && !available.contains(&"libx264") {
     available.push("libx264");
   }
-  (!available.is_empty()).then_some(available)
+  available
 }
 
 #[cfg(target_os = "macos")]
@@ -1135,6 +1133,7 @@ mod tests {
     let task = VideoExportTask {
       source_path,
       output_path: directory.join("recording.mp4"),
+      ffmpeg: None,
       fonts: Vec::new(),
       profile: RecordingProfile {
         gpu_acceleration: RecordingGpuAcceleration::Off,
@@ -1197,6 +1196,134 @@ mod tests {
     fs::remove_dir_all(directory).unwrap();
   }
 
+  fn write_recording_with_audio(directory: &Path) -> PathBuf {
+    let source_path = directory.join("recording.json");
+    let audio_path = directory.join("recording.audio.wav");
+    let mut wav = hound::WavWriter::create(
+      &audio_path,
+      hound::WavSpec {
+        channels: 2,
+        sample_rate: 48_000,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+      },
+    )
+    .unwrap();
+    for _ in 0..4_800 {
+      wav.write_sample(0i16).unwrap();
+      wav.write_sample(0i16).unwrap();
+    }
+    wav.finalize().unwrap();
+    let document = serde_json::json!({
+      "schema_version": 3,
+      "started_at": "2026-07-21T20:20:32.895Z",
+      "finished_at": "2026-07-21T20:20:32.995Z",
+      "frame_rate": 30,
+      "canvas": { "max_width": 2, "max_height": 1 },
+      "duration_us": { "active": 100_000, "paused": 0, "wall": 100_000 },
+      "audio": {
+        "file": "recording.audio.wav",
+        "codec": "pcm_s16le",
+        "sample_rate": 48_000,
+        "channels": 2,
+        "duration_us": 100_000
+      },
+      "palette": [
+        { "text": "x", "foreground": { "type": "rgb", "value": [95, 215, 105] } }
+      ],
+      "initial": { "width": 2, "height": 1, "rows": [[[2, 0]]] },
+      "events": []
+    });
+    fs::write(&source_path, serde_json::to_vec(&document).unwrap()).unwrap();
+    source_path
+  }
+
+  #[test]
+  fn recording_audio_is_omitted_when_ffmpeg_is_unavailable() {
+    let directory = test_directory("audio-fallback");
+    let source_path = write_recording_with_audio(&directory);
+    let output_path = directory.join("recording.mp4.tmp");
+    let task = VideoExportTask {
+      source_path,
+      output_path: directory.join("recording.mp4"),
+      ffmpeg: None,
+      fonts: Vec::new(),
+      profile: RecordingProfile {
+        gpu_acceleration: RecordingGpuAcceleration::Auto,
+        ..Default::default()
+      },
+    };
+    let (event_tx, _event_rx) = crossbeam_channel::unbounded();
+
+    export_recording(
+      TaskId(2),
+      &task,
+      &output_path,
+      &event_tx,
+      &TaskCancellation::new(TaskId(2)),
+    )
+    .unwrap();
+
+    let size = fs::metadata(&output_path).unwrap().len();
+    let reader =
+      mp4::Mp4Reader::read_header(BufReader::new(File::open(&output_path).unwrap()), size).unwrap();
+    assert_eq!(reader.tracks().len(), 1);
+    assert_eq!(
+      reader.tracks().get(&1).unwrap().media_type().unwrap(),
+      mp4::MediaType::H264
+    );
+    drop(reader);
+    fs::remove_dir_all(directory).unwrap();
+  }
+
+  #[test]
+  #[ignore = "requires an external FFmpeg sidecar with H.264/AAC support"]
+  fn recording_with_audio_exports_as_h264_aac_mp4() {
+    let directory = test_directory("audio-encode");
+    let source_path = write_recording_with_audio(&directory);
+    let output_path = directory.join("recording.mp4.tmp");
+    let ffmpeg = FfmpegService::new(&directory, directory.join("ffmpeg"));
+    let task = VideoExportTask {
+      source_path,
+      output_path: directory.join("recording.mp4"),
+      ffmpeg: ffmpeg.installation().cloned(),
+      fonts: Vec::new(),
+      profile: RecordingProfile {
+        gpu_acceleration: RecordingGpuAcceleration::Off,
+        ..Default::default()
+      },
+    };
+    let (event_tx, _event_rx) = crossbeam_channel::unbounded();
+
+    export_recording(
+      TaskId(2),
+      &task,
+      &output_path,
+      &event_tx,
+      &TaskCancellation::new(TaskId(2)),
+    )
+    .unwrap();
+
+    let size = fs::metadata(&output_path).unwrap().len();
+    let reader =
+      mp4::Mp4Reader::read_header(BufReader::new(File::open(&output_path).unwrap()), size).unwrap();
+    assert_eq!(reader.tracks().len(), 2);
+    assert!(
+      reader
+        .tracks()
+        .values()
+        .any(|track| track.media_type().unwrap() == mp4::MediaType::H264)
+    );
+    assert!(
+      reader
+        .tracks()
+        .values()
+        .any(|track| track.media_type().unwrap() == mp4::MediaType::AAC)
+    );
+    drop(reader);
+    fs::remove_dir_all(directory).unwrap();
+  }
+
   #[test]
   fn failed_export_removes_its_temporary_file() {
     let directory = test_directory("failure-cleanup");
@@ -1207,6 +1334,7 @@ mod tests {
     let task = VideoExportTask {
       source_path,
       output_path: output_path.clone(),
+      ffmpeg: None,
       fonts: Vec::new(),
       profile: RecordingProfile {
         gpu_acceleration: RecordingGpuAcceleration::Off,

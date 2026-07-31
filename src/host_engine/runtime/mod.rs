@@ -802,6 +802,9 @@ fn update_exit_preparation(
     Some(RuntimeClosingState::WaitingForExports) if !exports_active => {
       finish_runtime_exit(world);
     }
+    Some(RuntimeClosingState::Stopping { .. }) => {
+      finish_runtime_exit(world);
+    }
     Some(RuntimeClosingState::Exception { seconds_left }) => {
       *exception_elapsed = exception_elapsed.saturating_add(delta);
       let elapsed_seconds = exception_elapsed.as_secs().min(u8::MAX as u64) as u8;
@@ -865,6 +868,14 @@ fn apply_exit_warning_command(
       services.input.clear();
     }
     ExitWarningCommand::ExitNow => {
+      let waiting_for_exports = matches!(
+        world.state.closing_state(),
+        Some(RuntimeClosingState::WaitingForExports)
+      );
+      let show_stopping_popup = matches!(
+        world.state.closing_state(),
+        Some(RuntimeClosingState::ExportWarning | RuntimeClosingState::WaitingForExports)
+      );
       services
         .async_runtime
         .cancel_tasks(pending_images.keys().copied());
@@ -872,7 +883,31 @@ fn apply_exit_warning_command(
         .async_runtime
         .cancel_tasks(services.video.active_task_ids());
       pending_images.clear();
-      finish_runtime_exit(world);
+      if show_stopping_popup {
+        services.popup.clear();
+        services.popup.show(PopupRequest {
+          text: services
+            .i18n
+            .get_runtime_text("exit_warning", "exit_warning.stop.tip.export.stopping"),
+          color: TextColor::Rgb {
+            r: 255,
+            g: 76,
+            b: 76,
+          },
+          duration: Duration::ZERO,
+          dismiss_on: Vec::new(),
+          replaceable: false,
+          persistent: true,
+        });
+        world
+          .state
+          .set_closing_state(RuntimeClosingState::Stopping {
+            waiting_for_exports,
+          });
+        services.input.clear();
+      } else {
+        finish_runtime_exit(world);
+      }
     }
   }
 }
@@ -887,6 +922,13 @@ fn exit_warning_mode(world: &RuntimeWorld) -> Option<ExitWarningMode> {
     RuntimeClosingState::Requested => None,
     RuntimeClosingState::ExportWarning => Some(ExitWarningMode::ExportWarning),
     RuntimeClosingState::WaitingForExports => Some(ExitWarningMode::WaitingForExports),
+    RuntimeClosingState::Stopping {
+      waiting_for_exports,
+    } => Some(if waiting_for_exports {
+      ExitWarningMode::WaitingForExports
+    } else {
+      ExitWarningMode::ExportWarning
+    }),
     RuntimeClosingState::Exception { seconds_left } => {
       Some(ExitWarningMode::Exception { seconds_left })
     }
@@ -1137,6 +1179,7 @@ fn show_popup(services: &mut EngineServices, kind: ScreenshotModeToastKind) {
     duration,
     dismiss_on,
     replaceable: true,
+    persistent: false,
   };
   services.popup.show(request);
 }
@@ -2352,6 +2395,7 @@ fn show_recording_popup(services: &mut EngineServices, kind: RecordingPopupKind)
     duration: Duration::from_secs(2),
     dismiss_on: vec![PopupDismissEvent::RecordingControl],
     replaceable: true,
+    persistent: false,
   });
 }
 

@@ -9,6 +9,7 @@
   "exit_warning.stop.tip.export.auto_exit": "{key:exit_warning.tip_export_auto_exit} Exit When Exports Complete",
   "exit_warning.stop.tip.export.back": "{key:exit_warning.tip_export_back} Back",
   "exit_warning.stop.tip.export.exit": "{key:exit_warning.tip_export_exit} Exit Now",
+  "exit_warning.stop.tip.export.stopping": "Stopping service...",
   "exit_warning.title.exception": "Unexpected Exit",
   "exit_warning.exception.tip": "The application encountered an unexpected error and needs to close.\nCheck the log for more details.\nIf you report this issue, please include the relevant log files.",
   "exit_warning.exception.countdown": "Exiting in {value:second} seconds",

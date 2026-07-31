@@ -8,7 +8,13 @@ pub enum RuntimeClosingState {
   Requested,
   ExportWarning,
   WaitingForExports,
-  Exception { seconds_left: u8 },
+  /// 强制退出已确认，保留一帧用于呈现服务停止提示。
+  Stopping {
+    waiting_for_exports: bool,
+  },
+  Exception {
+    seconds_left: u8,
+  },
 }
 
 /// 运行时状态，包含主宿主和覆盖层栈

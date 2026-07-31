@@ -98,15 +98,11 @@ mod tests {
         .iter()
         .any(|entry| entry.action == "recording_list.volume_down" && entry.keys == [["-"]])
     );
-    assert!(actions.iter().any(|entry| {
-      entry.action == "recording_list.volume_up"
-        && entry.keys
-          == vec![
-            vec!["left_shift", "="],
-            vec!["right_shift", "="],
-            vec!["k+"],
-          ]
-    }));
+    assert!(
+      actions
+        .iter()
+        .any(|entry| entry.action == "recording_list.volume_up" && entry.keys == [["="]])
+    );
     let delete = actions
       .iter()
       .position(|entry| entry.action == "recording_list.del")

@@ -6,6 +6,7 @@ mod clipboard;
 mod code_highlight;
 mod event;
 pub(crate) mod export;
+mod ffmpeg;
 mod file;
 mod host_object;
 mod i18n;
@@ -64,6 +65,7 @@ pub use code_highlight::{
 };
 pub use event::EngineEventQueue;
 pub use export::{ExportAsyncEvent, ExportService, ExportTask};
+pub use ffmpeg::{FfmpegInstallation, FfmpegService};
 pub use file::FileService;
 pub use host_object::{HostArea, HostAreaId, HostAreaKind, HostObjectPool};
 pub use i18n::{I18nService, LanguageRegistryEntry};
@@ -158,6 +160,7 @@ pub struct EngineServices {
   pub character_effect: CharacterEffectService,
   pub screenshot: ScreenshotService,
   pub recording: RecordingService,
+  pub ffmpeg: FfmpegService,
   pub video: VideoService,
   pub package: PackageService,
   pub popup: PopupService,
@@ -201,6 +204,10 @@ impl EngineServices {
     let storage = StorageService::new(&mut log);
     let _ = log.set_output_path(storage.tui_log_path());
     let image_cache_dir = storage.path("data/cache/images");
+    let ffmpeg = FfmpegService::new(
+      storage.root_dir().to_path_buf(),
+      storage.cache_dir_path().join("ffmpeg"),
+    );
     let async_runtime = AsyncRuntime::new();
     let audio = AudioService::new(async_runtime.event_sender());
 
@@ -215,6 +222,7 @@ impl EngineServices {
       character_effect: CharacterEffectService::new(),
       screenshot: ScreenshotService::new(),
       recording: RecordingService::new(),
+      ffmpeg,
       video: VideoService::new(),
       terminal: TerminalService::new(),
       clipboard: ClipboardService::new(),
