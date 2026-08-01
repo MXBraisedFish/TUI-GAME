@@ -1009,7 +1009,9 @@ fn apply_video_events(events: &[VideoAsyncEvent], services: &mut EngineServices)
       } else {
         VideoExportToastState::Failed
       }),
-      VideoAsyncEvent::Progress { .. } | VideoAsyncEvent::Finalizing { .. } => None,
+      VideoAsyncEvent::Progress { .. }
+      | VideoAsyncEvent::Finalizing { .. }
+      | VideoAsyncEvent::Encoder { .. } => None,
     };
     if let Some(state) = state {
       show_popup(services, ScreenshotModeToastKind::VideoExport(state));

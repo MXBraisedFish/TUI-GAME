@@ -657,8 +657,16 @@ fn even_dimension(value: u32) -> u32 {
   value.saturating_add(value % 2)
 }
 
+struct CachedGlyph {
+  metrics: fontdue::Metrics,
+  bitmap: Vec<u8>,
+}
+
 struct FontSet {
   fonts: Vec<fontdue::Font>,
+  font_for_char: std::cell::RefCell<std::collections::HashMap<char, Option<usize>>>,
+  glyph_cache:
+    std::cell::RefCell<std::collections::HashMap<(usize, u32, u32), std::rc::Rc<CachedGlyph>>>,
 }
 
 impl FontSet {
@@ -746,11 +754,36 @@ impl FontSet {
       );
     }
 
-    Ok(Self { fonts })
+    Ok(Self {
+      fonts,
+      font_for_char: std::cell::RefCell::new(std::collections::HashMap::new()),
+      glyph_cache: std::cell::RefCell::new(std::collections::HashMap::new()),
+    })
   }
 
-  fn font_for(&self, character: char) -> Option<&fontdue::Font> {
-    self.fonts.iter().find(|font| font.has_glyph(character))
+  fn glyph(&self, character: char, font_size: f32) -> Option<std::rc::Rc<CachedGlyph>> {
+    let font_index = self.font_index(character)?;
+    let key = (font_index, character as u32, font_size.to_bits());
+    if let Some(cached) = self.glyph_cache.borrow().get(&key) {
+      return Some(std::rc::Rc::clone(cached));
+    }
+    let (metrics, bitmap) = self.fonts[font_index].rasterize(character, font_size);
+    let cached = std::rc::Rc::new(CachedGlyph { metrics, bitmap });
+    self
+      .glyph_cache
+      .borrow_mut()
+      .insert(key, std::rc::Rc::clone(&cached));
+    Some(cached)
+  }
+
+  fn font_index(&self, character: char) -> Option<usize> {
+    let mut cache = self.font_for_char.borrow_mut();
+    if let Some(index) = cache.get(&character) {
+      return *index;
+    }
+    let index = self.fonts.iter().position(|font| font.has_glyph(character));
+    cache.insert(character, index);
+    index
   }
 }
 
@@ -867,15 +900,16 @@ fn draw_grapheme(
       break;
     }
 
-    let Some(font) = fonts.font_for(character) else {
-      continue;
-    };
     let font_size = if is_probably_emoji(character) {
       metrics.font_size * 0.86
     } else {
       metrics.font_size
     };
-    let (glyph_metrics, bitmap) = font.rasterize(character, font_size);
+    let Some(glyph) = fonts.glyph(character, font_size) else {
+      continue;
+    };
+    let glyph_metrics = &glyph.metrics;
+    let bitmap = &glyph.bitmap;
     let allocated_width = if char_width == 0 {
       span_width
     } else {
@@ -895,7 +929,7 @@ fn draw_grapheme(
     let top = baseline - glyph_metrics.height as i32 - glyph_metrics.ymin;
     draw_glyph_bitmap(
       image,
-      &bitmap,
+      bitmap,
       glyph_metrics.width,
       glyph_metrics.height,
       destination_x,
@@ -909,7 +943,7 @@ fn draw_grapheme(
     if style.bold {
       draw_glyph_bitmap(
         image,
-        &bitmap,
+        bitmap,
         glyph_metrics.width,
         glyph_metrics.height,
         destination_x + 1,
@@ -1185,9 +1219,21 @@ fn fill_rect(
   height: u32,
   color: (u8, u8, u8),
 ) {
-  for yy in y..y.saturating_add(height).min(image.height()) {
-    for xx in x..x.saturating_add(width).min(image.width()) {
-      image.put_pixel(xx, yy, Rgba([color.0, color.1, color.2, 255]));
+  let image_width = image.width();
+  let image_height = image.height();
+  let right = x.saturating_add(width).min(image_width);
+  let bottom = y.saturating_add(height).min(image_height);
+  if right <= x || bottom <= y {
+    return;
+  }
+  let pixel = [color.0, color.1, color.2, 255u8];
+  let mut samples = image.as_flat_samples_mut();
+  let raw = samples.as_mut_slice::<u8>();
+  for yy in y..bottom {
+    let row_start = (yy * image_width + x) as usize;
+    let row_end = (yy * image_width + right) as usize;
+    for chunk in raw[row_start * 4..row_end * 4].chunks_exact_mut(4) {
+      chunk.copy_from_slice(&pixel);
     }
   }
 }

@@ -1673,16 +1673,18 @@ impl GameKeyBindingsUi {
       .map(|text| layout.get_text_width(text, Some(&params)))
       .max()
       .unwrap_or_default();
-    let width = content_w.saturating_add(8).min(pos.right.width);
-    let height = 9.min(pos.right.height);
-    let x = pos
-      .right
-      .x
-      .saturating_add(pos.right.width.saturating_sub(width) / 2);
-    let y = pos
-      .right
+    let page = Rect {
+      x: pos.left.x,
+      y: pos.left.y,
+      width: pos.left.width.saturating_add(pos.right.width),
+      height: pos.left.height.max(pos.right.height),
+    };
+    let width = content_w.saturating_add(8).min(page.width);
+    let height = 9.min(page.height);
+    let x = page.x.saturating_add(page.width.saturating_sub(width) / 2);
+    let y = page
       .y
-      .saturating_add(pos.right.height.saturating_sub(height) / 2);
+      .saturating_add(page.height.saturating_sub(height) / 2);
     render.draw_host_border_rect(
       canvas,
       x,

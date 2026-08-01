@@ -133,9 +133,15 @@ pub(super) fn drain_engine_events(
               output_path.display()
             ),
           ),
-          VideoAsyncEvent::Preparing { .. }
-          | VideoAsyncEvent::Progress { .. }
-          | VideoAsyncEvent::Finalizing { .. } => {}
+          VideoAsyncEvent::Preparing { task_id } => services.log.info(
+            LogSource::Storage,
+            format!("Video export task {task_id:?} started preparing"),
+          ),
+          VideoAsyncEvent::Encoder { task_id, encoder } => services.log.info(
+            LogSource::Storage,
+            format!("Video export task {task_id:?} using encoder: {encoder}"),
+          ),
+          VideoAsyncEvent::Progress { .. } | VideoAsyncEvent::Finalizing { .. } => {}
         }
         video_events.push(event);
       }

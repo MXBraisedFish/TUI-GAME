@@ -21,8 +21,8 @@ use openh264::{
 use crate::host_engine::services::async_runtime::TaskCancellation;
 use crate::host_engine::services::{
   AsyncRuntime, EngineEvent, EngineTask, FfmpegInstallation, FfmpegService, RecordingExportQuality,
-  RecordingGpuAcceleration, RecordingProfile, ScreenshotRect, StorageService, TaskId,
-  load_recording_playback, screenshot::TerminalFrameRasterizer,
+  RecordingGpuAcceleration, RecordingPlayback, RecordingProfile, ScreenshotRect, StorageService,
+  TaskId, load_recording_playback, screenshot::TerminalFrameRasterizer,
 };
 
 #[derive(Clone, Debug)]
@@ -54,6 +54,10 @@ pub enum VideoExportStatus {
 pub enum VideoAsyncEvent {
   Preparing {
     task_id: TaskId,
+  },
+  Encoder {
+    task_id: TaskId,
+    encoder: String,
   },
   Progress {
     task_id: TaskId,
@@ -220,6 +224,7 @@ impl VideoService {
           .active_exports
           .insert(*task_id, VideoExportStatus::Finalizing);
       }
+      VideoAsyncEvent::Encoder { .. } => {}
       VideoAsyncEvent::Saved { task_id, .. } => {
         self.active_exports.remove(task_id);
         self.output_paths.remove(task_id);
@@ -340,38 +345,35 @@ fn export_recording(
 ) -> Result<(), VideoExportError> {
   let playback = load_recording_playback(&task.source_path)
     .ok_or_else(|| VideoExportError::new(VideoExportStage::Parse, "recording JSON is invalid"))?;
-  let audio = playback.metadata().audio.as_ref();
-  if let Some(audio) = audio {
-    if !audio.path.is_file() {
-      return Err(VideoExportError::new(
-        VideoExportStage::Audio,
-        "recording audio sidecar is missing",
-      ));
-    }
-    if let Some(ffmpeg) = task.ffmpeg.as_ref() {
-      for encoder in ffmpeg_encoders(task.profile.gpu_acceleration, true, ffmpeg) {
-        match export_recording_ffmpeg(
-          task_id,
-          task,
-          temporary_path,
-          event_tx,
-          ffmpeg.executable(),
-          encoder,
-          cancellation,
-        ) {
-          Ok(()) => return Ok(()),
-          Err(_) => {
-            cleanup_temporary_file(temporary_path);
-          }
-        }
-      }
-    }
-  }
-
-  if audio.is_none()
-    && let Some(ffmpeg) = task.ffmpeg.as_ref()
+  let metadata = playback.metadata();
+  let audio = metadata.audio.as_ref();
+  if let Some(audio) = audio
+    && !audio.path.is_file()
   {
-    for encoder in ffmpeg_encoders(task.profile.gpu_acceleration, false, ffmpeg) {
+    return Err(VideoExportError::new(
+      VideoExportStage::Audio,
+      "recording audio sidecar is missing",
+    ));
+  }
+  let rasterizer = TerminalFrameRasterizer::load(&task.fonts)
+    .map_err(|error| VideoExportError::new(VideoExportStage::Font, error))?;
+  let (width, height) = TerminalFrameRasterizer::dimensions(
+    metadata.max_width,
+    metadata.max_height,
+    task.profile.pixel_scale,
+  );
+
+  if let Some(ffmpeg) = task.ffmpeg.as_ref() {
+    for encoder in usable_encoders(
+      ffmpeg,
+      ffmpeg_encoders(task.profile.gpu_acceleration, audio.is_some(), ffmpeg),
+      width,
+      height,
+    ) {
+      let _ = event_tx.send(EngineEvent::Video(VideoAsyncEvent::Encoder {
+        task_id,
+        encoder: encoder.to_string(),
+      }));
       match export_recording_ffmpeg(
         task_id,
         task,
@@ -379,6 +381,8 @@ fn export_recording(
         event_tx,
         ffmpeg.executable(),
         encoder,
+        &playback,
+        &rasterizer,
         cancellation,
       ) {
         Ok(()) => return Ok(()),
@@ -386,7 +390,19 @@ fn export_recording(
       }
     }
   }
-  export_recording_openh264(task_id, task, temporary_path, event_tx, cancellation)
+  let _ = event_tx.send(EngineEvent::Video(VideoAsyncEvent::Encoder {
+    task_id,
+    encoder: "openh264".to_string(),
+  }));
+  export_recording_openh264(
+    task_id,
+    task,
+    temporary_path,
+    event_tx,
+    &playback,
+    &rasterizer,
+    cancellation,
+  )
 }
 
 fn export_recording_openh264(
@@ -394,18 +410,16 @@ fn export_recording_openh264(
   task: &VideoExportTask,
   temporary_path: &Path,
   event_tx: &Sender<EngineEvent>,
+  playback: &RecordingPlayback,
+  rasterizer: &TerminalFrameRasterizer,
   cancellation: &TaskCancellation,
 ) -> Result<(), VideoExportError> {
-  let playback = load_recording_playback(&task.source_path)
-    .ok_or_else(|| VideoExportError::new(VideoExportStage::Parse, "recording JSON is invalid"))?;
   let metadata = playback.metadata();
   let frame_rate = task
     .profile
     .export_frame_rate
     .resolve(metadata.frame_rate, task.profile.legacy_frame_rate);
   let total_frames = sampled_frame_count(metadata.duration_us, frame_rate);
-  let rasterizer = TerminalFrameRasterizer::load(&task.fonts)
-    .map_err(|error| VideoExportError::new(VideoExportStage::Font, error))?;
   let (pixel_width, pixel_height) = TerminalFrameRasterizer::dimensions(
     metadata.max_width,
     metadata.max_height,
@@ -523,6 +537,7 @@ fn export_recording_openh264(
   Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn export_recording_ffmpeg(
   task_id: TaskId,
   task: &VideoExportTask,
@@ -530,18 +545,16 @@ fn export_recording_ffmpeg(
   event_tx: &Sender<EngineEvent>,
   ffmpeg: &Path,
   encoder: &'static str,
+  playback: &RecordingPlayback,
+  rasterizer: &TerminalFrameRasterizer,
   cancellation: &TaskCancellation,
 ) -> Result<(), VideoExportError> {
-  let playback = load_recording_playback(&task.source_path)
-    .ok_or_else(|| VideoExportError::new(VideoExportStage::Parse, "recording JSON is invalid"))?;
   let metadata = playback.metadata();
   let frame_rate = task
     .profile
     .export_frame_rate
     .resolve(metadata.frame_rate, task.profile.legacy_frame_rate);
   let total_frames = sampled_frame_count(metadata.duration_us, frame_rate);
-  let rasterizer = TerminalFrameRasterizer::load(&task.fonts)
-    .map_err(|error| VideoExportError::new(VideoExportStage::Font, error))?;
   let (width, height) = TerminalFrameRasterizer::dimensions(
     metadata.max_width,
     metadata.max_height,
@@ -708,23 +721,94 @@ fn ffmpeg_encoders(
   if require_audio && !ffmpeg.supports_encoder("aac") {
     return Vec::new();
   }
-  let requested: &[&str] = match mode {
-    RecordingGpuAcceleration::Off => &[],
-    RecordingGpuAcceleration::Auto => auto_encoder_order(),
-    RecordingGpuAcceleration::Nvidia => &["h264_nvenc"],
-    RecordingGpuAcceleration::Amd => &["h264_amf"],
-    RecordingGpuAcceleration::Intel => &["h264_qsv"],
-    RecordingGpuAcceleration::Apple => &["h264_videotoolbox"],
+  let mut requested: Vec<&'static str> = match mode {
+    RecordingGpuAcceleration::Off => Vec::new(),
+    RecordingGpuAcceleration::Auto => auto_encoder_order().to_vec(),
+    RecordingGpuAcceleration::Nvidia => vec!["h264_nvenc"],
+    RecordingGpuAcceleration::Amd => vec!["h264_amf"],
+    RecordingGpuAcceleration::Intel => vec!["h264_qsv"],
+    RecordingGpuAcceleration::Apple => vec!["h264_videotoolbox"],
   };
-  let mut available = requested
-    .iter()
-    .copied()
-    .filter(|encoder| ffmpeg.supports_encoder(encoder))
-    .collect::<Vec<_>>();
-  if require_audio && ffmpeg.supports_encoder("libx264") && !available.contains(&"libx264") {
-    available.push("libx264");
+  if ffmpeg.supports_encoder("libx264") && !requested.contains(&"libx264") {
+    requested.push("libx264");
   }
-  available
+  requested
+    .into_iter()
+    .filter(|encoder| ffmpeg.supports_encoder(encoder))
+    .collect()
+}
+
+/// 用一帧黑屏真实启动一次 FFmpeg，过滤掉"列出来但打不开"的编码器。
+///
+/// 硬件编码器可能编译进 FFmpeg 但缺少驱动/设备，直接正式导出会让每次尝试
+/// 白白跑完整条流水线后才失败。这里先用最小输入探测一次，只保留可用的候选。
+fn usable_encoders(
+  ffmpeg: &FfmpegInstallation,
+  candidates: Vec<&'static str>,
+  width: u32,
+  height: u32,
+) -> Vec<&'static str> {
+  candidates
+    .into_iter()
+    .filter(|encoder| ffmpeg_encoder_works(ffmpeg.executable(), encoder, width, height))
+    .collect()
+}
+
+fn ffmpeg_encoder_works(ffmpeg: &Path, encoder: &str, width: u32, height: u32) -> bool {
+  let size = format!("{width}x{height}");
+  let mut command = Command::new(ffmpeg);
+  command.args([
+    "-hide_banner",
+    "-loglevel",
+    "error",
+    "-nostats",
+    "-y",
+    "-f",
+    "rawvideo",
+    "-pixel_format",
+    "rgb24",
+    "-video_size",
+    &size,
+    "-framerate",
+    "1",
+    "-i",
+    "pipe:0",
+    "-frames:v",
+    "1",
+    "-an",
+    "-c:v",
+    encoder,
+    "-pix_fmt",
+    "yuv420p",
+    "-f",
+    "null",
+    "-",
+  ]);
+  command
+    .stdin(Stdio::piped())
+    .stdout(Stdio::null())
+    .stderr(Stdio::null());
+  suppress_command_window(&mut command);
+  let mut child = match command.spawn() {
+    Ok(child) => child,
+    Err(_) => return false,
+  };
+  if let Some(mut stdin) = child.stdin.take() {
+    let frame = vec![0u8; width.saturating_mul(height).saturating_mul(3) as usize];
+    let _ = stdin.write_all(&frame);
+  }
+  child.wait().map(|status| status.success()).unwrap_or(false)
+}
+
+#[cfg(target_os = "windows")]
+fn auto_encoder_order() -> &'static [&'static str] {
+  &[
+    "h264_nvenc",
+    "h264_qsv",
+    "h264_amf",
+    "h264_mf",
+    "h264_videotoolbox",
+  ]
 }
 
 #[cfg(target_os = "macos")]
@@ -732,7 +816,7 @@ fn auto_encoder_order() -> &'static [&'static str] {
   &["h264_videotoolbox", "h264_nvenc", "h264_qsv", "h264_amf"]
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 fn auto_encoder_order() -> &'static [&'static str] {
   &["h264_nvenc", "h264_qsv", "h264_amf", "h264_videotoolbox"]
 }
