@@ -1,7 +1,7 @@
 use std::{
   collections::{HashMap, HashSet},
   fs,
-  path::PathBuf,
+  path::{Path, PathBuf},
   sync::{
     Arc, Mutex,
     atomic::{AtomicBool, AtomicU64, Ordering},
@@ -9,6 +9,9 @@ use std::{
   thread::{self, JoinHandle},
   time::Duration,
 };
+
+use chardetng::{Iso2022JpDetection, Utf8Detection};
+use encoding_rs::Encoding;
 
 use crossbeam_channel::{Receiver, Sender, unbounded};
 
@@ -74,10 +77,41 @@ pub enum TaskState {
 
 #[derive(Clone, Debug)]
 pub enum FileTask {
-  ReadText { path: PathBuf },
-  WriteText { path: PathBuf, text: String },
-  ReadBytes { path: PathBuf },
-  WriteBytes { path: PathBuf, bytes: Vec<u8> },
+  ReadText {
+    path: PathBuf,
+  },
+  WriteText {
+    path: PathBuf,
+    text: String,
+  },
+  ReadBytes {
+    path: PathBuf,
+  },
+  WriteBytes {
+    path: PathBuf,
+    bytes: Vec<u8>,
+  },
+  LuaReadText {
+    path: PathBuf,
+    encoding: String,
+  },
+  LuaWriteText {
+    path: PathBuf,
+    text: String,
+    encoding: String,
+    end_of_line: String,
+  },
+  LuaListDir {
+    path: PathBuf,
+    recursive: bool,
+    file_type: Option<String>,
+  },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FileListEntry {
+  pub path: String,
+  pub file_type: String,
 }
 
 #[derive(Clone, Debug)]
@@ -99,6 +133,20 @@ pub enum FileEvent {
   WriteBytesFinished {
     task_id: TaskId,
     path: PathBuf,
+  },
+  LuaReadTextFinished {
+    task_id: TaskId,
+    path: PathBuf,
+    text: String,
+  },
+  LuaWriteTextFinished {
+    task_id: TaskId,
+    path: PathBuf,
+  },
+  LuaListDirFinished {
+    task_id: TaskId,
+    path: PathBuf,
+    entries: Vec<FileListEntry>,
   },
   Failed {
     task_id: TaskId,
@@ -437,8 +485,14 @@ fn write_target(task: &EngineTask) -> Option<PathBuf> {
     EngineTask::Recording(task) => Some(task.path().to_path_buf()),
     EngineTask::Video(task) => Some(task.output_path.clone()),
     EngineTask::File(FileTask::WriteText { path, .. })
-    | EngineTask::File(FileTask::WriteBytes { path, .. }) => Some(path.clone()),
-    EngineTask::File(FileTask::ReadText { .. } | FileTask::ReadBytes { .. }) => None,
+    | EngineTask::File(FileTask::WriteBytes { path, .. })
+    | EngineTask::File(FileTask::LuaWriteText { path, .. }) => Some(path.clone()),
+    EngineTask::File(
+      FileTask::ReadText { .. }
+      | FileTask::ReadBytes { .. }
+      | FileTask::LuaReadText { .. }
+      | FileTask::LuaListDir { .. },
+    ) => None,
   }
 }
 
@@ -556,7 +610,305 @@ fn run_file_task(
         Err(error.to_string())
       }
     },
+    FileTask::LuaReadText { path, encoding } => match read_lua_text(&path, &encoding) {
+      Ok(text) => {
+        let _ = event_tx.send(EngineEvent::File(FileEvent::LuaReadTextFinished {
+          task_id,
+          path,
+          text,
+        }));
+        Ok(())
+      }
+      Err(error) => {
+        send_file_error(event_tx, task_id, path, error.clone());
+        Err(error)
+      }
+    },
+    FileTask::LuaWriteText {
+      path,
+      text,
+      encoding,
+      end_of_line,
+    } => match write_lua_text(&path, &text, &encoding, &end_of_line) {
+      Ok(()) => {
+        let _ = event_tx.send(EngineEvent::File(FileEvent::LuaWriteTextFinished {
+          task_id,
+          path,
+        }));
+        Ok(())
+      }
+      Err(error) => {
+        send_file_error(event_tx, task_id, path, error.clone());
+        Err(error)
+      }
+    },
+    FileTask::LuaListDir {
+      path,
+      recursive,
+      file_type,
+    } => match list_lua_files(&path, recursive, file_type.as_deref()) {
+      Ok(entries) => {
+        let _ = event_tx.send(EngineEvent::File(FileEvent::LuaListDirFinished {
+          task_id,
+          path,
+          entries,
+        }));
+        Ok(())
+      }
+      Err(error) => {
+        send_file_error(event_tx, task_id, path, error.clone());
+        Err(error)
+      }
+    },
   }
+}
+
+const LUA_FILE_LIMIT: usize = 1024 * 1024;
+const LUA_DIRECTORY_LIMIT: usize = 4096;
+
+fn read_lua_text(path: &Path, encoding: &str) -> Result<String, String> {
+  let bytes = fs::read(path).map_err(|error| error.to_string())?;
+  if bytes.len() > LUA_FILE_LIMIT {
+    return Err("file exceeds 1 MiB".to_string());
+  }
+  let text = decode_lua_text(&bytes, encoding)?;
+  validate_lua_text(&text)?;
+  Ok(normalize_lua_newlines(&text))
+}
+
+fn write_lua_text(
+  path: &Path,
+  text: &str,
+  encoding: &str,
+  end_of_line: &str,
+) -> Result<(), String> {
+  validate_lua_text(text)?;
+  let normalized = normalize_lua_newlines(text);
+  let eol = match end_of_line {
+    "cr" => "\r",
+    "lf" => "\n",
+    "crlf" => "\r\n",
+    "auto" if path.is_file() => {
+      let old = fs::read(path).map_err(|error| error.to_string())?;
+      let old = decode_lua_text(&old, "auto")?;
+      if old.contains("\r\n") {
+        "\r\n"
+      } else if old.contains('\r') {
+        "\r"
+      } else {
+        "\n"
+      }
+    }
+    "auto" => {
+      if cfg!(windows) {
+        "\r\n"
+      } else {
+        "\n"
+      }
+    }
+    _ => return Err("unsupported end-of-line mode".to_string()),
+  };
+  let converted = if eol == "\n" {
+    normalized
+  } else {
+    normalized.replace('\n', eol)
+  };
+  let selected_encoding = if encoding == "auto" && path.is_file() {
+    detect_encoding_name(&fs::read(path).map_err(|error| error.to_string())?)
+  } else if encoding == "auto" {
+    "utf-8".to_string()
+  } else {
+    encoding.to_string()
+  };
+  let bytes = encode_lua_text(&converted, &selected_encoding)?;
+  if bytes.len() > LUA_FILE_LIMIT {
+    return Err("encoded file exceeds 1 MiB".to_string());
+  }
+  atomic_write(path, &bytes, true).map_err(|error| error.to_string())
+}
+
+fn decode_lua_text(bytes: &[u8], encoding: &str) -> Result<String, String> {
+  if encoding.eq_ignore_ascii_case("auto") {
+    if let Some(bytes) = bytes.strip_prefix(&[0xef, 0xbb, 0xbf]) {
+      return String::from_utf8(bytes.to_vec()).map_err(|_| "invalid UTF-8 text".to_string());
+    }
+    if bytes.starts_with(&[0xff, 0xfe]) {
+      return decode_utf16(&bytes[2..], true);
+    }
+    if bytes.starts_with(&[0xfe, 0xff]) {
+      return decode_utf16(&bytes[2..], false);
+    }
+    if let Ok(text) = std::str::from_utf8(bytes) {
+      return Ok(text.to_string());
+    }
+    let mut detector = chardetng::EncodingDetector::new(Iso2022JpDetection::Allow);
+    detector.feed(bytes, true);
+    let guessed = detector.guess(None, Utf8Detection::Allow);
+    return guessed
+      .decode_without_bom_handling_and_without_replacement(bytes)
+      .map(|text| text.into_owned())
+      .ok_or_else(|| "text cannot be decoded without replacement".to_string());
+  }
+  match encoding.to_ascii_lowercase().as_str() {
+    "utf-16le" => decode_utf16(bytes.strip_prefix(&[0xff, 0xfe]).unwrap_or(bytes), true),
+    "utf-16be" => decode_utf16(bytes.strip_prefix(&[0xfe, 0xff]).unwrap_or(bytes), false),
+    name => {
+      let encoding = Encoding::for_label(name.as_bytes())
+        .ok_or_else(|| "unsupported text encoding".to_string())?;
+      encoding
+        .decode_without_bom_handling_and_without_replacement(bytes)
+        .map(|text| text.into_owned())
+        .ok_or_else(|| "text cannot be decoded without replacement".to_string())
+    }
+  }
+}
+
+fn encode_lua_text(text: &str, encoding: &str) -> Result<Vec<u8>, String> {
+  match encoding.to_ascii_lowercase().as_str() {
+    "utf-16le" => Ok(
+      text
+        .encode_utf16()
+        .flat_map(u16::to_le_bytes)
+        .collect::<Vec<_>>(),
+    ),
+    "utf-16be" => Ok(
+      text
+        .encode_utf16()
+        .flat_map(u16::to_be_bytes)
+        .collect::<Vec<_>>(),
+    ),
+    name => {
+      let encoding = Encoding::for_label(name.as_bytes())
+        .ok_or_else(|| "unsupported text encoding".to_string())?;
+      let (bytes, _, had_errors) = encoding.encode(text);
+      if had_errors {
+        Err("text cannot be encoded without replacement".to_string())
+      } else {
+        Ok(bytes.into_owned())
+      }
+    }
+  }
+}
+
+fn decode_utf16(bytes: &[u8], little_endian: bool) -> Result<String, String> {
+  if !bytes.len().is_multiple_of(2) {
+    return Err("invalid UTF-16 text".to_string());
+  }
+  let units = bytes.chunks_exact(2).map(|bytes| {
+    let pair = [bytes[0], bytes[1]];
+    if little_endian {
+      u16::from_le_bytes(pair)
+    } else {
+      u16::from_be_bytes(pair)
+    }
+  });
+  std::char::decode_utf16(units)
+    .collect::<Result<String, _>>()
+    .map_err(|_| "invalid UTF-16 text".to_string())
+}
+
+fn detect_encoding_name(bytes: &[u8]) -> String {
+  if bytes.starts_with(&[0xff, 0xfe]) {
+    return "utf-16le".to_string();
+  }
+  if bytes.starts_with(&[0xfe, 0xff]) {
+    return "utf-16be".to_string();
+  }
+  if bytes.starts_with(&[0xef, 0xbb, 0xbf]) || std::str::from_utf8(bytes).is_ok() {
+    return "utf-8".to_string();
+  }
+  let mut detector = chardetng::EncodingDetector::new(Iso2022JpDetection::Allow);
+  detector.feed(bytes, true);
+  detector
+    .guess(None, Utf8Detection::Allow)
+    .name()
+    .to_ascii_lowercase()
+}
+
+fn validate_lua_text(text: &str) -> Result<(), String> {
+  if text.contains('\0') {
+    return Err("NUL is not allowed in text files".to_string());
+  }
+  let suspicious = text
+    .chars()
+    .filter(|value| value.is_control() && !matches!(*value, '\n' | '\r' | '\t'))
+    .count();
+  if suspicious > text.chars().count().saturating_div(20).max(8) {
+    return Err("file appears to contain binary data".to_string());
+  }
+  Ok(())
+}
+
+fn normalize_lua_newlines(text: &str) -> String {
+  text.replace("\r\n", "\n").replace('\r', "\n")
+}
+
+fn list_lua_files(
+  path: &Path,
+  recursive: bool,
+  file_type: Option<&str>,
+) -> Result<Vec<FileListEntry>, String> {
+  let root = path.canonicalize().map_err(|error| error.to_string())?;
+  if !root.is_dir() {
+    return Err("path is not a directory".to_string());
+  }
+  let mut entries = Vec::new();
+  collect_lua_files(&root, &root, recursive, file_type, 0, &mut entries)?;
+  entries.sort_by(|left, right| left.path.cmp(&right.path));
+  Ok(entries)
+}
+
+fn collect_lua_files(
+  root: &Path,
+  directory: &Path,
+  recursive: bool,
+  file_type: Option<&str>,
+  depth: usize,
+  output: &mut Vec<FileListEntry>,
+) -> Result<(), String> {
+  if depth > 32 {
+    return Err("directory recursion exceeds 32 levels".to_string());
+  }
+  for entry in fs::read_dir(directory).map_err(|error| error.to_string())? {
+    let entry = entry.map_err(|error| error.to_string())?;
+    let canonical = entry
+      .path()
+      .canonicalize()
+      .map_err(|error| error.to_string())?;
+    if !canonical.starts_with(root) {
+      return Err("symbolic link escapes assets root".to_string());
+    }
+    let metadata = canonical.metadata().map_err(|error| error.to_string())?;
+    if metadata.is_dir() {
+      if recursive {
+        collect_lua_files(root, &canonical, true, file_type, depth + 1, output)?;
+      }
+      continue;
+    }
+    if !metadata.is_file() {
+      continue;
+    }
+    let extension = canonical
+      .extension()
+      .and_then(|value| value.to_str())
+      .unwrap_or_default();
+    if file_type.is_some_and(|filter| !extension.eq_ignore_ascii_case(filter)) {
+      continue;
+    }
+    if output.len() >= LUA_DIRECTORY_LIMIT {
+      return Err("directory result exceeds 4096 files".to_string());
+    }
+    let relative = canonical
+      .strip_prefix(root)
+      .map_err(|_| "invalid directory entry".to_string())?
+      .to_string_lossy()
+      .replace('\\', "/");
+    output.push(FileListEntry {
+      path: relative,
+      file_type: extension.to_ascii_lowercase(),
+    });
+  }
+  Ok(())
 }
 
 fn send_file_error(event_tx: &Sender<EngineEvent>, task_id: TaskId, path: PathBuf, error: String) {
@@ -609,7 +961,18 @@ fn set_task_state(
 #[cfg(test)]
 mod tests {
   use super::*;
+  use std::sync::atomic::{AtomicU64, Ordering};
   use std::time::Duration;
+
+  static FILE_TEST_ID: AtomicU64 = AtomicU64::new(1);
+
+  fn file_test_directory() -> PathBuf {
+    let id = FILE_TEST_ID.fetch_add(1, Ordering::Relaxed);
+    let path =
+      std::env::temp_dir().join(format!("tui_game_lua_file_{}_{}", std::process::id(), id));
+    fs::create_dir_all(&path).unwrap();
+    path
+  }
 
   #[test]
   fn async_runtime_assigns_unique_task_ids() {
@@ -673,5 +1036,114 @@ mod tests {
     }
 
     assert!(found);
+  }
+
+  #[test]
+  fn lua_text_read_normalizes_newlines_and_rejects_non_text() {
+    let directory = file_test_directory();
+    let mixed = directory.join("mixed.txt");
+    fs::write(&mixed, b"one\r\ntwo\rthree\nfour").unwrap();
+    assert_eq!(
+      read_lua_text(&mixed, "utf-8").unwrap(),
+      "one\ntwo\nthree\nfour"
+    );
+
+    let nul = directory.join("nul.txt");
+    fs::write(&nul, b"text\0data").unwrap();
+    assert!(read_lua_text(&nul, "utf-8").is_err());
+
+    let invalid = directory.join("invalid.txt");
+    fs::write(&invalid, [0xff, 0xfe, 0xfd]).unwrap();
+    assert!(read_lua_text(&invalid, "utf-8").is_err());
+    fs::remove_dir_all(directory).unwrap();
+  }
+
+  #[test]
+  fn lua_directory_listing_returns_only_matching_files() {
+    let directory = file_test_directory();
+    let nested = directory.join("nested");
+    fs::create_dir_all(&nested).unwrap();
+    fs::write(directory.join("first.RS"), "one").unwrap();
+    fs::write(directory.join("other.txt"), "two").unwrap();
+    fs::write(nested.join("second.rs"), "three").unwrap();
+
+    assert_eq!(
+      list_lua_files(&directory, false, Some("rs")).unwrap(),
+      vec![FileListEntry {
+        path: "first.RS".to_string(),
+        file_type: "rs".to_string(),
+      }]
+    );
+    assert_eq!(
+      list_lua_files(&directory, true, Some("rs")).unwrap(),
+      vec![
+        FileListEntry {
+          path: "first.RS".to_string(),
+          file_type: "rs".to_string(),
+        },
+        FileListEntry {
+          path: "nested/second.rs".to_string(),
+          file_type: "rs".to_string(),
+        },
+      ]
+    );
+    fs::remove_dir_all(directory).unwrap();
+  }
+
+  #[test]
+  fn lua_text_write_is_strict_and_preserves_requested_eol() {
+    let directory = file_test_directory();
+    let path = directory.join("output.txt");
+    write_lua_text(&path, "one\r\ntwo\rthree", "utf-8", "crlf").unwrap();
+    assert_eq!(fs::read(&path).unwrap(), b"one\r\ntwo\r\nthree");
+    assert!(write_lua_text(&path, "bad\0text", "utf-8", "lf").is_err());
+    fs::remove_dir_all(directory).unwrap();
+  }
+
+  #[test]
+  fn documented_file_encodings_are_supported() {
+    for encoding in [
+      "utf-8",
+      "gbk",
+      "gb18030",
+      "big5",
+      "shift_jis",
+      "euc-jp",
+      "iso-2022-jp",
+      "euc-kr",
+      "windows-874",
+      "windows-1250",
+      "windows-1251",
+      "windows-1252",
+      "windows-1253",
+      "windows-1254",
+      "windows-1255",
+      "windows-1256",
+      "windows-1257",
+      "windows-1258",
+      "iso-8859-2",
+      "iso-8859-3",
+      "iso-8859-4",
+      "iso-8859-5",
+      "iso-8859-6",
+      "iso-8859-7",
+      "iso-8859-8",
+      "iso-8859-8-i",
+      "iso-8859-10",
+      "iso-8859-13",
+      "iso-8859-14",
+      "iso-8859-15",
+      "iso-8859-16",
+      "koi8-r",
+      "koi8-u",
+      "ibm866",
+      "macintosh",
+      "x-mac-cyrillic",
+    ] {
+      assert!(
+        Encoding::for_label(encoding.as_bytes()).is_some(),
+        "{encoding}"
+      );
+    }
   }
 }

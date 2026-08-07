@@ -79,17 +79,18 @@ pub use input_method::{ImPolicy, InputMethodService};
 pub use layout::{LayoutService, Rect, Size};
 pub use log::{LogService, LogSource};
 pub use lua::{
-  GameService, LuaActionState, LuaAnimationEvent, LuaAnimationEventKind, LuaAudioEvent,
-  LuaAudioEventKind, LuaBudgetKind, LuaCallbackLifetime, LuaEnqueueError, LuaErrorStage,
-  LuaEventBroker, LuaEventCallbackId, LuaEventData, LuaEventDelivery, LuaEventError,
-  LuaEventErrorCode, LuaEventRoute, LuaExecutionBudget, LuaExecutionStats, LuaFileEvent,
-  LuaFileOperation, LuaFileOutcome, LuaHitAreaEvent, LuaHyperlinkEvent, LuaImageEvent,
-  LuaImageOutcome, LuaMarkdownEvent, LuaNetworkBody, LuaNetworkEvent, LuaNetworkOutcome,
-  LuaObjectPool, LuaPolicy, LuaRuntimeEvent, LuaScrollBoxEvent, LuaService, LuaSession,
-  LuaSessionDiagnostics, LuaSessionError, LuaSessionKind, LuaSessionSpec, LuaSessionState,
-  LuaSessionToken, LuaTaskOperation, LuaTextInputEvent, LuaTimerEvent, LuaTimerEventKind,
-  LuaTimerKind, MAX_LUA_EVENTS_PER_FRAME, MAX_LUA_NETWORK_TASKS_PER_SESSION,
-  MAX_LUA_PENDING_EVENTS, ScreensaverService,
+  GameService, LuaActionState, LuaAnimationEvent, LuaAnimationEventKind, LuaApiConfig,
+  LuaApiContext, LuaAudioEvent, LuaAudioEventKind, LuaBudgetKind, LuaCallbackLifetime,
+  LuaDrawCommand, LuaEnqueueError, LuaErrorStage, LuaEventBroker, LuaEventCallbackId, LuaEventData,
+  LuaEventDelivery, LuaEventError, LuaEventErrorCode, LuaEventRoute, LuaExecutionBudget,
+  LuaExecutionStats, LuaFileEntry, LuaFileEvent, LuaFileOperation, LuaFileOutcome, LuaHitAreaEvent,
+  LuaHostCommand, LuaHyperlinkEvent, LuaImageEvent, LuaImageOutcome, LuaMarkdownEvent,
+  LuaNetworkBody, LuaNetworkEvent, LuaNetworkOutcome, LuaObjectPool, LuaPolicy, LuaRuntimeEvent,
+  LuaScrollBoxEvent, LuaService, LuaSession, LuaSessionDiagnostics, LuaSessionError,
+  LuaSessionKind, LuaSessionSpec, LuaSessionState, LuaSessionToken, LuaTaskOperation,
+  LuaTextInputEvent, LuaTimerEvent, LuaTimerEventKind, LuaTimerKind, MAX_LUA_EVENTS_PER_FRAME,
+  MAX_LUA_FILE_TASKS_PER_SESSION, MAX_LUA_NETWORK_TASKS_PER_SESSION, MAX_LUA_PENDING_EVENTS,
+  ScreensaverService,
 };
 pub use network::{
   NetworkError, NetworkErrorCode, NetworkEvent, NetworkHeader, NetworkMethod, NetworkRequest,
@@ -107,10 +108,11 @@ pub use recording::{
   RecordingService, RecordingSnapshot, RecordingState, RecordingTask, load_recording_playback,
   load_recording_playback_metadata,
 };
-pub use render::{BorderStyle, RenderService};
+pub use render::{BorderCharacter, BorderStyle, CustomBorder, RenderService};
 pub use render_pipeline::{ComposedCell, ComposedFrame, FrameCompositor, FramePresenter};
 pub use rich_text::{
   RichText, RichTextParams, RichTextSegment, RichTextService, TerminalColor, TextColor, TextStyle,
+  parse_text_color,
 };
 pub use screenshot::{ScreenshotAsyncEvent, ScreenshotRect, ScreenshotService, ScreenshotTask};
 pub use storage::{
@@ -122,7 +124,7 @@ pub use storage::{
   ScreenshotDoubleAction, ScreenshotProfile, StorageService,
 };
 pub use terminal::TerminalService;
-pub use text_layout::DrawTextParams;
+pub use text_layout::{DrawTextParams, TextAlign, TextWrapMode};
 pub use time::TimeService;
 pub use ui::{UiEvent, UiObjectPool, UiObjectPoolOwner, UiService};
 pub use unicode::UnicodeService;
@@ -142,9 +144,9 @@ pub use widget::{
   ScrollbarPolicy, ScrollbarSide, ScrollbarStyle, ScrollbarVisibility, SliceId, SliceLength,
   SliceOptions, SliceRect, SliceService, SurfaceId, TableAlign, TableBorderMode, TableBorderStyle,
   TableCell, TableColumn, TableDrawParams, TableId, TableOptions, TableOverflow, TableRow,
-  TableService, TableStyle, TextAlign, TextInputCursorShape, TextInputEvent, TextInputId,
-  TextInputMode, TextInputOptions, TextInputRenderParams, TextInputService, TimeCallbackId,
-  TimeCallbackRequest, TimerEvent, TimerId, TimerMode, TimerOptions, TimerState, VerticalAlign,
+  TableService, TableStyle, TextInputCursorShape, TextInputEvent, TextInputId, TextInputMode,
+  TextInputOptions, TextInputRenderParams, TextInputService, TimeCallbackId, TimeCallbackRequest,
+  TimerEvent, TimerId, TimerMode, TimerOptions, TimerState, VerticalAlign,
 };
 pub use write_barrier::{WriteBarrier, WriteBarrierSnapshot};
 

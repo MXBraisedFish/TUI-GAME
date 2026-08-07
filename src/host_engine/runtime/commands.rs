@@ -57,6 +57,18 @@ pub(super) fn apply_game_list_command(
       };
       let terminal_size = services.layout.physical_size();
       let log_entry_path = entry_path.clone();
+      let api = services
+        .package
+        .game_list()
+        .into_iter()
+        .find(|entry| entry.source == source && entry.mod_id == mod_id)
+        .map(|entry| crate::host_engine::services::LuaApiConfig {
+          debug_enabled: entry.debug,
+          safe_mode_enabled: entry.safe_mode,
+          key_actions: entry.key_actions,
+          key_default_actions: entry.key_default_actions,
+        })
+        .unwrap_or_default();
       let spec = crate::host_engine::services::LuaSessionSpec {
         package_id: package.mod_id.clone(),
         session_kind: crate::host_engine::services::LuaSessionKind::Game,
@@ -65,7 +77,7 @@ pub(super) fn apply_game_list_command(
         terminal_size,
         continue_data: None,
       };
-      let session = match services.lua.create_session(spec) {
+      let session = match services.lua.create_session_with_api(spec, api) {
         Ok(session) => session,
         Err(error) => {
           services.log.error(

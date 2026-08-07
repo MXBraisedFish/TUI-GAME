@@ -3,8 +3,8 @@ use std::time::Duration;
 use crate::host_engine::services::{PackageSource, Size};
 
 use super::{
-  LuaEventDelivery, LuaObjectPool, LuaSession, LuaSessionDiagnostics, LuaSessionError,
-  LuaSessionKind, LuaSessionState, LuaSessionToken,
+  LuaDrawCommand, LuaEventDelivery, LuaHostCommand, LuaObjectPool, LuaSession,
+  LuaSessionDiagnostics, LuaSessionError, LuaSessionKind, LuaSessionState, LuaSessionToken,
 };
 
 const MAX_REAL_DELTA: Duration = Duration::from_millis(250);
@@ -126,6 +126,22 @@ impl ScreensaverService {
       return Ok(());
     };
     session.render(size)
+  }
+
+  pub fn take_host_commands(&mut self) -> Vec<LuaHostCommand> {
+    self
+      .session
+      .as_mut()
+      .map(LuaSession::take_host_commands)
+      .unwrap_or_default()
+  }
+
+  pub fn take_draw_commands(&mut self) -> Vec<LuaDrawCommand> {
+    self
+      .session
+      .as_mut()
+      .map(LuaSession::take_draw_commands)
+      .unwrap_or_default()
   }
 }
 

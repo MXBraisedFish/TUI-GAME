@@ -1,0 +1,164 @@
+mod args;
+mod libraries;
+pub(crate) mod readonly;
+
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
+use std::rc::Rc;
+use std::time::Instant;
+
+use mlua::{Lua, Table};
+
+use super::LuaSessionKind;
+use crate::host_engine::services::{
+  BorderStyle, DrawTextParams, FileTask, LuaFileOperation, Size, TextColor,
+};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LuaCallPhase {
+  Loading,
+  Init,
+  Event,
+  Update,
+  UpdateFrame,
+  Render,
+  Save,
+  Idle,
+}
+
+#[derive(Clone, Debug)]
+pub struct LuaApiConfig {
+  pub debug_enabled: bool,
+  pub safe_mode_enabled: bool,
+  pub key_actions: HashMap<String, Vec<Vec<String>>>,
+  pub key_default_actions: HashMap<String, Vec<Vec<String>>>,
+}
+
+impl Default for LuaApiConfig {
+  fn default() -> Self {
+    Self {
+      debug_enabled: false,
+      safe_mode_enabled: true,
+      key_actions: HashMap::new(),
+      key_default_actions: HashMap::new(),
+    }
+  }
+}
+
+#[derive(Clone, Debug)]
+pub struct LuaApiContext {
+  pub package_id: String,
+  pub session_kind: LuaSessionKind,
+  pub scripts_root: PathBuf,
+  pub assets_root: PathBuf,
+  pub debug_enabled: bool,
+  pub safe_mode_enabled: bool,
+  pub terminal_size: Size,
+  pub key_actions: HashMap<String, Vec<Vec<String>>>,
+  pub key_default_actions: HashMap<String, Vec<Vec<String>>>,
+}
+
+#[derive(Clone, Debug)]
+pub enum LuaDrawCommand {
+  Text {
+    x: i32,
+    y: i32,
+    params: DrawTextParams,
+  },
+  FillRect {
+    x: i32,
+    y: i32,
+    width: u16,
+    height: u16,
+    fill_char: Option<String>,
+    fg: Option<TextColor>,
+    bg: Option<TextColor>,
+  },
+  StrokeRect {
+    x: i32,
+    y: i32,
+    width: u16,
+    height: u16,
+    border: BorderStyle,
+    fg: Option<TextColor>,
+    bg: Option<TextColor>,
+  },
+  EraseRect {
+    x: i32,
+    y: i32,
+    width: u16,
+    height: u16,
+  },
+}
+
+#[derive(Clone, Debug)]
+pub enum LuaHostCommand {
+  Log {
+    level: String,
+    message: String,
+  },
+  Ignored {
+    method: &'static str,
+    reason: &'static str,
+  },
+  ExitGame,
+  SaveGame,
+  SaveBest,
+  SkipActions,
+  ClearActions,
+  RequestRender,
+  FileRequest {
+    request_id: u64,
+    task: FileTask,
+    operation: LuaFileOperation,
+    virtual_path: String,
+    event_tip: Option<String>,
+  },
+  Draw(LuaDrawCommand),
+}
+
+#[derive(Debug)]
+pub(crate) struct LuaApiState {
+  pub context: LuaApiContext,
+  pub phase: LuaCallPhase,
+  pub commands: Vec<LuaHostCommand>,
+  pub draw_command_count: usize,
+  pub draw_text_bytes: usize,
+  pub loader_stack: Vec<PathBuf>,
+  pub loader_source_bytes: usize,
+  pub next_file_request_id: u64,
+  pub ignored_methods: HashSet<&'static str>,
+  pub fatal_budget_exceeded: bool,
+  pub fatal_api_error: bool,
+  pub debug_log_window_started: Instant,
+  pub debug_log_count: u32,
+  pub debug_log_dropped: u32,
+}
+
+pub(crate) type SharedApiState = Rc<RefCell<LuaApiState>>;
+
+pub(crate) fn build_environment(
+  lua: &Lua,
+  context: LuaApiContext,
+) -> mlua::Result<(Table, SharedApiState)> {
+  let state = Rc::new(RefCell::new(LuaApiState {
+    context,
+    phase: LuaCallPhase::Loading,
+    commands: Vec::new(),
+    draw_command_count: 0,
+    draw_text_bytes: 0,
+    loader_stack: Vec::new(),
+    loader_source_bytes: 0,
+    next_file_request_id: 1,
+    ignored_methods: HashSet::new(),
+    fatal_budget_exceeded: false,
+    fatal_api_error: false,
+    debug_log_window_started: Instant::now(),
+    debug_log_count: 0,
+    debug_log_dropped: 0,
+  }));
+  let environment = lua.create_table()?;
+  libraries::install(lua, &environment, state.clone())?;
+  Ok((environment, state))
+}

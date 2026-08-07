@@ -23,11 +23,11 @@ use crate::host_engine::services::{
   ActionKeyMap, ActionMapEntry, AutoRecordingMode, BorderStyle, DisplayLogoMode, DisplayOrderMode,
   DrawTextParams, EngineServices, EngineTask, HostAreaKind, ImPolicy, InputActionEvent,
   KeyBindingsProfile, KeyState, LogSource, LuaActionState, LuaEnqueueError, LuaErrorStage,
-  LuaEventBroker, LuaEventData, LuaSessionError, LuaSessionKind, LuaSessionToken, PackageEvent,
-  PackageListEntry, PopupDismissEvent, PopupRequest, RandomGeneratorId, RandomSeed, RecordingState,
-  Rect, ScreenshotAsyncEvent, ScreenshotDoubleAction, ScreenshotService, ScreenshotTask,
-  SystemEvent, TaskId, TextColor, UiEvent, UiObjectPoolOwner, VideoAsyncEvent, VideoExportStage,
-  translate_action_map,
+  LuaEventBroker, LuaEventData, LuaEventRoute, LuaHostCommand, LuaSessionError, LuaSessionKind,
+  LuaSessionToken, LuaTaskOperation, PackageEvent, PackageListEntry, PopupDismissEvent,
+  PopupRequest, RandomGeneratorId, RandomSeed, RecordingState, Rect, ScreenshotAsyncEvent,
+  ScreenshotDoubleAction, ScreenshotService, ScreenshotTask, SystemEvent, TaskId, TextColor,
+  UiEvent, UiObjectPoolOwner, VideoAsyncEvent, VideoExportStage, translate_action_map,
 };
 use crate::host_engine::ui::{
   ClearWarningCommand, ClearWarningTarget, ClearWarningUi, DisplaySettingsCommand,
@@ -630,7 +630,7 @@ pub fn run(services: &mut EngineServices, world: &mut RuntimeWorld) -> ExitState
         &mut language_loading,
         &mut export_loading,
       );
-      update_lua_sessions(services, world, frame_delta);
+      update_lua_sessions(services, world, &mut lua_event_router, frame_delta);
     }
     sync_input_method_policy(services);
     services.input_method.update(world.clock.delta_time());
@@ -1722,7 +1722,8 @@ fn dispatch_lua_events(
     (LuaSessionKind::Game, game_deliveries),
     (LuaSessionKind::Screensaver, screensaver_deliveries),
   ] {
-    for delivery in deliveries {
+    let mut deliveries = deliveries.into_iter();
+    while let Some(delivery) = deliveries.next() {
       if let LuaEventData::Resize { width, height } = &delivery.event.data {
         let size = crate::host_engine::services::Size {
           width: *width,
@@ -1740,6 +1741,22 @@ fn dispatch_lua_events(
       if let Err(error) = result {
         handle_lua_fault(services, world, error);
         break;
+      }
+      match apply_lua_host_commands(kind, services, world, router) {
+        LuaEventFlow::Continue => {}
+        LuaEventFlow::Skip => {
+          router.requeue_front(kind, deliveries);
+          break;
+        }
+        LuaEventFlow::Clear => {
+          router.requeue_front(
+            kind,
+            deliveries
+              .filter(|delivery| !matches!(delivery.event.data, LuaEventData::Action { .. })),
+          );
+          router.clear_pending_actions(kind);
+          break;
+        }
       }
     }
   }
@@ -1814,6 +1831,7 @@ fn log_lua_enqueue_error(services: &mut EngineServices, error: LuaEnqueueError) 
 fn update_lua_sessions(
   services: &mut EngineServices,
   world: &mut RuntimeWorld,
+  router: &mut LuaEventBroker,
   frame_delta: Duration,
 ) {
   if services.game.is_active()
@@ -1821,11 +1839,13 @@ fn update_lua_sessions(
   {
     handle_lua_fault(services, world, error);
   }
+  let _ = apply_lua_host_commands(LuaSessionKind::Game, services, world, router);
   if services.screensaver.is_active()
     && let Err(error) = services.screensaver.advance(frame_delta)
   {
     handle_lua_fault(services, world, error);
   }
+  let _ = apply_lua_host_commands(LuaSessionKind::Screensaver, services, world, router);
 
   let size = services.layout.physical_size();
   if services.screensaver.is_active() {
@@ -1837,6 +1857,117 @@ fn update_lua_sessions(
   {
     handle_lua_fault(services, world, error);
   }
+  let kind = if services.screensaver.is_active() {
+    LuaSessionKind::Screensaver
+  } else {
+    LuaSessionKind::Game
+  };
+  let _ = apply_lua_host_commands(kind, services, world, router);
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LuaEventFlow {
+  Continue,
+  Skip,
+  Clear,
+}
+
+fn apply_lua_host_commands(
+  kind: LuaSessionKind,
+  services: &mut EngineServices,
+  world: &mut RuntimeWorld,
+  router: &mut LuaEventBroker,
+) -> LuaEventFlow {
+  let commands = match kind {
+    LuaSessionKind::Game => services.game.take_host_commands(),
+    LuaSessionKind::Screensaver => services.screensaver.take_host_commands(),
+  };
+  let mut flow = LuaEventFlow::Continue;
+  for command in commands {
+    match command {
+      LuaHostCommand::Log { level, message } => match level.as_str() {
+        "error" => services.log.error(LogSource::Lua, message),
+        "warn" => services.log.warn(LogSource::Lua, message),
+        "debug" => services.log.debug(LogSource::Lua, message),
+        _ => services.log.info(LogSource::Lua, message),
+      },
+      LuaHostCommand::Ignored { method, reason } => services
+        .log
+        .debug(LogSource::Lua, format!("{method} ignored: {reason}")),
+      LuaHostCommand::RequestRender => {
+        services.canvas.request_render();
+        services.presenter.request_render();
+      }
+      LuaHostCommand::FileRequest {
+        request_id,
+        task,
+        operation,
+        virtual_path,
+        event_tip,
+      } => {
+        let token = match kind {
+          LuaSessionKind::Game => services.game.session_token(),
+          LuaSessionKind::Screensaver => services.screensaver.session_token(),
+        };
+        let Some(token) = token else {
+          continue;
+        };
+        let task_id = services.async_runtime.submit(EngineTask::File(task));
+        if let Err(error) = router.register_task(
+          task_id,
+          token,
+          LuaTaskOperation::File {
+            request_id,
+            kind: operation,
+            virtual_path,
+            event_tip,
+          },
+          LuaEventRoute::HandleEvent,
+        ) {
+          services.async_runtime.cancel_task(task_id);
+          services.log.warn(
+            LogSource::Lua,
+            format!("Lua file request rejected: {error:?}"),
+          );
+        }
+      }
+      LuaHostCommand::ExitGame if kind == LuaSessionKind::Game => {
+        let result = services.game.stop(true);
+        for error in result.save_errors {
+          services.log.error(LogSource::Lua, error.to_string());
+        }
+        let return_host = world
+          .state
+          .runtime()
+          .and_then(|runtime| runtime.main_host().game())
+          .map(|game| (*game.return_host).clone());
+        if let (Some(runtime), Some(host)) = (world.state.runtime_mut(), return_host) {
+          runtime.set_main_host(MainHostState::Host(host));
+        }
+        services.canvas.request_render();
+        services.presenter.request_render();
+      }
+      LuaHostCommand::SaveGame if kind == LuaSessionKind::Game => {
+        if let Err(error) = services.game.save_game() {
+          services.log.error(LogSource::Lua, error.to_string());
+        }
+      }
+      LuaHostCommand::SaveBest if kind == LuaSessionKind::Game => {
+        if let Err(error) = services.game.save_best() {
+          services.log.error(LogSource::Lua, error.to_string());
+        }
+      }
+      LuaHostCommand::SkipActions if kind == LuaSessionKind::Game => flow = LuaEventFlow::Skip,
+      LuaHostCommand::ClearActions if kind == LuaSessionKind::Game => flow = LuaEventFlow::Clear,
+      LuaHostCommand::Draw(_) => {}
+      LuaHostCommand::ExitGame
+      | LuaHostCommand::SaveGame
+      | LuaHostCommand::SaveBest
+      | LuaHostCommand::SkipActions
+      | LuaHostCommand::ClearActions => {}
+    }
+  }
+  flow
 }
 
 fn handle_lua_fault(
@@ -2062,7 +2193,13 @@ fn toggle_screensaver(
     terminal_size: services.layout.physical_size(),
     continue_data: None,
   };
-  let session = match services.lua.create_session(spec) {
+  let api = crate::host_engine::services::LuaApiConfig {
+    debug_enabled: entry.debug,
+    safe_mode_enabled: true,
+    key_actions: entry.key_actions.clone(),
+    key_default_actions: entry.key_default_actions.clone(),
+  };
+  let session = match services.lua.create_session_with_api(spec, api) {
     Ok(session) => session,
     Err(error) => {
       services.log.error(

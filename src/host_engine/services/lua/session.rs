@@ -16,6 +16,9 @@ use serde_json::{Map as JsonMap, Number as JsonNumber, Value as JsonValue};
 
 use crate::host_engine::services::Size;
 
+use super::api::{
+  self, LuaApiConfig, LuaApiContext, LuaCallPhase, LuaDrawCommand, LuaHostCommand, SharedApiState,
+};
 use super::events::{LuaEventCallbackId, LuaEventDelivery, LuaEventRoute, LuaRuntimeEvent};
 use super::object_pool::LuaObjectPool;
 use super::policy::{LuaBudgetKind, LuaExecutionBudget, LuaPolicy};
@@ -146,26 +149,60 @@ pub struct LuaSession {
   objects: Option<LuaObjectPool>,
   event_callbacks: HashMap<LuaEventCallbackId, LuaRegisteredCallback>,
   next_event_callback_id: u64,
+  api_state: SharedApiState,
 }
 
 impl LuaSession {
   pub(super) fn load(spec: LuaSessionSpec, policy: LuaPolicy) -> Result<Self, LuaSessionError> {
+    Self::load_with_api(spec, policy, LuaApiConfig::default())
+  }
+
+  pub(super) fn load_with_api(
+    spec: LuaSessionSpec,
+    policy: LuaPolicy,
+    api_config: LuaApiConfig,
+  ) -> Result<Self, LuaSessionError> {
     policy
       .validate()
       .map_err(|error| session_error(&spec, LuaErrorStage::ValidatePolicy, None, error))?;
     validate_continue_data(&spec, &policy)?;
     let source = read_source(&spec, &policy)?;
-    let lua = Lua::new_with(
-      StdLib::MATH | StdLib::STRING | StdLib::UTF8 | StdLib::TABLE,
-      LuaOptions::default(),
-    )
-    .map_err(|error| session_error(&spec, LuaErrorStage::CreateVm, None, error))?;
+    let lua = Lua::new_with(StdLib::NONE, LuaOptions::default())
+      .map_err(|error| session_error(&spec, LuaErrorStage::CreateVm, None, error))?;
     lua
       .set_memory_limit(policy.memory_limit_bytes)
       .map_err(|error| session_error(&spec, LuaErrorStage::MemoryLimit, None, error))?;
 
-    let environment = build_sandbox(&lua)
-      .map_err(|error| session_error(&spec, LuaErrorStage::BuildSandbox, None, error))?;
+    let scripts_root = spec
+      .entry_path
+      .ancestors()
+      .find(|path| {
+        path
+          .file_name()
+          .is_some_and(|name| name.eq_ignore_ascii_case("scripts"))
+      })
+      .unwrap_or_else(|| spec.entry_path.parent().unwrap_or(Path::new(".")))
+      .to_path_buf();
+    let assets_root = scripts_root
+      .parent()
+      .unwrap_or_else(|| Path::new("."))
+      .join("assets");
+    let (environment, api_state) = api::build_environment(
+      &lua,
+      LuaApiContext {
+        package_id: spec.package_id.clone(),
+        session_kind: spec.session_kind,
+        scripts_root,
+        assets_root,
+        debug_enabled: api_config.debug_enabled,
+        safe_mode_enabled: spec.session_kind == LuaSessionKind::Screensaver
+          || api_config.safe_mode_enabled,
+        terminal_size: spec.terminal_size,
+        key_actions: api_config.key_actions,
+        key_default_actions: api_config.key_default_actions,
+      },
+    )
+    .map_err(|error| session_error(&spec, LuaErrorStage::BuildSandbox, None, error))?;
     let entry_function = lua
       .load(source)
       .set_name(spec.entry_path.to_string_lossy())
@@ -179,6 +216,7 @@ impl LuaSession {
       (),
       policy.budget(LuaBudgetKind::Load),
       policy.hook_interval,
+      &api_state,
     )
     .map_err(|failure| execution_error(&spec, LuaErrorStage::ExecuteEntry, None, failure))?;
 
@@ -202,6 +240,7 @@ impl LuaSession {
       objects: Some(LuaObjectPool::new()),
       event_callbacks: HashMap::new(),
       next_event_callback_id: 1,
+      api_state,
     };
     let context = session.context_table(spec.continue_data.as_ref())?;
     session.invoke_required(
@@ -236,6 +275,22 @@ impl LuaSession {
 
   pub fn set_terminal_size(&mut self, size: Size) {
     self.terminal_size = size;
+    self.api_state.borrow_mut().context.terminal_size = size;
+  }
+
+  pub fn configure_api(
+    &mut self,
+    debug_enabled: bool,
+    safe_mode_enabled: bool,
+    key_actions: HashMap<String, Vec<Vec<String>>>,
+    key_default_actions: HashMap<String, Vec<Vec<String>>>,
+  ) {
+    let mut state = self.api_state.borrow_mut();
+    state.context.debug_enabled = debug_enabled;
+    state.context.safe_mode_enabled =
+      self.session_kind == LuaSessionKind::Screensaver || safe_mode_enabled;
+    state.context.key_actions = key_actions;
+    state.context.key_default_actions = key_default_actions;
   }
 
   pub fn last_stats(&self) -> LuaExecutionStats {
@@ -313,15 +368,60 @@ impl LuaSession {
   }
 
   pub fn render(&mut self, size: Size) -> Result<(), LuaSessionError> {
-    let draw = self
+    let draw_context = self
       .lua
       .create_table()
       .map_err(|error| self.error(LuaErrorStage::Callback, Some("Render"), error))?;
-    draw
+    draw_context
       .set("width", size.width)
-      .and_then(|_| draw.set("height", size.height))
+      .and_then(|_| draw_context.set("height", size.height))
+      .map_err(|error| self.error(LuaErrorStage::Callback, Some("Render"), error))?;
+    let environment: Table = self
+      .lua
+      .registry_value(&self.environment)
+      .map_err(|error| self.error(LuaErrorStage::Callback, Some("Render"), error))?;
+    let draw_library: Table = environment
+      .get("draw")
+      .map_err(|error| self.error(LuaErrorStage::Callback, Some("Render"), error))?;
+    for name in ["text", "fill_rect", "stroke_rect", "erase_rect", "render"] {
+      let value = draw_library
+        .get::<Value>(name)
+        .map_err(|error| self.error(LuaErrorStage::Callback, Some("Render"), error))?;
+      draw_context
+        .set(name, value)
+        .map_err(|error| self.error(LuaErrorStage::Callback, Some("Render"), error))?;
+    }
+    let draw = super::api::readonly::proxy(&self.lua, draw_context)
       .map_err(|error| self.error(LuaErrorStage::Callback, Some("Render"), error))?;
     self.invoke_hot(Callback::Render, draw, LuaBudgetKind::Render)
+  }
+
+  pub fn take_host_commands(&mut self) -> Vec<LuaHostCommand> {
+    let mut state = self.api_state.borrow_mut();
+    let mut host = Vec::new();
+    state.commands.retain(|command| {
+      if matches!(command, LuaHostCommand::Draw(_)) {
+        true
+      } else {
+        host.push(command.clone());
+        false
+      }
+    });
+    host
+  }
+
+  pub fn take_draw_commands(&mut self) -> Vec<LuaDrawCommand> {
+    let mut state = self.api_state.borrow_mut();
+    let mut draw = Vec::new();
+    state.commands.retain(|command| {
+      if let LuaHostCommand::Draw(command) = command {
+        draw.push(command.clone());
+        false
+      } else {
+        true
+      }
+    });
+    draw
   }
 
   pub fn save_game(&mut self) -> Result<Option<JsonValue>, LuaSessionError> {
@@ -434,6 +534,7 @@ impl LuaSession {
       event_table,
       self.policy.budget(LuaBudgetKind::HandleEvent),
       self.policy.hook_interval,
+      &self.api_state,
     );
     if remove_after {
       self.unregister_event_callback(callback_id);
@@ -499,13 +600,26 @@ impl LuaSession {
       .lua
       .registry_value::<Function>(self.callback_key(callback).expect("required callback"))
       .map_err(|error| self.error(stage, Some(callback.name()), error))?;
+    {
+      let mut api = self.api_state.borrow_mut();
+      api.phase = callback.phase();
+      if callback == Callback::Render {
+        api
+          .commands
+          .retain(|command| !matches!(command, LuaHostCommand::Draw(_)));
+        api.draw_command_count = 0;
+        api.draw_text_bytes = 0;
+      }
+    }
     let outcome = run_with_budget(
       &self.lua,
       function,
       args,
       self.policy.budget(budget_kind),
       self.policy.hook_interval,
+      &self.api_state,
     );
+    self.api_state.borrow_mut().phase = LuaCallPhase::Idle;
     match outcome {
       Ok((_, stats)) => {
         self.last_stats = LuaExecutionStats {
@@ -533,14 +647,18 @@ impl LuaSession {
       .lua
       .registry_value::<Function>(key)
       .map_err(|error| self.error(LuaErrorStage::Callback, Some(callback.name()), error))?;
-    let (values, stats) = run_with_budget(
+    self.api_state.borrow_mut().phase = callback.phase();
+    let outcome = run_with_budget(
       &self.lua,
       function,
       (),
       self.policy.budget(LuaBudgetKind::Save),
       self.policy.hook_interval,
-    )
-    .map_err(|failure| self.execution_error(LuaErrorStage::Callback, callback.name(), failure))?;
+      &self.api_state,
+    );
+    self.api_state.borrow_mut().phase = LuaCallPhase::Idle;
+    let (values, stats) = outcome
+      .map_err(|failure| self.execution_error(LuaErrorStage::Callback, callback.name(), failure))?;
     self.last_stats = LuaExecutionStats {
       memory_bytes: self.lua.used_memory(),
       ..stats
@@ -595,7 +713,7 @@ impl LuaSession {
   ) -> LuaSessionError {
     let (actual_stage, message) = match failure {
       LuaExecutionFailure::Lua(error) => {
-        let error_stage = if matches!(error, mlua::Error::MemoryError(_)) {
+        let error_stage = if is_memory_error(&error) {
           LuaErrorStage::MemoryLimit
         } else {
           stage
@@ -655,7 +773,7 @@ impl Drop for LuaSession {
   }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum Callback {
   Init,
   HandleEvent,
@@ -676,6 +794,17 @@ impl Callback {
       Self::Render => "Render",
       Self::SaveGame => "SaveGame",
       Self::SaveBest => "SaveBest",
+    }
+  }
+
+  fn phase(self) -> LuaCallPhase {
+    match self {
+      Self::Init => LuaCallPhase::Init,
+      Self::HandleEvent => LuaCallPhase::Event,
+      Self::Update => LuaCallPhase::Update,
+      Self::UpdateFrame => LuaCallPhase::UpdateFrame,
+      Self::Render => LuaCallPhase::Render,
+      Self::SaveGame | Self::SaveBest => LuaCallPhase::Save,
     }
   }
 }
@@ -802,56 +931,6 @@ fn validate_json_depth(value: &JsonValue, depth: usize, max_depth: usize) -> Res
   Ok(())
 }
 
-fn build_sandbox(lua: &Lua) -> mlua::Result<Table> {
-  let globals = lua.globals();
-  let environment = lua.create_table()?;
-  for name in [
-    "assert", "error", "pcall", "xpcall", "ipairs", "pairs", "next", "select", "tonumber",
-    "tostring", "type", "rawequal", "rawlen", "_VERSION",
-  ] {
-    environment.set(name, globals.get::<Value>(name)?)?;
-  }
-
-  for library in ["string", "utf8", "table"] {
-    environment.set(library, copy_table(lua, globals.get::<Table>(library)?)?)?;
-  }
-  let math = copy_table(lua, globals.get::<Table>("math")?)?;
-  for name in ["random", "randomseed"] {
-    math.set(name, unsupported_function(lua, &format!("math.{name}"))?)?;
-  }
-  environment.set("math", math)?;
-
-  for name in [
-    "print",
-    "warn",
-    "collectgarbage",
-    "getmetatable",
-    "setmetatable",
-  ] {
-    environment.set(name, unsupported_function(lua, name)?)?;
-  }
-  environment.set("_G", environment.clone())?;
-  Ok(environment)
-}
-
-fn copy_table(lua: &Lua, source: Table) -> mlua::Result<Table> {
-  let target = lua.create_table()?;
-  for pair in source.pairs::<Value, Value>() {
-    let (key, value) = pair?;
-    target.raw_set(key, value)?;
-  }
-  Ok(target)
-}
-
-fn unsupported_function(lua: &Lua, name: &str) -> mlua::Result<Function> {
-  let name = name.to_string();
-  lua.create_function(move |_, _: MultiValue| -> mlua::Result<()> {
-    Err(mlua::Error::RuntimeError(format!(
-      "'{name}' is not supported by the TUI GAME Lua runtime"
-    )))
-  })
-}
-
 fn discover_callbacks(
   lua: &Lua,
   environment: &Table,
@@ -928,10 +1007,16 @@ fn run_with_budget<A>(
   args: A,
   budget: LuaExecutionBudget,
   hook_interval: u32,
+  api_state: &SharedApiState,
 ) -> Result<(MultiValue, LuaExecutionStats), LuaExecutionFailure>
 where
   A: IntoLuaMulti,
 {
+  {
+    let mut api = api_state.borrow_mut();
+    api.fatal_budget_exceeded = false;
+    api.fatal_api_error = false;
+  }
   let thread = lua
     .create_thread(function)
     .map_err(LuaExecutionFailure::Lua)?;
@@ -940,6 +1025,7 @@ where
   let exceeded = Rc::new(Cell::new(false));
   let hook_instructions = Rc::clone(&instructions);
   let hook_exceeded = Rc::clone(&exceeded);
+  let hook_api_state = api_state.clone();
   thread
     .set_hook(
       HookTriggers::new().every_nth_instruction(hook_interval),
@@ -950,7 +1036,10 @@ where
         hook_instructions.set(current);
         if current > budget.max_instructions || started.elapsed() > budget.max_duration {
           hook_exceeded.set(true);
-          Ok(VmState::Yield)
+          hook_api_state.borrow_mut().fatal_budget_exceeded = true;
+          Err(mlua::Error::RuntimeError(
+            "Lua execution budget exceeded".to_string(),
+          ))
         } else {
           Ok(VmState::Continue)
         }
@@ -961,12 +1050,29 @@ where
   let result = thread.resume::<MultiValue>(args);
   thread.remove_hook();
   let elapsed = started.elapsed();
-  let values = result.map_err(LuaExecutionFailure::Lua)?;
-  if exceeded.get()
-    || !thread.is_finished()
-    || elapsed > budget.max_duration
-    || instructions.get() > budget.max_instructions
-  {
+  let values = match result {
+    Err(error) if is_memory_error(&error) => return Err(LuaExecutionFailure::Lua(error)),
+    Err(_) if exceeded.get() || api_state.borrow().fatal_budget_exceeded => {
+      return Err(LuaExecutionFailure::Limit {
+        instructions: instructions.get(),
+        elapsed,
+      });
+    }
+    Err(error) => return Err(LuaExecutionFailure::Lua(error)),
+    Ok(values) => values,
+  };
+  if exceeded.get() || !thread.is_finished() || instructions.get() > budget.max_instructions {
+    return Err(LuaExecutionFailure::Limit {
+      instructions: instructions.get(),
+      elapsed,
+    });
+  }
+  if api_state.borrow().fatal_api_error {
+    return Err(LuaExecutionFailure::Lua(mlua::Error::RuntimeError(
+      "fatal Lua API resource limit exceeded".to_string(),
+    )));
+  }
+  if elapsed > budget.max_duration {
     return Err(LuaExecutionFailure::Limit {
       instructions: instructions.get(),
       elapsed,
@@ -980,6 +1086,16 @@ where
       memory_bytes: lua.used_memory(),
     },
   ))
+}
+
+fn is_memory_error(error: &mlua::Error) -> bool {
+  match error {
+    mlua::Error::MemoryError(_) => true,
+    mlua::Error::BadArgument { cause, .. } | mlua::Error::CallbackError { cause, .. } => {
+      is_memory_error(cause)
+    }
+    _ => false,
+  }
 }
 
 fn session_error(
@@ -1005,7 +1121,7 @@ fn execution_error(
 ) -> LuaSessionError {
   match failure {
     LuaExecutionFailure::Lua(error) => {
-      let stage = if matches!(error, mlua::Error::MemoryError(_)) {
+      let stage = if is_memory_error(&error) {
         LuaErrorStage::MemoryLimit
       } else {
         stage
@@ -1226,10 +1342,8 @@ mod tests {
       second.environment_value("private_value"),
       Value::String(second.lua.create_string("screensaver").unwrap())
     );
-    assert_ne!(
-      first.environment_value("_G").to_pointer(),
-      second.environment_value("_G").to_pointer()
-    );
+    assert_eq!(first.environment_value("_G"), Value::Nil);
+    assert_eq!(second.environment_value("_G"), Value::Nil);
 
     let first_pool_id = first.objects().unwrap().ui().id();
     let second_pool_id = second.objects().unwrap().ui().id();
@@ -1248,18 +1362,42 @@ mod tests {
   }
 
   #[test]
-  fn sandbox_keeps_whitelist_and_hides_dangerous_apis() {
+  fn sandbox_exposes_only_host_libraries_and_hides_native_globals() {
     let session = LuaSession::load(
       spec(&valid_script(""), LuaSessionKind::Game),
       LuaPolicy::default(),
     )
     .unwrap();
     for name in [
-      "math", "string", "utf8", "table", "pcall", "rawequal", "rawlen",
+      "base",
+      "math",
+      "string",
+      "utf8",
+      "table",
+      "align",
+      "char",
+      "color",
+      "measurement",
+      "draw",
+      "debug",
+      "game",
+      "event",
+      "loader",
+      "file",
     ] {
       assert_ne!(session.environment_value(name), Value::Nil, "{name}");
     }
     for name in [
+      "_G",
+      "_VERSION",
+      "assert",
+      "error",
+      "pcall",
+      "xpcall",
+      "type",
+      "pairs",
+      "ipairs",
+      "next",
       "load",
       "loadfile",
       "loadstring",
@@ -1269,12 +1407,202 @@ mod tests {
       "rawset",
       "os",
       "io",
-      "debug",
       "package",
       "coroutine",
     ] {
       assert_eq!(session.environment_value(name), Value::Nil, "{name}");
     }
+  }
+
+  #[test]
+  fn api_tables_are_read_only_and_iterators_do_not_expose_backing_tables() {
+    let source = valid_script(
+      r#"
+        function Init(ctx)
+          local ok = debug.pcall{ func = function() math.PI = 0 end }
+          debug.assert{ value = not ok, message = "math must be read-only" }
+          local iterator, state = base.pairs(math)
+          state.PI = 0
+          debug.assert{ value = math.PI > 3, message = "iterator leaked backing table" }
+        end
+      "#,
+    );
+    LuaSession::load(spec(&source, LuaSessionKind::Game), LuaPolicy::default()).unwrap();
+  }
+
+  #[test]
+  fn api_rejects_invalid_math_domains_and_excessively_deep_parameters() {
+    let source = valid_script(
+      r#"
+        function Init(ctx)
+          local sqrt_ok = debug.pcall{ func = function() math.sqrt(-1) end }
+          local pow_ok = debug.pcall{ func = function() math.pow{ left = -1, right = 0.5 } end }
+          local value = {}
+          local cursor = value
+          for index = 1, 33 do
+            cursor.child = {}
+            cursor = cursor.child
+          end
+          local depth_ok = debug.pcall{ func = function() base.type(value) end }
+          local packed = table.pack{ values = { [1] = "first", n = 3 } }
+          debug.assert{
+            value = not sqrt_ok and not pow_ok and not depth_ok
+              and packed.n == 3 and packed[1] == "first" and packed[3] == nil,
+          }
+        end
+      "#,
+    );
+    LuaSession::load(spec(&source, LuaSessionKind::Game), LuaPolicy::default()).unwrap();
+  }
+
+  #[test]
+  fn save_callbacks_cannot_enqueue_recursive_save_commands() {
+    let source = valid_script(
+      r#"
+        function SaveGame()
+          game.save_game()
+          return { saved = true }
+        end
+      "#,
+    );
+    let mut session =
+      LuaSession::load(spec(&source, LuaSessionKind::Game), LuaPolicy::default()).unwrap();
+    assert_eq!(session.save_game().unwrap().unwrap()["saved"], true);
+    let commands = session.take_host_commands();
+    assert!(commands.iter().any(|command| matches!(
+      command,
+      LuaHostCommand::Ignored {
+        method: "game.save_game",
+        ..
+      }
+    )));
+    assert!(
+      !commands
+        .iter()
+        .any(|command| matches!(command, LuaHostCommand::SaveGame))
+    );
+  }
+
+  #[test]
+  fn restricted_calls_are_ignored_before_parameter_validation() {
+    let source = valid_script(
+      r#"
+        function Init(ctx)
+          game.exit_game("ignored")
+          event.clear_action("ignored")
+          file.write("ignored")
+          file.list_dir("ignored")
+          debug.log({ invalid = true })
+        end
+      "#,
+    );
+    let mut session = LuaSession::load(
+      spec(&source, LuaSessionKind::Screensaver),
+      LuaPolicy::default(),
+    )
+    .unwrap();
+    let commands = session.take_host_commands();
+    for method in [
+      "game.exit_game",
+      "event.clear_action",
+      "file.write",
+      "file.list_dir",
+      "debug.log",
+    ] {
+      assert!(
+        commands.iter().any(|command| matches!(
+          command,
+          LuaHostCommand::Ignored { method: found, .. } if *found == method
+        )),
+        "missing ignored command for {method}"
+      );
+    }
+  }
+
+  #[test]
+  fn api_configuration_is_active_during_entry_and_init() {
+    let source = valid_script(
+      r#"
+        debug.log("entry")
+        function Init(ctx)
+          debug.log("init")
+          event.clear_action()
+        end
+      "#,
+    );
+    let mut session = LuaSession::load_with_api(
+      spec(&source, LuaSessionKind::Game),
+      LuaPolicy::default(),
+      LuaApiConfig {
+        debug_enabled: true,
+        safe_mode_enabled: false,
+        key_actions: HashMap::new(),
+        key_default_actions: HashMap::new(),
+      },
+    )
+    .unwrap();
+    let commands = session.take_host_commands();
+    assert_eq!(
+      commands
+        .iter()
+        .filter(|command| matches!(command, LuaHostCommand::Log { .. }))
+        .count(),
+      2
+    );
+    assert!(
+      commands
+        .iter()
+        .any(|command| matches!(command, LuaHostCommand::ClearActions))
+    );
+  }
+
+  #[test]
+  fn loader_isolates_modules_and_rejects_unsafe_sources() {
+    let source = valid_script(
+      r#"
+        private_state = "main-only"
+        function Init(ctx)
+          local first = loader.load("module")
+          local second = loader.load{ path = "module.lua" }
+          debug.assert{ value = first.value == 1 and second.value == 1 }
+          debug.assert{ value = first.leaked == nil and second.leaked == nil }
+          debug.assert{ value = loader.load_execute("value") == 42 }
+
+          local traversal_ok = debug.pcall{
+            func = function() loader.load("../outside") end,
+          }
+          local extension_ok = debug.pcall{
+            func = function() loader.load("module.txt") end,
+          }
+          local bytecode_ok = debug.pcall{
+            func = function() loader.load("bytecode.lua") end,
+          }
+          local cycle_ok = debug.pcall{
+            func = function() loader.load("cycle") end,
+          }
+          debug.assert{
+            value = not traversal_ok and not extension_ok and not bytecode_ok and not cycle_ok,
+          }
+        end
+      "#,
+    );
+    let session_spec = spec(&source, LuaSessionKind::Game);
+    let scripts_root = session_spec.entry_path.parent().unwrap();
+    fs::write(
+      scripts_root.join("module.lua"),
+      "instance_count = (instance_count or 0) + 1\nreturn { value = instance_count, leaked = private_state }",
+    )
+    .unwrap();
+    fs::write(scripts_root.join("value.lua"), "return 42").unwrap();
+    fs::write(scripts_root.join("module.txt"), "return {}").unwrap();
+    fs::write(scripts_root.join("bytecode.lua"), [0x1b, b'L', b'u', b'a']).unwrap();
+    fs::write(
+      scripts_root.join("cycle.lua"),
+      "return loader.load('cycle')",
+    )
+    .unwrap();
+
+    LuaSession::load(session_spec, LuaPolicy::default()).unwrap();
   }
 
   #[test]
@@ -1328,7 +1656,9 @@ mod tests {
 
   #[test]
   fn instruction_budget_cannot_be_hidden_by_pcall() {
-    let source = valid_script("function Update(dt) pcall(function() while true do end end) end");
+    let source = valid_script(
+      "function Update(dt) debug.pcall{ func = function() while true do end end } end",
+    );
     let mut session =
       LuaSession::load(spec(&source, LuaSessionKind::Game), LuaPolicy::default()).unwrap();
     let error = session.update().unwrap_err();
@@ -1718,10 +2048,15 @@ mod tests {
 
   #[test]
   fn memory_limit_faults_only_the_current_session() {
-    let source =
-      valid_script("function Update(dt) local value = string.rep('x', 40 * 1024 * 1024) end");
+    let source = valid_script(
+      "function Update(dt) local value = string.rep{ text = 'x', times = 1024 * 1024 } end",
+    );
     let mut session =
       LuaSession::load(spec(&source, LuaSessionKind::Game), LuaPolicy::default()).unwrap();
+    session
+      .lua
+      .set_memory_limit(session.lua.used_memory() + 128 * 1024)
+      .unwrap();
     let error = session.update().unwrap_err();
     assert_eq!(error.stage, LuaErrorStage::MemoryLimit);
     assert_eq!(session.state(), LuaSessionState::Faulted);

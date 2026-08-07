@@ -75,16 +75,23 @@ pub(super) fn route_render(
 
   if world.state.current_overlay_kind() == Some(OverlayKind::Screensaver) {
     apply_host_viewport(services, false);
-    screensaver_overlay_ui.objects_mut().begin_render();
-    services
-      .canvas
-      .prepare(screensaver_overlay_ui.objects(), &services.layout);
-    screensaver_overlay_ui.render(
-      &mut services.render,
-      &mut services.canvas,
-      &services.layout,
-      &services.i18n,
-    );
+    if let Some(objects) = services.screensaver.objects_mut() {
+      objects.ui_mut().begin_render();
+      services.canvas.prepare(objects.ui(), &services.layout);
+      let commands = services.screensaver.take_draw_commands();
+      apply_lua_draw_commands(services, commands);
+    } else {
+      screensaver_overlay_ui.objects_mut().begin_render();
+      services
+        .canvas
+        .prepare(screensaver_overlay_ui.objects(), &services.layout);
+      screensaver_overlay_ui.render(
+        &mut services.render,
+        &mut services.canvas,
+        &services.layout,
+        &services.i18n,
+      );
+    }
     return None;
   }
 
@@ -175,6 +182,14 @@ pub(super) fn route_render(
   let show_top_toolbar = services.storage.display_settings_profile().top_toolbar;
   apply_host_viewport(services, show_top_toolbar);
 
+  let lua_game_prepared = world.state.current_ui_kind().is_none() && services.game.is_active();
+  if lua_game_prepared && let Some(objects) = services.game.objects_mut() {
+    objects.ui_mut().begin_render();
+    services.canvas.prepare(objects.ui(), &services.layout);
+    let commands = services.game.take_draw_commands();
+    apply_lua_draw_commands(services, commands);
+  }
+
   if world.state.current_ui_kind() == Some(UiNodeKind::ScreensaverList) {
     screensaver_list_ui.prepare_surfaces(
       &services.layout,
@@ -234,7 +249,7 @@ pub(super) fn route_render(
     services
       .canvas
       .prepare(exit_warning_ui.objects(), &services.layout);
-  } else {
+  } else if !lua_game_prepared {
     if let Some(objects) = current_objects_mut(
       world,
       home_ui,
@@ -596,4 +611,73 @@ pub(super) fn route_render(
   }
 
   input_cursor
+}
+
+fn apply_lua_draw_commands(
+  services: &mut EngineServices,
+  commands: Vec<crate::host_engine::services::LuaDrawCommand>,
+) {
+  use crate::host_engine::services::{LuaDrawCommand, TextColor};
+  for command in commands {
+    match command {
+      LuaDrawCommand::Text { x, y, params } => {
+        services
+          .render
+          .draw_text_at(&mut services.canvas, x, y, &params);
+      }
+      LuaDrawCommand::FillRect {
+        x,
+        y,
+        width,
+        height,
+        fill_char,
+        fg,
+        bg,
+      } => services.render.draw_filled_rect(
+        &mut services.canvas,
+        x,
+        y,
+        width,
+        height,
+        fill_char,
+        fg,
+        bg,
+      ),
+      LuaDrawCommand::StrokeRect {
+        x,
+        y,
+        width,
+        height,
+        border,
+        fg,
+        bg,
+      } => services.render.draw_border_rect(
+        &mut services.canvas,
+        x,
+        y,
+        width,
+        height,
+        &border,
+        fg,
+        bg,
+        None,
+        None,
+      ),
+      LuaDrawCommand::EraseRect {
+        x,
+        y,
+        width,
+        height,
+      } => services.render.draw_filled_rect(
+        &mut services.canvas,
+        x,
+        y,
+        width,
+        height,
+        Some(" ".to_string()),
+        Some(TextColor::Transparent),
+        Some(TextColor::Transparent),
+      ),
+    }
+  }
 }

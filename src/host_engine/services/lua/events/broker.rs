@@ -11,8 +11,8 @@ use crate::host_engine::services::{
 
 use super::super::LuaSessionKind;
 use super::{
-  LuaAudioEvent, LuaAudioEventKind, LuaEventData, LuaEventError, LuaEventErrorCode, LuaFileEvent,
-  LuaFileOperation, LuaFileOutcome, LuaImageEvent, LuaImageOutcome, LuaNetworkBody,
+  LuaAudioEvent, LuaAudioEventKind, LuaEventData, LuaEventError, LuaEventErrorCode, LuaFileEntry,
+  LuaFileEvent, LuaFileOperation, LuaFileOutcome, LuaImageEvent, LuaImageOutcome, LuaNetworkBody,
   LuaNetworkEvent, LuaNetworkOutcome, LuaRuntimeEvent, LuaTimerEvent, LuaTimerEventKind,
   LuaTimerKind, sanitize_io_error, sanitize_network_error,
 };
@@ -20,6 +20,7 @@ use super::{
 pub const MAX_LUA_EVENTS_PER_FRAME: usize = 128;
 pub const MAX_LUA_PENDING_EVENTS: usize = 1_024;
 pub const MAX_LUA_NETWORK_TASKS_PER_SESSION: usize = 4;
+pub const MAX_LUA_FILE_TASKS_PER_SESSION: usize = 8;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct LuaSessionToken {
@@ -48,6 +49,7 @@ pub enum LuaTaskOperation {
     request_id: u64,
     kind: LuaFileOperation,
     virtual_path: String,
+    event_tip: Option<String>,
   },
   ImageConvert {
     request_id: u64,
@@ -89,6 +91,7 @@ pub enum LuaEnqueueError {
   TaskAlreadyRegistered(TaskId),
   AudioAlreadyRegistered(AudioId),
   NetworkTaskLimit(LuaSessionToken),
+  FileTaskLimit(LuaSessionToken),
   InvalidVirtualPath,
   StaleTaskCompletion(TaskId),
   StaleAudioEvent(AudioId),
@@ -312,6 +315,18 @@ impl LuaEventBroker {
     {
       return Err(LuaEnqueueError::NetworkTaskLimit(token));
     }
+    if matches!(operation, LuaTaskOperation::File { .. })
+      && self
+        .tasks
+        .values()
+        .filter(|task| {
+          task.token == token && matches!(task.operation, LuaTaskOperation::File { .. })
+        })
+        .count()
+        >= MAX_LUA_FILE_TASKS_PER_SESSION
+    {
+      return Err(LuaEnqueueError::FileTaskLimit(token));
+    }
     if self.tasks.contains_key(&task_id) {
       return Err(LuaEnqueueError::TaskAlreadyRegistered(task_id));
     }
@@ -422,6 +437,25 @@ impl LuaEventBroker {
 
   pub fn drain_frame(&mut self, kind: LuaSessionKind) -> Vec<LuaEventDelivery> {
     self.queue_mut(kind).drain_frame()
+  }
+
+  pub fn requeue_front(
+    &mut self,
+    kind: LuaSessionKind,
+    deliveries: impl IntoIterator<Item = LuaEventDelivery>,
+  ) {
+    let mut deliveries = deliveries.into_iter().collect::<Vec<_>>();
+    let queue = self.queue_mut(kind);
+    while let Some(delivery) = deliveries.pop() {
+      queue.events.push_front(delivery);
+    }
+  }
+
+  pub fn clear_pending_actions(&mut self, kind: LuaSessionKind) {
+    self
+      .queue_mut(kind)
+      .events
+      .retain(|delivery| !matches!(delivery.event.data, LuaEventData::Action { .. }));
   }
 
   pub fn pending_len(&self, kind: LuaSessionKind) -> usize {
@@ -566,11 +600,12 @@ impl Default for LuaEventBroker {
 }
 
 fn valid_virtual_path(path: &str) -> bool {
-  !path.is_empty()
-    && !Path::new(path).is_absolute()
-    && Path::new(path)
-      .components()
-      .all(|component| matches!(component, Component::Normal(_)))
+  path == "."
+    || (!path.is_empty()
+      && !Path::new(path).is_absolute()
+      && Path::new(path)
+        .components()
+        .all(|component| matches!(component, Component::Normal(_))))
 }
 
 fn service_event_task_id(event: &EngineEvent) -> Option<TaskId> {
@@ -580,6 +615,9 @@ fn service_event_task_id(event: &EngineEvent) -> Option<TaskId> {
       | FileEvent::WriteTextFinished { task_id, .. }
       | FileEvent::ReadBytesFinished { task_id, .. }
       | FileEvent::WriteBytesFinished { task_id, .. }
+      | FileEvent::LuaReadTextFinished { task_id, .. }
+      | FileEvent::LuaWriteTextFinished { task_id, .. }
+      | FileEvent::LuaListDirFinished { task_id, .. }
       | FileEvent::Failed { task_id, .. } => *task_id,
     }),
     EngineEvent::Image(event) => Some(match event {
@@ -603,6 +641,7 @@ fn translate_task_event(operation: &LuaTaskOperation, event: &EngineEvent) -> Op
         request_id,
         kind,
         virtual_path,
+        event_tip,
       },
       EngineEvent::File(event),
     ) => {
@@ -617,6 +656,23 @@ fn translate_task_event(operation: &LuaTaskOperation, event: &EngineEvent) -> Op
         | (LuaFileOperation::WriteBytes, FileEvent::WriteBytesFinished { .. }) => {
           LuaFileOutcome::Written
         }
+        (LuaFileOperation::ReadText, FileEvent::LuaReadTextFinished { text, .. }) => {
+          LuaFileOutcome::Text(text.clone())
+        }
+        (LuaFileOperation::WriteText, FileEvent::LuaWriteTextFinished { .. }) => {
+          LuaFileOutcome::Written
+        }
+        (LuaFileOperation::ListDir, FileEvent::LuaListDirFinished { entries, .. }) => {
+          LuaFileOutcome::Entries(
+            entries
+              .iter()
+              .map(|entry| LuaFileEntry {
+                path: entry.path.clone(),
+                file_type: entry.file_type.clone(),
+              })
+              .collect(),
+          )
+        }
         (_, FileEvent::Failed { error, .. }) => LuaFileOutcome::Failed(sanitize_io_error(error)),
         _ => LuaFileOutcome::Failed(LuaEventError::sanitized(LuaEventErrorCode::Internal)),
       };
@@ -624,6 +680,7 @@ fn translate_task_event(operation: &LuaTaskOperation, event: &EngineEvent) -> Op
         request_id: *request_id,
         kind: *kind,
         path: virtual_path.clone(),
+        tip: event_tip.clone(),
         outcome,
       }))
     }
@@ -802,6 +859,7 @@ mod tests {
           request_id: 1,
           kind: LuaFileOperation::WriteText,
           path: "storage/save.txt".to_string(),
+          tip: None,
           outcome: LuaFileOutcome::Written,
         }),
         LuaEventRoute::HandleEvent,
@@ -820,6 +878,7 @@ mod tests {
           request_id: 2,
           kind: LuaFileOperation::ReadText,
           path: "assets/story.txt".to_string(),
+          tip: None,
           outcome: LuaFileOutcome::Text("safe".to_string()),
         }),
         LuaEventRoute::HandleEvent,
@@ -942,6 +1001,7 @@ mod tests {
           request_id: 3,
           kind: LuaFileOperation::ReadText,
           virtual_path: "assets/story.txt".to_string(),
+          event_tip: None,
         },
         LuaEventRoute::HandleEvent,
       )
@@ -988,6 +1048,7 @@ mod tests {
             request_id: 1,
             kind: LuaFileOperation::ReadText,
             virtual_path: path.to_string(),
+            event_tip: None,
           },
           LuaEventRoute::HandleEvent,
         ),
@@ -1002,6 +1063,7 @@ mod tests {
           request_id: 2,
           kind: LuaFileOperation::WriteText,
           virtual_path: "storage/save.txt".to_string(),
+          event_tip: None,
         },
         LuaEventRoute::HandleEvent,
       ),

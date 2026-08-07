@@ -10,8 +10,8 @@ use crate::host_engine::services::{
 
 pub use broker::{
   LuaEnqueueError, LuaEventBroker, LuaEventCallbackId, LuaEventDelivery, LuaEventRoute,
-  LuaSessionToken, LuaTaskOperation, MAX_LUA_EVENTS_PER_FRAME, MAX_LUA_NETWORK_TASKS_PER_SESSION,
-  MAX_LUA_PENDING_EVENTS,
+  LuaSessionToken, LuaTaskOperation, MAX_LUA_EVENTS_PER_FRAME, MAX_LUA_FILE_TASKS_PER_SESSION,
+  MAX_LUA_NETWORK_TASKS_PER_SESSION, MAX_LUA_PENDING_EVENTS,
 };
 pub use translate::{
   translate_animation_event, translate_delay_timer_event, translate_hit_area_event,
@@ -121,6 +121,7 @@ pub enum LuaFileOperation {
   ReadBytes,
   WriteText,
   WriteBytes,
+  ListDir,
 }
 
 impl LuaFileOperation {
@@ -130,11 +131,12 @@ impl LuaFileOperation {
       Self::ReadBytes => "read_bytes",
       Self::WriteText => "write_text",
       Self::WriteBytes => "write_bytes",
+      Self::ListDir => "list_dir",
     }
   }
 
   pub fn is_write(self) -> bool {
-    matches!(self, Self::WriteText | Self::WriteBytes)
+    matches!(self, Self::WriteText | Self::WriteBytes | Self::ListDir)
   }
 }
 
@@ -210,7 +212,14 @@ pub enum LuaFileOutcome {
   Text(String),
   Bytes(Vec<u8>),
   Written,
+  Entries(Vec<LuaFileEntry>),
   Failed(LuaEventError),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LuaFileEntry {
+  pub path: String,
+  pub file_type: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -218,6 +227,7 @@ pub struct LuaFileEvent {
   pub request_id: u64,
   pub kind: LuaFileOperation,
   pub path: String,
+  pub tip: Option<String>,
   pub outcome: LuaFileOutcome,
 }
 
@@ -527,6 +537,7 @@ impl LuaEventData {
         data.set("request_id", event.request_id)?;
         data.set("kind", event.kind.as_str())?;
         data.set("path", event.path.as_str())?;
+        data.set("tip", event.tip.as_deref())?;
         match &event.outcome {
           LuaFileOutcome::Text(text) => {
             data.set("ok", true)?;
@@ -537,6 +548,17 @@ impl LuaEventData {
             data.set("bytes", lua.create_string(bytes)?)?;
           }
           LuaFileOutcome::Written => data.set("ok", true)?,
+          LuaFileOutcome::Entries(entries) => {
+            data.set("ok", true)?;
+            let values = lua.create_table()?;
+            for (index, entry) in entries.iter().enumerate() {
+              let value = lua.create_table()?;
+              value.set("path", entry.path.as_str())?;
+              value.set("file_type", entry.file_type.as_str())?;
+              values.raw_set(index + 1, value)?;
+            }
+            data.set("entries", values)?;
+          }
           LuaFileOutcome::Failed(error) => {
             data.set("ok", false)?;
             data.set("error", error_table(lua, error)?)?;
@@ -654,9 +676,17 @@ pub(super) fn sanitize_io_error(message: &str) -> LuaEventError {
     LuaEventErrorCode::NotFound
   } else if lower.contains("permission") || lower.contains("access is denied") {
     LuaEventErrorCode::PermissionDenied
-  } else if lower.contains("utf-8") || lower.contains("utf8") {
+  } else if lower.contains("utf-8")
+    || lower.contains("utf8")
+    || lower.contains("utf-16")
+    || lower.contains("decode")
+    || lower.contains("replacement")
+    || lower.contains("binary data")
+    || lower.contains("nul")
+  {
     LuaEventErrorCode::InvalidUtf8
-  } else if lower.contains("too large") || lower.contains("size limit") {
+  } else if lower.contains("too large") || lower.contains("size limit") || lower.contains("exceeds")
+  {
     LuaEventErrorCode::TooLarge
   } else if lower.contains("cancel") {
     LuaEventErrorCode::Cancelled
@@ -712,6 +742,14 @@ mod tests {
     assert_eq!(error.code, LuaEventErrorCode::PermissionDenied);
     assert!(!error.message.contains("C:\\"));
     assert!(!error.message.contains("secret"));
+    assert_eq!(
+      sanitize_io_error("file exceeds 1 MiB").code,
+      LuaEventErrorCode::TooLarge
+    );
+    assert_eq!(
+      sanitize_io_error("text cannot be decoded without replacement").code,
+      LuaEventErrorCode::InvalidUtf8
+    );
   }
 
   #[test]
@@ -721,6 +759,7 @@ mod tests {
       request_id: 7,
       kind: LuaFileOperation::ReadBytes,
       path: "assets/data.bin".to_string(),
+      tip: None,
       outcome: LuaFileOutcome::Bytes(vec![0, 1, 255]),
     })
     .to_lua_table(&lua)
@@ -874,6 +913,7 @@ mod tests {
           request_id: 3,
           kind: LuaFileOperation::ReadText,
           path: "assets/file.txt".to_string(),
+          tip: None,
           outcome: LuaFileOutcome::Text("text".to_string()),
         }),
         "file",

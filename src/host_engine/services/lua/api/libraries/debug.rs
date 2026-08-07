@@ -1,0 +1,124 @@
+use super::*;
+
+pub(super) fn debug(lua: &Lua, state: SharedApiState) -> mlua::Result<Table> {
+  let source = lua.create_table()?;
+  source.raw_set("VERSION", "Lua 5.4 / TUI GAME API 1")?;
+  for (name, level) in [
+    ("print", "plain"),
+    ("log", "info"),
+    ("warn", "warn"),
+    ("error", "error"),
+  ] {
+    let state = state.clone();
+    source.raw_set(
+      name,
+      lua.create_function(move |_, values: MultiValue| {
+        let method = match level {
+          "plain" => "debug.print",
+          "info" => "debug.log",
+          "warn" => "debug.warn",
+          _ => "debug.error",
+        };
+        if !state.borrow().context.debug_enabled {
+          ignore_once(&mut state.borrow_mut(), method, "debug mode is disabled");
+          return Ok(());
+        }
+        let message = if name == "print" {
+          let table = args::named(method, values, &["message", "time", "level", "type_head"])?;
+          args::string(
+            args::required(&table, method, "message")?,
+            method,
+            "message",
+          )?
+        } else {
+          args::string(args::one(method, "message", values)?, method, "message")?
+        };
+        let mut state = state.borrow_mut();
+        enqueue_debug_log(&mut state, level, message);
+        Ok(())
+      })?,
+    )?;
+  }
+  source.raw_set(
+    "assert",
+    lua.create_function(|_, values: MultiValue| {
+      let table = args::named("debug.assert", values, &["value", "message"])?;
+      let value = args::required(&table, "debug.assert", "value")?;
+      if matches!(value, Value::Nil | Value::Boolean(false)) {
+        let message =
+          args::optional_string(&table, "debug.assert", "message", Some("assertion failed"))?
+            .unwrap();
+        Err(mlua::Error::RuntimeError(message))
+      } else {
+        Ok(value)
+      }
+    })?,
+  )?;
+  source.raw_set("pcall", protected(lua, false, state.clone())?)?;
+  source.raw_set("xpcall", protected(lua, true, state)?)?;
+  readonly::proxy(lua, source)
+}
+
+fn protected(lua: &Lua, extended: bool, state: SharedApiState) -> mlua::Result<Function> {
+  lua.create_function(move |lua, values: MultiValue| {
+    let method = if extended {
+      "debug.xpcall"
+    } else {
+      "debug.pcall"
+    };
+    let allowed = if extended {
+      &["func", "error_callback", "values"][..]
+    } else {
+      &["func", "values", "message"][..]
+    };
+    let table = args::named(method, values, allowed)?;
+    let value = args::required(&table, method, "func")?;
+    let Value::Function(function) = value else {
+      return Err(args::invalid(method, "func", "function", &value));
+    };
+    let call_values = if matches!(table.get::<Value>("values")?, Value::Nil) {
+      Vec::new()
+    } else {
+      args::values(&table, method)?
+    };
+    match function.call::<MultiValue>(MultiValue::from_vec(call_values)) {
+      Ok(mut result) => {
+        if state.borrow().fatal_budget_exceeded || state.borrow().fatal_api_error {
+          return Err(mlua::Error::RuntimeError(
+            "fatal Lua API resource limit exceeded".to_string(),
+          ));
+        }
+        result.push_front(Value::Boolean(true));
+        Ok(result)
+      }
+      Err(error) => {
+        if state.borrow().fatal_budget_exceeded
+          || state.borrow().fatal_api_error
+          || is_memory_error(&error)
+        {
+          return Err(error);
+        }
+        let mut error_value = Value::String(lua.create_string(error.to_string())?);
+        if extended {
+          if let Value::Function(handler) = table.get::<Value>("error_callback")? {
+            error_value = handler.call(error_value)?;
+          }
+        }
+        Ok(MultiValue::from_vec(vec![
+          Value::Boolean(false),
+          error_value,
+        ]))
+      }
+    }
+  })
+}
+
+fn is_memory_error(error: &mlua::Error) -> bool {
+  match error {
+    mlua::Error::MemoryError(_) => true,
+    mlua::Error::BadArgument { cause, .. } | mlua::Error::CallbackError { cause, .. } => {
+      is_memory_error(cause)
+    }
+    _ => false,
+  }
+}

@@ -5,8 +5,8 @@ use serde_json::Value as JsonValue;
 use crate::host_engine::services::{PackageSource, Size};
 
 use super::{
-  LuaEventDelivery, LuaExecutionStats, LuaObjectPool, LuaSession, LuaSessionError, LuaSessionKind,
-  LuaSessionState, LuaSessionToken,
+  LuaDrawCommand, LuaEventDelivery, LuaExecutionStats, LuaHostCommand, LuaObjectPool, LuaSession,
+  LuaSessionError, LuaSessionKind, LuaSessionState, LuaSessionToken,
 };
 
 const MAX_REAL_DELTA: Duration = Duration::from_millis(250);
@@ -188,6 +188,36 @@ impl GameService {
       return Ok(());
     };
     session.render(size)
+  }
+
+  pub fn take_host_commands(&mut self) -> Vec<LuaHostCommand> {
+    self
+      .session
+      .as_mut()
+      .map(LuaSession::take_host_commands)
+      .unwrap_or_default()
+  }
+
+  pub fn take_draw_commands(&mut self) -> Vec<LuaDrawCommand> {
+    self
+      .session
+      .as_mut()
+      .map(LuaSession::take_draw_commands)
+      .unwrap_or_default()
+  }
+
+  pub fn save_game(&mut self) -> Result<Option<JsonValue>, LuaSessionError> {
+    self
+      .session
+      .as_mut()
+      .map_or(Ok(None), LuaSession::save_game)
+  }
+
+  pub fn save_best(&mut self) -> Result<Option<JsonValue>, LuaSessionError> {
+    self
+      .session
+      .as_mut()
+      .map_or(Ok(None), LuaSession::save_best)
   }
 }
 
