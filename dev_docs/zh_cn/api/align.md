@@ -117,13 +117,13 @@
 - **方法要求**：无
 - **方法参数**：
 
-| 参数名 | 类型 | 必填 | 默认值 | 说明 | 额外补充 |
-| ------ | ---- | ---- | ------ | ---- | -------- |
-| `width` | integer | 是 | — | 元素宽度（显示列数） | 必须为正整数 |
-| `horizontal_align` | const | 是 | — | 水平对齐方式 | 使用 `align.AUTO/LEFT/HORIZONTAL_CENTER/RIGHT/CENTER` |
-| `offset_x` | integer | 否 | `0` | 锚点上的水平偏移 | 正数向右、负数向左 |
-| `relative_x` | integer | 否 | `nil` | 自定义水平锚点 | 省略时按对齐方式取边缘/中心作为锚点 |
-| `slice_layer` | string | 否 | `"base"` | 图层 | 当前仅支持 `"base"` |
+| 参数名                | 类型      | 必填  | 默认值      | 说明         | 额外补充                                                |
+| ------------------ | ------- | --- | -------- | ---------- | --------------------------------------------------- |
+| `width`            | integer | 是   | —        | 元素宽度（显示列数） | 必须为正整数                                              |
+| `horizontal_align` | const   | 是   | —        | 水平对齐方式     | 使用 `align.AUTO/LEFT/HORIZONTAL_CENTER/RIGHT/CENTER` |
+| `offset_x`         | integer | 否   | `0`      | 锚点上的水平偏移   | 正数向右、负数向左                                           |
+| `relative_x`       | integer | 否   | `nil`    | 自定义水平锚点    | 省略时按对齐方式取边缘/中心作为锚点                                  |
+| `slice_layer`      | string  | 否   | `"base"` | 图层         | 当前仅支持 `"base"`                                      |
 
 - **方法返回**：
 

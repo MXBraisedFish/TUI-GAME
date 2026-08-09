@@ -44,6 +44,7 @@ Each session has its own event queue. At most 128 events are delivered per frame
 | Your own network requests | ✓ | Pending permission API |
 | Your own audio objects | ✓ | ✓ |
 | Your own interactive UI objects | ✓ | ✗ |
+| Language load / reload (i18n) | ✓ | ✓ |
 
 While the screensaver is active, the game will not receive `action`, `mouse`, or interactive UI events. However, `resize`, `focus`, screensaver lifecycle events, and results of background operations are still delivered.
 
@@ -209,6 +210,18 @@ Sent when the state of an audio object you own changes.
 | `error` | `table \| nil` | Error object on `failed`. Audio-specific error codes: `decode`, `backend_unavailable`. |
 
 Every state change for the same audio object is sent to the same callback. The object is not automatically reclaimed after `finished` (you can replay it). It is only reclaimed when you manually delete it or the session stops.
+
+## i18n Events
+
+Returned by the host after you call `i18n.create` or `i18n.reload`, and delivered to the session that made the call.
+
+| `data` field | Type | Description |
+|---|---|---|
+| `kind` | `string` | `created` (from `create`) or `reloaded` (from `reload`). |
+| `ok` | `boolean` | Whether the language loaded successfully (still `true` with an empty table when the language directory or files do not exist). |
+| `message` | `string` | Load message: `"loaded"` for `create` and `"reloaded"` for `reload` on success; an error description when scanning fails. |
+| `language_code` | `string` | The language code that was actually loaded. |
+| `callback_language_code` | `string` | The fallback language code used by `get_key` when lookups fail. |
 
 ## Interactive UI Events
 

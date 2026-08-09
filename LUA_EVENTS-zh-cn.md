@@ -44,6 +44,7 @@
 | 自己发起的网络请求 | ✓ | 待权限 API |
 | 自己的音频对象 | ✓ | ✓ |
 | 自己创建的交互 UI 对象 | ✓ | ✗ |
+| 语言加载／重载（i18n） | ✓ | ✓ |
 
 屏保运行期间，游戏收不到 `action`、`mouse` 和交互 UI 事件，但 `resize`、`focus`、屏保生命周期以及后台操作的结果依然可以收到。
 
@@ -209,6 +210,18 @@ HTTP 请求完成时发送。注意：HTTP 层面的 404、500 等状态码属�
 | `error` | `table \| nil` | `failed` 时的错误对象。音频特有错误码：`decode`、`backend_unavailable`。 |
 
 同一个音频对象的每次状态变化都会发给同一个回调。`finished` 后不会自动回收对象（允许重播），只有你手动删除或 Session 停止时才回收。
+
+## i18n 事件
+
+调用 `i18n.create` 或 `i18n.reload` 后由宿主返回的处理结果，发给发起调用的 Session。
+
+| `data` 字段 | 类型 | 说明 |
+|---|---|---|
+| `kind` | `string` | `created`（来自 `create`）或 `reloaded`（来自 `reload`）。 |
+| `ok` | `boolean` | 是否加载成功（语言目录或文件不存在时仍为 `true`，返回空表）。 |
+| `message` | `string` | 加载信息：成功时 `create` 为 `"loaded"`、`reload` 为 `"reloaded"`；扫描出错时为错误描述。 |
+| `language_code` | `string` | 实际加载的语言代码。 |
+| `callback_language_code` | `string` | 备用语言代码，供 `get_key` 查找失败时回退使用。 |
 
 ## 交互 UI 事件
 

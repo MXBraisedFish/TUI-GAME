@@ -5,7 +5,7 @@
 | **API 版本** | 1                                                              |
 | **最后更新日期** | （待补充）                                                          |
 | **更新作者**   | MXFish                                                         |
-| **文档作用** | 面向最终上层脚本开发者，提供 TUI GAME 引擎注入到 Lua 沙箱中的全部 API（19 个库）的索引与查询手册入口。 |
+| **文档作用** | 面向最终上层脚本开发者，提供 TUI GAME 引擎注入到 Lua 沙箱中的全部 API（20 个库）的索引与查询手册入口。 |
 
 ## 文档目录
 
@@ -21,7 +21,7 @@
 
 ### 1.1 库表与只读
 
-- 引擎在 Lua 沙箱中注入 19 个库：`base`、`math`、`utf8`、`table`、`string`、`color`、`char`、`align`、`measurement`、`draw`、`debug`、`game`、`event`、`loader`、`file`、`serialization`、`encoding`、`random`、`slice`。
+- 引擎在 Lua 沙箱中注入 20 个库：`base`、`math`、`utf8`、`table`、`string`、`color`、`char`、`align`、`measurement`、`draw`、`debug`、`game`、`event`、`loader`、`file`、`serialization`、`encoding`、`random`、`slice`、`i18n`。
 - 所有库表均为**只读**：直接赋值、修改或增删字段会抛出错误（可用 `debug.pcall` 捕获）。
 - 沙箱不注入任何同名全局函数（如 `type`、`pairs`、`print`、`require` 等），相关能力统一挂载在各库表下。
 - 只读库表可由 `base.pairs`、`base.ipairs`、`base.rawlen` 与 `#` 读取，但不能修改。
@@ -89,6 +89,7 @@
 | `encoding` | 编码转换：Base64、URL 百分号编码、十六进制 | [encoding](api/encoding.md) |
 | `random` | 随机数：直接生成与生成器对象管理 | [random](api/random.md) |
 | `slice` | 图层切片：对象管理、尺寸/层级修改、绘制 | [slice](api/slice.md) |
+| `i18n` | 语言文本：单例加载命名空间表、按键查询、当前语言查询、重载 | [i18n](api/i18n.md) |
 
 ---
 
@@ -370,3 +371,7 @@
 | `slice.list_by_layer()` | 无 | table | 按图层层级从低到高返回全部信息表 | [slice](api/slice.md) |
 | `slice.count()` | 无 | integer | 返回当前切片对象的总数 | [slice](api/slice.md) |
 | `slice.draw{id, x, y}` | 无 | — | 将切片绘制在画布指定位置 | [slice](api/slice.md) |
+| `i18n.create{language_code, callback_language_code}` | 无 | 异步（事件回调） | 创建单例并加载语言命名空间表 | [i18n](api/i18n.md) |
+| `i18n.get_key{name_space, key}` | 无 | string | 获取指定命名空间下的键值 | [i18n](api/i18n.md) |
+| `i18n.get_language_code()` | 无 | string | 获取当前程序使用的语言代码 | [i18n](api/i18n.md) |
+| `i18n.reload{language_code, callback_language_code}` | 无 | 异步（事件回调） | 重新加载当前语言 | [i18n](api/i18n.md) |

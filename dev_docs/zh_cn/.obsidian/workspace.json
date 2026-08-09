@@ -41,12 +41,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "GAME.md",
+                "file": "api/i18n.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "GAME"
+              "title": "i18n"
             }
           },
           {
@@ -62,23 +62,9 @@
               "icon": "lucide-file",
               "title": "package字段"
             }
-          },
-          {
-            "id": "e673c86a507950e6",
-            "type": "leaf",
-            "state": {
-              "type": "markdown",
-              "state": {
-                "file": "api/slice.md",
-                "mode": "source",
-                "source": false
-              },
-              "icon": "lucide-file",
-              "title": "slice"
-            }
           }
         ],
-        "currentTab": 3
+        "currentTab": 2
       }
     ],
     "direction": "vertical"
@@ -242,8 +228,16 @@
       "bases:新建数据库": false
     }
   },
-  "active": "ce366b45f5f687f4",
+  "active": "8417832f79390008",
   "lastOpenFiles": [
+    "api/align.md",
+    "LANGUAGE.md",
+    "LUA_RUNTIME.md",
+    "api/file.md",
+    "api/i18n.md",
+    "GAME.md",
+    "package字段.md",
+    "api/slice.md",
     "BOSS.md",
     "API.md",
     "项目开发感言.md",
@@ -251,10 +245,7 @@
     "RICH_TEXT_zh_cn.md",
     "api/random.md",
     "api/serialization.md",
-    "api/slice.md",
     "api/measurement.md",
-    "api/align.md",
-    "api/file.md",
     "api/game.md",
     "api/loader.md",
     "api/string.md",
@@ -265,11 +256,6 @@
     "api/event.md",
     "api/draw.md",
     "api/debug.md",
-    "api/color.md",
-    "api/char.md",
-    "api/base.md",
-    "库.md",
-    "api/utf8 库.md",
     "api",
     "库",
     "Pasted image 20260730140527.png",
