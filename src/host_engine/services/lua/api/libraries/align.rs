@@ -47,7 +47,7 @@ pub(super) fn align(lua: &Lua, state: SharedApiState) -> mlua::Result<Table> {
             "slice_layer",
           ],
         )?;
-        require_base_layer(&table, method)?;
+        let target = parse_draw_target(&table, method, &state)?;
         let size = args::integer(
           args::required(&table, method, dimension)?,
           method,
@@ -65,13 +65,11 @@ pub(super) fn align(lua: &Lua, state: SharedApiState) -> mlua::Result<Table> {
           align_name,
         )?;
         let offset = args::optional_integer(&table, method, offset_name, Some(0))?.unwrap();
-        let available = {
-          let context = &state.borrow().context;
-          if axis == 0 {
-            context.terminal_size.width
-          } else {
-            context.terminal_size.height
-          }
+        let target_size = draw_target_size(&state, method, target)?;
+        let available = if axis == 0 {
+          target_size.width
+        } else {
+          target_size.height
         } as i64;
         resolve_alignment_axis(
           method,
@@ -105,7 +103,7 @@ pub(super) fn align(lua: &Lua, state: SharedApiState) -> mlua::Result<Table> {
           "slice_layer",
         ],
       )?;
-      require_base_layer(&table, method)?;
+      let target = parse_draw_target(&table, method, &state)?;
       let width = positive_u16(&table, method, "width")? as i64;
       let height = positive_u16(&table, method, "height")? as i64;
       let horizontal = args::string(
@@ -118,7 +116,7 @@ pub(super) fn align(lua: &Lua, state: SharedApiState) -> mlua::Result<Table> {
         method,
         "vertical_align",
       )?;
-      let terminal = state.borrow().context.terminal_size;
+      let terminal = draw_target_size(&state, method, target)?;
       let x = resolve_alignment_axis(
         method,
         width,

@@ -16,9 +16,9 @@ pub(super) fn manage_window_size_overlay(services: &EngineServices, world: &mut 
     Some(OverlayKind::WindowSizeWarning) => {
       let runtime = world.state.runtime().unwrap();
       if let Some(overlay) = runtime.overlays().top() {
-        let req_w = overlay.render.required_width as u16;
-        let req_h = overlay.render.required_height as u16;
-        if term.width >= req_w && term.height >= req_h {
+        let req_w = overlay.render.required_width;
+        let req_h = overlay.render.required_height;
+        if u32::from(term.width) >= req_w && u32::from(term.height) >= req_h {
           world
             .state
             .remove_overlay_kind(OverlayKind::WindowSizeWarning);
@@ -46,7 +46,11 @@ fn get_min_window_size(world: &RuntimeWorld) -> (u32, u32) {
   if world.state.is_host_mode() {
     (95, 24)
   } else {
-    (95, 24)
+    world
+      .state
+      .runtime()
+      .and_then(|runtime| runtime.main_host().game())
+      .map_or((95, 24), |game| (game.min_width, game.min_height))
   }
 }
 
@@ -67,8 +71,14 @@ pub(super) fn apply_window_size_command(cmd: WindowSizeWarningCommand, world: &m
         world.state.request_shutdown();
       } else {
         world.state.pop_overlay();
+        let return_host = world
+          .state
+          .runtime()
+          .and_then(|runtime| runtime.main_host().game())
+          .map(|game| (*game.return_host).clone())
+          .unwrap_or_else(HostState::new);
         if let Some(runtime) = world.state.runtime_mut() {
-          runtime.set_main_host(MainHostState::Host(HostState::new()));
+          runtime.set_main_host(MainHostState::Host(return_host));
         }
       }
     }

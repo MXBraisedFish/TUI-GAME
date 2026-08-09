@@ -33,9 +33,9 @@
 | `x`                | integer | 是   | —        | 左上角 x 坐标 | 坐标原点为左上角                                                      |
 | `y`                | integer | 是   | —        | 左上角 y 坐标 | —                                                             |
 | `text`             | string  | 是   | —        | 要绘制的文本   | —                                                             |
-| `fg`               | string  | 否   | `nil`    | 前景色      | 使用 `color.*` 常量或 `color.rgb/hex`                              |
-| `bg`               | string  | 否   | `nil`    | 背景色      | 可为 `color.TRANSPARENT`                                        |
-| `horizontal_align` | string  | 否   | `"left"` | 行内对齐     | 支持 `left` / `horizontal_center` / `center` / `right` / `auto` |
+| `fg`               | const  | 否   | `nil`    | 前景色      | 使用 `color.*` 常量或 `color.rgb/hex`                              |
+| `bg`               | const  | 否   | `nil`    | 背景色      | 可为 `color.TRANSPARENT`                                        |
+| `horizontal_align` | const  | 否   | `"left"` | 行内对齐     | 支持 `left` / `horizontal_center` / `center` / `right` / `auto` |
 | `auto_wrap`        | boolean | 否   | 自动       | 是否启用自动换行 | `nil`/`true` 为自动换行，`false` 为普通换行                              |
 | `word_wrap`        | boolean | 否   | `true`   | 是否整词换行   | 关闭后按字符任意断行                                                    |
 | `max_width`        | integer | 否   | `nil`    | 最大宽度约束   | 必须满足 `1..65535`                                               |
@@ -50,7 +50,7 @@
 | `reverse`          | boolean | 否   | `false`  | 反显       | —                                                             |
 | `hidden`           | boolean | 否   | `false`  | 隐藏       | —                                                             |
 | `dim`              | boolean | 否   | `false`  | 暗淡       | —                                                             |
-| `text_mode`        | string  | 否   | `"auto"` | 文本模式     | 使用 `string.AUTO/PLAIN_TEXT/RICH_TEXT`                         |
+| `text_mode`        | const  | 否   | `"auto"` | 文本模式     | 使用 `string.AUTO/PLAIN_TEXT/RICH_TEXT`                         |
 | `slice_layer`      | string  | 否   | `"base"` | 图层       | 当前仅支持 `"base"`                                                |
 
 - **方法返回**：无返回值。
@@ -76,8 +76,8 @@
 | `width` | integer | 是 | — | 宽度 | 必须满足 `1..65535` |
 | `height` | integer | 是 | — | 高度 | 必须满足 `1..65535` |
 | `char` | string | 否 | `nil` | 填充字符 | 必须为单个显示格字符 |
-| `fg` | string | 否 | `nil` | 前景色 | — |
-| `bg` | string | 否 | `nil` | 背景色 | 可为 `color.TRANSPARENT` |
+| `fg` | const | 否 | `nil` | 前景色 | — |
+| `bg` | const | 否 | `nil` | 背景色 | 可为 `color.TRANSPARENT` |
 | `slice_layer` | string | 否 | `"base"` | 图层 | 当前仅支持 `"base"` |
 
 - **方法返回**：无返回值。
@@ -102,9 +102,9 @@
 | `y` | integer | 是 | — | 左上角 y 坐标 | — |
 | `width` | integer | 是 | — | 宽度 | 必须满足 `1..65535` |
 | `height` | integer | 是 | — | 高度 | 必须满足 `1..65535` |
-| `fg` | string | 否 | `nil` | 前景色 | — |
-| `bg` | string | 否 | `nil` | 背景色 | 可为 `color.TRANSPARENT` |
-| `border_char` | table | 否 | `nil` | 自定义边框字符表 | 省略时使用单线；可用 `char.LINE/BOLD_LINE/DOUBLE_LINE/ROUNDED_LINE` 或自定义表，单个字符须占一个显示格 |
+| `fg` | const | 否 | `nil` | 前景色 | — |
+| `bg` | const | 否 | `nil` | 背景色 | 可为 `color.TRANSPARENT` |
+| `border_char` | const | 否 | `nil` | 自定义边框字符表 | 填写 `char.LINE/BOLD_LINE/DOUBLE_LINE/ROUNDED_LINE` 常量或自定义边框表，省略时使用单线，单个字符须占一个显示格 |
 | `slice_layer` | string | 否 | `"base"` | 图层 | 当前仅支持 `"base"` |
 
 - **方法返回**：无返回值。

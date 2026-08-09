@@ -1,0 +1,284 @@
+use std::{collections::BTreeMap, fs, io};
+
+use serde::{Deserialize, Deserializer, Serialize, de::Error as _};
+use serde_json::Value;
+
+use super::{StorageService, atomic_write};
+use crate::host_engine::services::{LogService, LogSource, PackageId, PackageSource, PackageType};
+
+const MAX_GAME_SAVE_PROFILE_BYTES: u64 = 16 * 1024 * 1024;
+
+#[derive(Clone, Debug, Serialize, PartialEq)]
+pub struct ContinueGameSave {
+  pub package: PackageId,
+  pub data: Value,
+}
+
+impl<'de> Deserialize<'de> for ContinueGameSave {
+  fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+  where
+    D: Deserializer<'de>,
+  {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Wire {
+      Current {
+        package: PackageId,
+        data: Value,
+      },
+      Legacy {
+        source: String,
+        package_id: String,
+        data: Value,
+      },
+    }
+    match Wire::deserialize(deserializer)? {
+      Wire::Current { package, data } => Ok(Self { package, data }),
+      Wire::Legacy {
+        source,
+        package_id,
+        data,
+      } => Ok(Self {
+        package: PackageId::new(
+          parse_source(&source)
+            .ok_or_else(|| D::Error::custom(format!("unknown legacy package source '{source}'")))?,
+          PackageType::Game,
+          package_id,
+        )
+        .map_err(D::Error::custom)?,
+        data,
+      }),
+    }
+  }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct BestGameSave {
+  pub best_string: String,
+  pub data: Value,
+}
+
+impl TryFrom<Value> for BestGameSave {
+  type Error = &'static str;
+
+  fn try_from(data: Value) -> Result<Self, Self::Error> {
+    let best_string = data
+      .as_object()
+      .and_then(|object| object.get("best_string"))
+      .and_then(Value::as_str)
+      .ok_or("best save must contain string field 'best_string'")?
+      .to_string();
+    Ok(Self { best_string, data })
+  }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct GameSaveProfile {
+  #[serde(default)]
+  pub continue_slot: Option<ContinueGameSave>,
+  #[serde(default, deserialize_with = "deserialize_best")]
+  pub best: BTreeMap<String, BestGameSave>,
+}
+
+impl Default for GameSaveProfile {
+  fn default() -> Self {
+    Self {
+      continue_slot: None,
+      best: BTreeMap::new(),
+    }
+  }
+}
+
+fn parse_source(value: &str) -> Option<PackageSource> {
+  match value {
+    "official" => Some(PackageSource::Official),
+    "mod" => Some(PackageSource::Mod),
+    _ => None,
+  }
+}
+
+fn deserialize_best<'de, D>(deserializer: D) -> Result<BTreeMap<String, BestGameSave>, D::Error>
+where
+  D: Deserializer<'de>,
+{
+  let raw = BTreeMap::<String, Value>::deserialize(deserializer)?;
+  let mut result = BTreeMap::new();
+  for (key, value) in raw {
+    if let Some(source) = parse_source(&key) {
+      let legacy = serde_json::from_value::<BTreeMap<String, BestGameSave>>(value)
+        .map_err(D::Error::custom)?;
+      for (mod_id, best) in legacy {
+        let id = PackageId::new(source, PackageType::Game, mod_id).map_err(D::Error::custom)?;
+        result.insert(id.storage_key(), best);
+      }
+    } else {
+      PackageId::from_storage_key(&key).map_err(D::Error::custom)?;
+      result.insert(
+        key,
+        serde_json::from_value(value).map_err(D::Error::custom)?,
+      );
+    }
+  }
+  Ok(result)
+}
+
+impl StorageService {
+  pub fn reload_game_save_profile(&self, log: &mut LogService) {
+    let path = self.profile_game_save_path();
+    let profile = fs::metadata(&path)
+      .and_then(|metadata| {
+        if metadata.len() > MAX_GAME_SAVE_PROFILE_BYTES {
+          return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "game save profile exceeds size limit",
+          ));
+        }
+        fs::read_to_string(&path)
+      })
+      .and_then(|content| serde_json::from_str(&content).map_err(io::Error::other))
+      .unwrap_or_else(|error| {
+        log.warn(
+          LogSource::Storage,
+          format!("Failed to load game save profile: {error}"),
+        );
+        GameSaveProfile::default()
+      });
+    *self.game_save.borrow_mut() = profile;
+  }
+
+  pub fn continue_game_save(&self) -> Option<ContinueGameSave> {
+    self.game_save.borrow().continue_slot.clone()
+  }
+
+  pub fn best_game_save(&self, package_id: &PackageId) -> Option<BestGameSave> {
+    self
+      .game_save
+      .borrow()
+      .best
+      .get(&package_id.storage_key())
+      .cloned()
+  }
+
+  pub fn write_continue_game_save(
+    &self,
+    package_id: &PackageId,
+    data: Value,
+    log: &mut LogService,
+  ) -> io::Result<()> {
+    let mut profile = self.game_save.borrow().clone();
+    profile.continue_slot = Some(ContinueGameSave {
+      package: package_id.clone(),
+      data,
+    });
+    self.write_game_save_profile(profile, log)
+  }
+
+  pub fn write_best_game_save(
+    &self,
+    package_id: &PackageId,
+    best: BestGameSave,
+    log: &mut LogService,
+  ) -> io::Result<()> {
+    let mut profile = self.game_save.borrow().clone();
+    profile.best.insert(package_id.storage_key(), best);
+    self.write_game_save_profile(profile, log)
+  }
+
+  pub fn write_game_results(
+    &self,
+    package_id: &PackageId,
+    game: Option<Value>,
+    best: Option<BestGameSave>,
+    log: &mut LogService,
+  ) -> io::Result<()> {
+    if game.is_none() && best.is_none() {
+      return Ok(());
+    }
+    let mut profile = self.game_save.borrow().clone();
+    if let Some(data) = game {
+      profile.continue_slot = Some(ContinueGameSave {
+        package: package_id.clone(),
+        data,
+      });
+    }
+    if let Some(best) = best {
+      profile.best.insert(package_id.storage_key(), best);
+    }
+    self.write_game_save_profile(profile, log)
+  }
+
+  fn write_game_save_profile(
+    &self,
+    profile: GameSaveProfile,
+    log: &mut LogService,
+  ) -> io::Result<()> {
+    let content = serde_json::to_vec_pretty(&profile).map_err(io::Error::other)?;
+    if content.len() as u64 > MAX_GAME_SAVE_PROFILE_BYTES {
+      return Err(io::Error::new(
+        io::ErrorKind::InvalidData,
+        "game save profile exceeds size limit",
+      ));
+    }
+    atomic_write(&self.profile_game_save_path(), &content, true).map_err(|error| {
+      log.error(
+        LogSource::Storage,
+        format!("Failed to write game save profile: {error}"),
+      );
+      error
+    })?;
+    *self.game_save.borrow_mut() = profile;
+    Ok(())
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn continue_slot_is_shared_and_best_records_are_per_game() {
+    let root = std::env::temp_dir().join(format!("tui-game-save-profile-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(root.join("data/profiles")).unwrap();
+    let storage = StorageService::from_root_for_test(root.clone());
+    let mut log = LogService::new();
+
+    storage
+      .write_continue_game_save(
+        &PackageId::new(PackageSource::Official, PackageType::Game, "game.a").unwrap(),
+        serde_json::json!({"level": 1}),
+        &mut log,
+      )
+      .unwrap();
+    storage
+      .write_continue_game_save(
+        &PackageId::new(PackageSource::Mod, PackageType::Game, "game.b").unwrap(),
+        serde_json::json!({"level": 2}),
+        &mut log,
+      )
+      .unwrap();
+    let slot = storage.continue_game_save().unwrap();
+    assert_eq!(slot.package.source, PackageSource::Mod);
+    assert_eq!(slot.package.mod_id, "game.b");
+
+    let official = PackageId::new(PackageSource::Official, PackageType::Game, "game.a").unwrap();
+    storage
+      .write_best_game_save(
+        &official,
+        BestGameSave {
+          best_string: "100".to_string(),
+          data: serde_json::json!({"best_string": "100", "score": 100}),
+        },
+        &mut log,
+      )
+      .unwrap();
+    assert_eq!(
+      storage.best_game_save(&official).unwrap().best_string,
+      "100"
+    );
+    let mod_package = PackageId::new(PackageSource::Mod, PackageType::Game, "game.a").unwrap();
+    assert!(storage.best_game_save(&mod_package).is_none());
+
+    fs::remove_dir_all(root).unwrap();
+  }
+}

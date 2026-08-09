@@ -1,13 +1,22 @@
 use super::*;
 use crate::host_engine::services::{UiObjectPool, UiObjectPoolOwner};
 
-pub(super) fn apply_home_command(command: HomeUiCommand, world: &mut RuntimeWorld) {
+pub(super) fn apply_home_command(
+  command: HomeUiCommand,
+  services: &mut EngineServices,
+  world: &mut RuntimeWorld,
+) {
   match command {
     HomeUiCommand::Exit => {
       world.state.request_shutdown();
     }
     HomeUiCommand::StartGame => world.state.enter_ui_node(UiNodeState::game_list()),
-    HomeUiCommand::ContinueGame => {}
+    HomeUiCommand::ContinueGame => {
+      let Some(slot) = services.storage.continue_game_save() else {
+        return;
+      };
+      start_game(slot.package, Some(slot.data), services, world);
+    }
     HomeUiCommand::OpenSettings => world.state.enter_ui_node(UiNodeState::settings()),
     HomeUiCommand::OpenAbout => world.state.enter_ui_node(UiNodeState::input_demo()),
   }
@@ -37,95 +46,201 @@ pub(super) fn apply_game_list_command(
     GameListCommand::SubmitJump(value) => {
       game_list_ui.submit_jump(&mut services.text_input, value);
     }
-    GameListCommand::Confirm { source, mod_id } => {
-      let Some(package) = services.package.find_game(&source, &mod_id) else {
-        services.log.error(
-          LogSource::Lua,
-          format!("Game package not found: source={source:?}, id={mod_id}"),
-        );
-        return;
-      };
-      let entry_path = match services.package.resolve_entry_path(&package) {
-        Ok(path) => path,
-        Err(error) => {
-          services.log.error(
-            LogSource::Lua,
-            format!("Game '{}' entry resolution failed: {error}", package.mod_id),
-          );
-          return;
-        }
-      };
-      let terminal_size = services.layout.physical_size();
-      let log_entry_path = entry_path.clone();
-      let api = services
-        .package
-        .game_list()
-        .into_iter()
-        .find(|entry| entry.source == source && entry.mod_id == mod_id)
-        .map(|entry| crate::host_engine::services::LuaApiConfig {
-          debug_enabled: entry.debug,
-          safe_mode_enabled: entry.safe_mode,
-          key_actions: entry.key_actions,
-          key_default_actions: entry.key_default_actions,
-        })
-        .unwrap_or_default();
-      let spec = crate::host_engine::services::LuaSessionSpec {
-        package_id: package.mod_id.clone(),
-        session_kind: crate::host_engine::services::LuaSessionKind::Game,
-        entry_path,
-        fixed_delta: std::time::Duration::from_secs_f64(1.0 / 60.0),
-        terminal_size,
-        continue_data: None,
-      };
-      let session = match services.lua.create_session_with_api(spec, api) {
-        Ok(session) => session,
-        Err(error) => {
-          services.log.error(
-            LogSource::Lua,
-            format!("{error}; entry={}", log_entry_path.display()),
-          );
-          return;
-        }
-      };
-      let game = package
-        .game
-        .as_ref()
-        .expect("game package without game config");
-      services.game.start(
-        session,
-        package.source.clone(),
-        game.target_fps,
-        crate::host_engine::services::Size {
-          width: package.runtime.min_width.min(u16::MAX as u32) as u16,
-          height: package.runtime.min_height.min(u16::MAX as u32) as u16,
-        },
-      );
-      let Some(runtime) = world.state.runtime_mut() else {
-        let _ = services.game.stop(false);
-        return;
-      };
-      let Some(return_host) = runtime.main_host().host().cloned() else {
-        let _ = services.game.stop(false);
-        return;
-      };
-      let package_source = match package.source {
-        crate::host_engine::services::PackageSource::Official => "official",
-        crate::host_engine::services::PackageSource::Mod => "mod",
-      };
-      runtime.set_main_host(MainHostState::Game(
-        crate::host_engine::core::state_machine::GameState::new(
-          package.mod_id,
-          package_source.to_string(),
-          package.runtime.min_width,
-          package.runtime.min_height,
-          game.target_fps,
-          return_host,
-        ),
-      ));
-      services.canvas.request_render();
-      services.presenter.request_render();
+    GameListCommand::Confirm { package_id } => {
+      start_game(package_id, None, services, world);
     }
   }
+}
+
+fn start_game(
+  package_id: crate::host_engine::services::PackageId,
+  continue_data: Option<serde_json::Value>,
+  services: &mut EngineServices,
+  world: &mut RuntimeWorld,
+) {
+  let Some(package) = services.package.find_by_id(&package_id) else {
+    log_package_start_error(
+      services,
+      &package_id,
+      "game package was not found".to_string(),
+    );
+    return;
+  };
+  let Some(game) = package.game.as_ref() else {
+    log_package_start_error(
+      services,
+      &package.id,
+      "game package has no game configuration".to_string(),
+    );
+    return;
+  };
+  if continue_data.is_some() && !game.save {
+    services.log.warn_package(
+      &package.id,
+      LogSource::Lua,
+      "Continue slot was provided for a game without save support",
+    );
+    return;
+  }
+  let entry_path = match services.package.validate_for_launch(&package) {
+    Ok(path) => path,
+    Err(error) => {
+      log_package_start_error(
+        services,
+        &package.id,
+        format!("game entry resolution failed: {error}"),
+      );
+      return;
+    }
+  };
+  let entry = services
+    .package
+    .game_list()
+    .into_iter()
+    .find(|entry| entry.id == package_id);
+  let package_state = services
+    .storage
+    .read_package_state_or_default(&mut services.log);
+  let state = package_state.game(&package.id);
+  let debug_enabled = state.map_or(package_state.defaults.debug, |state| state.debug);
+  let mut safe_mode_enabled = state.map_or(
+    matches!(
+      package_state.defaults.safe_mode,
+      crate::host_engine::services::SafeModeDefault::On
+    ),
+    |state| state.safe_mode,
+  );
+  if world.temporary_safe_mode_disabled.contains(&package.id) {
+    safe_mode_enabled = false;
+  }
+  let (key_actions, key_default_actions) = entry
+    .map(|entry| (entry.key_actions, entry.key_default_actions))
+    .unwrap_or_default();
+  if let Err(error) = services.package.validate_game_action_map(&key_actions) {
+    log_package_start_error(
+      services,
+      &package.id,
+      format!("game user action map validation failed: {error}"),
+    );
+    return;
+  }
+  let action_entries = key_actions
+    .iter()
+    .map(
+      |(action, keys)| crate::host_engine::services::ActionMapEntry {
+        action: action.clone(),
+        description: action.clone(),
+        keys: keys.clone(),
+      },
+    )
+    .collect::<Vec<_>>();
+  if let Err(error) = crate::host_engine::services::translate_action_map(&action_entries) {
+    log_package_start_error(
+      services,
+      &package.id,
+      format!("game action map validation failed: {error:?}"),
+    );
+    return;
+  }
+  let api = crate::host_engine::services::LuaApiConfig {
+    debug_enabled,
+    safe_mode_enabled,
+    key_actions,
+    key_default_actions,
+  };
+  let best_data = services
+    .storage
+    .best_game_save(&package.id)
+    .map(|best| best.data);
+  let save_best_enabled = game.score.as_ref().is_some_and(|score| score.enabled);
+  let spec = crate::host_engine::services::LuaSessionSpec {
+    package_id: package.mod_id.clone(),
+    session_kind: crate::host_engine::services::LuaSessionKind::Game,
+    entry_path: entry_path.clone(),
+    fixed_delta: std::time::Duration::from_secs_f64(1.0 / 60.0),
+    terminal_size: services.layout.physical_size(),
+    continue_data,
+    best_data,
+    save_game_enabled: game.save,
+    save_best_enabled,
+  };
+  let session_log = services
+    .log
+    .open_session(
+      crate::host_engine::services::LogSessionKind::Game,
+      &package.id,
+    )
+    .ok();
+  let session = match services.lua.create_session_with_api(spec, api) {
+    Ok(session) => session,
+    Err(error) => {
+      let message = format!("{error}; entry={}", entry_path.display());
+      if let Some(id) = session_log {
+        services.log.error_session(id, LogSource::Lua, message);
+        services.log.close_session(id);
+      } else {
+        log_package_start_error(services, &package.id, message);
+      }
+      return;
+    }
+  };
+  let return_host = world
+    .state
+    .runtime()
+    .and_then(|runtime| runtime.main_host().host())
+    .cloned();
+  let Some(return_host) = return_host else {
+    if let Some(id) = session_log {
+      services.log.close_session(id);
+    }
+    return;
+  };
+  if let Some(previous) = services.game.start(
+    session,
+    package.id.clone(),
+    game.target_fps,
+    crate::host_engine::services::Size {
+      width: package.runtime.min_width.min(u16::MAX as u32) as u16,
+      height: package.runtime.min_height.min(u16::MAX as u32) as u16,
+    },
+    game.save,
+    save_best_enabled,
+    session_log,
+  ) {
+    services.log.close_session(previous);
+  }
+  if let Some(runtime) = world.state.runtime_mut() {
+    runtime.set_main_host(MainHostState::Game(
+      crate::host_engine::core::state_machine::GameState::new(
+        package.id,
+        package.runtime.min_width,
+        package.runtime.min_height,
+        game.target_fps,
+        return_host,
+      ),
+    ));
+  }
+  services.canvas.request_render();
+  services.presenter.request_render();
+}
+
+pub(super) fn log_package_start_error(
+  services: &mut EngineServices,
+  package_id: &crate::host_engine::services::PackageId,
+  message: String,
+) {
+  services
+    .log
+    .error_package(package_id, LogSource::Lua, message);
+  let path = services
+    .log
+    .package_log_path(package_id)
+    .map(|path| path.display().to_string())
+    .unwrap_or_else(|_| "<unavailable>".to_string());
+  services.log.error(
+    LogSource::Runtime,
+    format!("Package '{package_id}' failed to start; see {path}"),
+  );
 }
 
 pub(super) fn apply_input_demo_command(
@@ -777,7 +892,10 @@ pub(super) fn apply_screensaver_list_command(
     ScreensaverListCommand::Scroll(dy) => {
       ui.scroll_active(&services.scroll_box, &services.layout, dy)
     }
-    ScreensaverListCommand::SetEnabled { id, enabled } => {
+    ScreensaverListCommand::SetEnabled {
+      package_id,
+      enabled,
+    } => {
       let mut profile = services
         .storage
         .read_package_state_or_default(&mut services.log);
@@ -788,14 +906,15 @@ pub(super) fn apply_screensaver_list_command(
         .max()
         .map_or(0, |order| order.saturating_add(1));
       let defaults = &profile.defaults;
-      let state = profile.screensavers.entry(id).or_insert(
-        crate::host_engine::services::ScreensaverPackageState {
+      let state = profile
+        .screensavers
+        .entry(package_id.storage_key())
+        .or_insert(crate::host_engine::services::ScreensaverPackageState {
           enabled: defaults.enabled,
           debug: defaults.debug,
           playlist_enabled: false,
           order: None,
-        },
-      );
+        });
       state.playlist_enabled = enabled;
       state.order = enabled.then_some(next_order);
       let _ = services
@@ -808,7 +927,7 @@ pub(super) fn apply_screensaver_list_command(
         .read_package_state_or_default(&mut services.log);
       let defaults = profile.defaults.clone();
       for (order, id) in ids.into_iter().enumerate() {
-        let state = profile.screensavers.entry(id).or_insert(
+        let state = profile.screensavers.entry(id.storage_key()).or_insert(
           crate::host_engine::services::ScreensaverPackageState {
             enabled: defaults.enabled,
             debug: defaults.debug,
@@ -848,19 +967,19 @@ pub(super) fn apply_security_settings_command(
         .storage
         .read_package_state_or_default(&mut services.log);
       for entry in services.package.mod_games() {
-        let mod_id = entry.mod_id;
+        let package_key = entry.id.storage_key();
         let mut initial = crate::host_engine::services::GamePackageState::default();
         initial.enabled = profile.defaults.enabled;
         initial.debug = profile.defaults.debug;
         initial.safe_mode =
           profile.defaults.safe_mode == crate::host_engine::services::SafeModeDefault::On;
-        let state = profile.games.entry(mod_id.clone()).or_insert(initial);
+        let state = profile.games.entry(package_key.clone()).or_insert(initial);
         match command {
           SecuritySettingsCommand::ResetStatus => state.enabled = false,
           SecuritySettingsCommand::ResetDebug => state.debug = false,
           SecuritySettingsCommand::ResetSafeMode => {
             state.safe_mode = true;
-            world.temporary_safe_mode_disabled.remove(&mod_id);
+            world.temporary_safe_mode_disabled.remove(&entry.id);
           }
           _ => unreachable!(),
         }
@@ -869,7 +988,10 @@ pub(super) fn apply_security_settings_command(
         let mut initial = crate::host_engine::services::ScreensaverPackageState::default();
         initial.enabled = profile.defaults.enabled;
         initial.debug = profile.defaults.debug;
-        let state = profile.screensavers.entry(entry.mod_id).or_insert(initial);
+        let state = profile
+          .screensavers
+          .entry(entry.id.storage_key())
+          .or_insert(initial);
         match command {
           SecuritySettingsCommand::ResetStatus => state.enabled = false,
           SecuritySettingsCommand::ResetDebug => state.debug = false,
@@ -1185,8 +1307,8 @@ pub(super) fn apply_game_package_command(
         world.safe_mode_warning_all = false;
         world.state.push_safe_mode_warning_overlay();
       } else {
-        if let Some(mod_id) = game_package_ui.selected_mod_id() {
-          world.temporary_safe_mode_disabled.remove(&mod_id);
+        if let Some(package_id) = game_package_ui.selected_package_id() {
+          world.temporary_safe_mode_disabled.remove(&package_id);
         }
         game_package_ui.enable_selected_safe_mode(&services.storage, &mut services.log);
       }
@@ -1215,7 +1337,7 @@ pub(super) fn apply_safe_mode_warning_command(
         };
         profile
           .games
-          .entry(entry.mod_id)
+          .entry(entry.id.storage_key())
           .or_insert(initial)
           .safe_mode = false;
       }
@@ -1243,14 +1365,14 @@ pub(super) fn apply_safe_mode_warning_command(
   match command {
     SafeModeWarningCommand::Cancel => {}
     SafeModeWarningCommand::DisableTemporary => {
-      if let Some(mod_id) = game_package_ui.selected_mod_id() {
-        world.temporary_safe_mode_disabled.insert(mod_id);
+      if let Some(package_id) = game_package_ui.selected_package_id() {
+        world.temporary_safe_mode_disabled.insert(package_id);
       }
       game_package_ui.disable_selected_safe_mode_temporary();
     }
     SafeModeWarningCommand::DisablePermanent => {
-      if let Some(mod_id) = game_package_ui.selected_mod_id() {
-        world.temporary_safe_mode_disabled.remove(&mod_id);
+      if let Some(package_id) = game_package_ui.selected_package_id() {
+        world.temporary_safe_mode_disabled.remove(&package_id);
       }
       // TODO: log warn when storage write fails inside disable_selected_safe_mode_permanent
       game_package_ui.disable_selected_safe_mode_permanent(&services.storage, &mut services.log);

@@ -67,6 +67,11 @@ pub fn parse_key_token(token: &str) -> Option<Key> {
   }
 }
 
+/// 将任意可识别按键标记转换为输入系统的稳定持久化标记。
+pub fn canonical_key_token(token: &str) -> Option<String> {
+  parse_key_token(token).map(key_token)
+}
+
 fn parse_letter(token: &str) -> Option<Key> {
   match token {
     "a" => Some(Key::A),

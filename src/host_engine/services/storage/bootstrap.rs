@@ -8,7 +8,42 @@ use crate::host_engine::services::{LogService, LogSource};
 /// 确保存储目录和默认文件存在，缺失时自动创建。
 pub fn ensure_storage_layout(storage: &StorageService, log: &mut LogService) {
   ensure_required_directories(storage, log);
+  migrate_legacy_log(storage, log);
   ensure_default_files(storage, log);
+}
+
+fn migrate_legacy_log(storage: &StorageService, log: &mut LogService) {
+  let legacy = storage.path(layout::LEGACY_TUI_LOG_FILE);
+  let current = storage.path(layout::TUI_LOG_FILE);
+  if !legacy.is_file() {
+    return;
+  }
+  let result = if current.exists() {
+    fs::read(&legacy).and_then(|bytes| {
+      use std::io::Write;
+      let mut file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&current)?;
+      if !bytes.is_empty() {
+        if current.metadata().is_ok_and(|metadata| metadata.len() > 0) {
+          file.write_all(b"\n")?;
+        }
+        file.write_all(&bytes)?;
+        file.flush()?;
+      }
+      fs::remove_file(&legacy)
+    })
+  } else {
+    fs::rename(&legacy, &current)
+  };
+  match result {
+    Ok(()) => log.info(LogSource::Storage, "Migrated tui_log.txt to tui_log.log"),
+    Err(error) => log.warn(
+      LogSource::Storage,
+      format!("Failed to migrate legacy log file: {error}"),
+    ),
+  }
 }
 
 fn ensure_required_directories(storage: &StorageService, log: &mut LogService) {

@@ -1,9 +1,10 @@
 use std::{
-  cell::Cell,
+  cell::{Cell, RefCell},
   io,
   path::{Path, PathBuf},
 };
 
+use super::GameSaveProfile;
 use super::bootstrap::ensure_storage_layout;
 use super::layout;
 use super::profile::DisplaySettingsProfile;
@@ -15,6 +16,7 @@ pub struct StorageService {
   root_dir: PathBuf,
   pub(super) display_settings: DisplaySettingsProfile,
   pub(super) recording_profile_revision: Cell<u64>,
+  pub(super) game_save: RefCell<GameSaveProfile>,
 }
 
 impl StorageService {
@@ -25,10 +27,12 @@ impl StorageService {
       root_dir,
       display_settings: DisplaySettingsProfile::default(),
       recording_profile_revision: Cell::new(0),
+      game_save: RefCell::new(GameSaveProfile::default()),
     };
 
     ensure_storage_layout(&service, log);
     service.reload_display_settings_profile(log);
+    service.reload_game_save_profile(log);
 
     service
   }
@@ -108,6 +112,10 @@ impl StorageService {
 
   pub fn profile_key_bindings_path(&self) -> PathBuf {
     self.path(layout::PROFILE_KEY_BINDINGS_FILE)
+  }
+
+  pub fn profile_game_save_path(&self) -> PathBuf {
+    self.path(layout::PROFILE_GAME_SAVE_FILE)
   }
 
   pub fn language_assets_root_path(&self) -> PathBuf {
@@ -228,6 +236,7 @@ impl StorageService {
       root_dir,
       display_settings: DisplaySettingsProfile::default(),
       recording_profile_revision: Cell::new(0),
+      game_save: RefCell::new(GameSaveProfile::default()),
     }
   }
 }

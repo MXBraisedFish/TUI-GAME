@@ -480,8 +480,8 @@
 | 参数名 | 类型 | 必填 | 默认值 | 说明 | 额外补充 |
 | ------ | ---- | ---- | ------ | ---- | -------- |
 | `path` | string | 是 | — | 相对 `assets/` 的文件路径 | 必须为相对路径且存在 |
-| `encoding` | string | 否 | `"auto"` | 文本编码 | 使用 `file.*` 编码常量 |
-| `end_of_line` | string | 否 | `"auto"` | 换行符规范 | 使用 `file.AUTO/ALL/CR/LF/CRLF` |
+| `encoding` | const | 否 | `"auto"` | 文本编码 | 使用 `file.*` 编码常量 |
+| `end_of_line` | const | 否 | `"auto"` | 换行符规范 | 使用 `file.AUTO/ALL/CR/LF/CRLF` |
 | `event_tip` | string | 否 | `nil` | 事件提示文本 | 上限 4 KiB |
 
 - **方法返回**：无直接返回值（异步）。完成后 `HandleEvent` 收到 `file` 事件：
@@ -514,8 +514,8 @@
 | ------ | ---- | ---- | ------ | ---- | -------- |
 | `path` | string | 是 | — | 相对 `assets/` 的文件路径 | 必须为相对路径；父目录必须存在 |
 | `text` | string | 是 | — | 要写入的文本 | 上限 1 MiB，不含 NUL |
-| `encoding` | string | 否 | `"auto"` | 文本编码 | 使用 `file.*` 编码常量 |
-| `end_of_line` | string | 否 | `"auto"` | 换行符规范 | 使用 `file.AUTO/ALL/CR/LF/CRLF` |
+| `encoding` | const | 否 | `"auto"` | 文本编码 | 使用 `file.*` 编码常量 |
+| `end_of_line` | const | 否 | `"auto"` | 换行符规范 | 使用 `file.AUTO/ALL/CR/LF/CRLF` |
 | `event_tip` | string | 否 | `nil` | 事件提示文本 | 上限 4 KiB |
 
 - **方法返回**：无直接返回值（异步）。完成后 `HandleEvent` 收到 `file` 事件：

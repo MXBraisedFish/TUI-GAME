@@ -227,7 +227,9 @@ fn draw_content(
   let tip = i18n.get_runtime_text("window_size", "window_size.tip");
   let required_prefix = i18n.get_runtime_text("window_size", "window_size.required");
   let current_prefix = i18n.get_runtime_text("window_size", "window_size.current");
-  let hint_key = if is_host_mode {
+  let hint_key = if is_screensaver {
+    "window_size.action.exit.screensaver"
+  } else if is_host_mode {
     "window_size.action.exit.host"
   } else {
     "window_size.action.exit.game"

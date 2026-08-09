@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use serde_json::Value as JsonValue;
 
-use crate::host_engine::services::{PackageSource, Size};
+use crate::host_engine::services::{LogSessionId, PackageId, PackageSource, Size};
 
 use super::{
   LuaDrawCommand, LuaEventDelivery, LuaExecutionStats, LuaHostCommand, LuaObjectPool, LuaSession,
@@ -27,73 +27,95 @@ pub enum GameSessionState {
 
 #[derive(Clone, Debug, Default)]
 pub struct GameStopData {
+  pub package: Option<PackageId>,
   pub game: Option<JsonValue>,
   pub best: Option<JsonValue>,
   pub save_errors: Vec<LuaSessionError>,
+  pub log_session: Option<LogSessionId>,
 }
 
 /// 唯一游戏 Session 的宿主生命周期。
 pub struct GameService {
   session: Option<LuaSession>,
-  package_id: Option<String>,
-  package_source: Option<PackageSource>,
+  package: Option<PackageId>,
   target_fps: Option<u32>,
   min_size: Size,
+  save_game_enabled: bool,
+  save_best_enabled: bool,
   accumulator: Duration,
   generation: u64,
+  log_session: Option<LogSessionId>,
 }
 
 impl GameService {
   pub fn new() -> Self {
     Self {
       session: None,
-      package_id: None,
-      package_source: None,
+      package: None,
       target_fps: None,
       min_size: Size::default(),
+      save_game_enabled: false,
+      save_best_enabled: false,
       accumulator: Duration::ZERO,
       generation: 0,
+      log_session: None,
     }
   }
 
   pub fn start(
     &mut self,
     session: LuaSession,
-    source: PackageSource,
+    package: PackageId,
     target_fps: u32,
     min_size: Size,
-  ) {
-    self.stop(false);
+    save_game_enabled: bool,
+    save_best_enabled: bool,
+    log_session: Option<LogSessionId>,
+  ) -> Option<LogSessionId> {
+    let previous_log = self.stop(false).log_session;
     self.generation = self.generation.wrapping_add(1).max(1);
-    self.package_id = Some(session.package_id().to_string());
-    self.package_source = Some(source);
+    self.package = Some(package);
     self.target_fps = Some(target_fps);
     self.min_size = min_size;
+    self.save_game_enabled = save_game_enabled;
+    self.save_best_enabled = save_best_enabled;
     self.accumulator = Duration::ZERO;
     self.session = Some(session);
+    self.log_session = log_session;
+    previous_log
   }
 
   pub fn stop(&mut self, save: bool) -> GameStopData {
     let mut result = GameStopData::default();
+    result.package = self.package.take();
+    result.log_session = self.log_session.take();
     if let Some(mut session) = self.session.take() {
       if save && session.state() != LuaSessionState::Faulted {
-        match session.save_game() {
-          Ok(value) => result.game = value,
-          Err(error) => result.save_errors.push(error),
+        if self.save_game_enabled {
+          match session.save_game() {
+            Ok(value) => result.game = value,
+            Err(error) => result.save_errors.push(error),
+          }
         }
-        match session.save_best() {
-          Ok(value) => result.best = value,
-          Err(error) => result.save_errors.push(error),
+        if self.save_best_enabled {
+          match session.save_best() {
+            Ok(value) => result.best = value,
+            Err(error) => result.save_errors.push(error),
+          }
         }
       }
       session.stop();
     }
-    self.package_id = None;
-    self.package_source = None;
     self.target_fps = None;
     self.min_size = Size::default();
+    self.save_game_enabled = false;
+    self.save_best_enabled = false;
     self.accumulator = Duration::ZERO;
     result
+  }
+
+  pub fn log_session(&self) -> Option<LogSessionId> {
+    self.log_session
   }
 
   pub fn state(&self) -> GameSessionState {
@@ -109,7 +131,11 @@ impl GameService {
   }
 
   pub fn package_id(&self) -> Option<&str> {
-    self.package_id.as_deref()
+    self.package.as_ref().map(|package| package.mod_id.as_str())
+  }
+
+  pub fn package(&self) -> Option<&PackageId> {
+    self.package.as_ref()
   }
 
   pub fn session_token(&self) -> Option<LuaSessionToken> {
@@ -133,15 +159,19 @@ impl GameService {
   }
 
   pub fn package_source(&self) -> Option<&PackageSource> {
-    self.package_source.as_ref()
+    self.package.as_ref().map(|package| &package.source)
   }
 
-  pub fn objects(&self) -> Option<&LuaObjectPool> {
-    self.session.as_ref().and_then(LuaSession::objects)
+  pub fn has_objects(&self) -> bool {
+    self.session.as_ref().is_some_and(LuaSession::has_objects)
   }
 
-  pub fn objects_mut(&mut self) -> Option<&mut LuaObjectPool> {
-    self.session.as_mut().and_then(LuaSession::objects_mut)
+  pub fn with_objects<R>(&self, operation: impl FnOnce(&LuaObjectPool) -> R) -> Option<R> {
+    self.session.as_ref()?.with_objects(operation)
+  }
+
+  pub fn with_objects_mut<R>(&self, operation: impl FnOnce(&mut LuaObjectPool) -> R) -> Option<R> {
+    self.session.as_ref()?.with_objects_mut(operation)
   }
 
   pub fn target_fps(&self) -> Option<u32> {
@@ -207,6 +237,9 @@ impl GameService {
   }
 
   pub fn save_game(&mut self) -> Result<Option<JsonValue>, LuaSessionError> {
+    if !self.save_game_enabled {
+      return Ok(None);
+    }
     self
       .session
       .as_mut()
@@ -214,6 +247,9 @@ impl GameService {
   }
 
   pub fn save_best(&mut self) -> Result<Option<JsonValue>, LuaSessionError> {
+    if !self.save_best_enabled {
+      return Ok(None);
+    }
     self
       .session
       .as_mut()
@@ -233,6 +269,11 @@ mod tests {
   use std::sync::atomic::{AtomicU64, Ordering};
 
   use super::*;
+  use crate::host_engine::services::{PackageSource, PackageType};
+
+  fn test_package_id() -> PackageId {
+    PackageId::new(PackageSource::Mod, PackageType::Game, "test.game").unwrap()
+  }
   use crate::host_engine::services::{LuaPolicy, LuaSessionKind, LuaSessionSpec};
 
   static TEST_ID: AtomicU64 = AtomicU64::new(1);
@@ -270,6 +311,9 @@ mod tests {
           height: 24,
         },
         continue_data: None,
+        best_data: None,
+        save_game_enabled: true,
+        save_best_enabled: false,
       },
       LuaPolicy::default(),
     )
@@ -288,12 +332,15 @@ mod tests {
     let mut service = GameService::new();
     service.start(
       test_session(),
-      PackageSource::Mod,
+      test_package_id(),
       120,
       Size {
         width: 40,
         height: 12,
       },
+      true,
+      false,
+      None,
     );
 
     assert_eq!(service.advance(Duration::from_secs(2)).unwrap(), 8);
@@ -311,30 +358,36 @@ mod tests {
   #[test]
   fn each_started_session_receives_a_new_generation() {
     let mut service = GameService::new();
-    assert!(service.objects().is_none());
+    assert!(!service.has_objects());
     service.start(
       test_session(),
-      PackageSource::Mod,
+      test_package_id(),
       60,
       Size {
         width: 40,
         height: 12,
       },
+      true,
+      false,
+      None,
     );
     let first = service.session_token().unwrap();
-    assert!(service.objects().is_some());
+    assert!(service.has_objects());
     service.stop(false);
     assert!(service.session_token().is_none());
-    assert!(service.objects().is_none());
+    assert!(!service.has_objects());
 
     service.start(
       test_session(),
-      PackageSource::Mod,
+      test_package_id(),
       60,
       Size {
         width: 40,
         height: 12,
       },
+      true,
+      false,
+      None,
     );
     let second = service.session_token().unwrap();
     assert_eq!(first.kind, LuaSessionKind::Game);

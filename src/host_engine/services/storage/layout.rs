@@ -46,7 +46,11 @@ pub const PROFILE_DISPLAY_SETTINGS_FILE: &str = "data/profiles/display_settings.
 
 pub const PROFILE_KEY_BINDINGS_FILE: &str = "data/profiles/key_bindings.json";
 
-pub const TUI_LOG_FILE: &str = "data/log/tui_log.txt";
+pub const PROFILE_GAME_SAVE_FILE: &str = "data/profiles/game_save.json";
+
+pub const TUI_LOG_FILE: &str = "data/log/tui_log.log";
+
+pub const LEGACY_TUI_LOG_FILE: &str = "data/log/tui_log.txt";
 
 pub const DEFAULT_LANGUAGE_CODE: &str = "en_us";
 
@@ -96,6 +100,10 @@ pub const DEFAULT_FILES: &[(&str, &str)] = &[
   (
     PROFILE_KEY_BINDINGS_FILE,
     r#"{"default":{"global":{},"games":{}},"user":{"global":{},"games":{}}}"#,
+  ),
+  (
+    PROFILE_GAME_SAVE_FILE,
+    r#"{"continue_slot":null,"best":{"official":{},"mod":{}}}"#,
   ),
   (TUI_LOG_FILE, ""),
   (LANGUAGE_REGISTRY_FILE, "{}"),

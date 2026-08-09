@@ -20,7 +20,7 @@ use super::api::{
   self, LuaApiConfig, LuaApiContext, LuaCallPhase, LuaDrawCommand, LuaHostCommand, SharedApiState,
 };
 use super::events::{LuaEventCallbackId, LuaEventDelivery, LuaEventRoute, LuaRuntimeEvent};
-use super::object_pool::LuaObjectPool;
+use super::object_pool::{SharedLuaObjectPool, shared_lua_object_pool};
 use super::policy::{LuaBudgetKind, LuaExecutionBudget, LuaPolicy};
 
 const REQUIRED_CALLBACKS: &[&str] = &["Init", "HandleEvent", "Update", "UpdateFrame", "Render"];
@@ -66,6 +66,7 @@ pub enum LuaErrorStage {
   ExecutionLimit,
   MemoryLimit,
   ContinueDataValidation,
+  BestDataValidation,
   SaveValidation,
   EventCallback,
   EventQueue,
@@ -79,6 +80,9 @@ pub struct LuaSessionSpec {
   pub fixed_delta: Duration,
   pub terminal_size: Size,
   pub continue_data: Option<JsonValue>,
+  pub best_data: Option<JsonValue>,
+  pub save_game_enabled: bool,
+  pub save_best_enabled: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -146,7 +150,7 @@ pub struct LuaSession {
   terminal_size: Size,
   state: LuaSessionState,
   last_stats: LuaExecutionStats,
-  objects: Option<LuaObjectPool>,
+  objects: SharedLuaObjectPool,
   event_callbacks: HashMap<LuaEventCallbackId, LuaRegisteredCallback>,
   next_event_callback_id: u64,
   api_state: SharedApiState,
@@ -166,6 +170,7 @@ impl LuaSession {
       .validate()
       .map_err(|error| session_error(&spec, LuaErrorStage::ValidatePolicy, None, error))?;
     validate_continue_data(&spec, &policy)?;
+    validate_best_data(&spec, &policy)?;
     let source = read_source(&spec, &policy)?;
     let lua = Lua::new_with(StdLib::NONE, LuaOptions::default())
       .map_err(|error| session_error(&spec, LuaErrorStage::CreateVm, None, error))?;
@@ -187,6 +192,7 @@ impl LuaSession {
       .parent()
       .unwrap_or_else(|| Path::new("."))
       .join("assets");
+    let objects = shared_lua_object_pool();
     let (environment, api_state) = api::build_environment(
       &lua,
       LuaApiContext {
@@ -201,6 +207,7 @@ impl LuaSession {
         key_actions: api_config.key_actions,
         key_default_actions: api_config.key_default_actions,
       },
+      Rc::downgrade(&objects),
     )
     .map_err(|error| session_error(&spec, LuaErrorStage::BuildSandbox, None, error))?;
     let entry_function = lua
@@ -237,12 +244,12 @@ impl LuaSession {
       terminal_size: spec.terminal_size,
       state: LuaSessionState::Loading,
       last_stats: LuaExecutionStats::default(),
-      objects: Some(LuaObjectPool::new()),
+      objects,
       event_callbacks: HashMap::new(),
       next_event_callback_id: 1,
       api_state,
     };
-    let context = session.context_table(spec.continue_data.as_ref())?;
+    let context = session.context_table(spec.continue_data.as_ref(), spec.best_data.as_ref())?;
     session.invoke_required(
       Callback::Init,
       context,
@@ -301,12 +308,21 @@ impl LuaSession {
     self.lua.used_memory()
   }
 
-  pub fn objects(&self) -> Option<&LuaObjectPool> {
-    self.objects.as_ref()
+  pub fn has_objects(&self) -> bool {
+    self.objects.borrow().is_some()
   }
 
-  pub fn objects_mut(&mut self) -> Option<&mut LuaObjectPool> {
-    self.objects.as_mut()
+  pub fn with_objects<R>(&self, operation: impl FnOnce(&super::LuaObjectPool) -> R) -> Option<R> {
+    let objects = self.objects.borrow();
+    Some(operation(objects.as_ref()?))
+  }
+
+  pub fn with_objects_mut<R>(
+    &self,
+    operation: impl FnOnce(&mut super::LuaObjectPool) -> R,
+  ) -> Option<R> {
+    let mut objects = self.objects.borrow_mut();
+    Some(operation(objects.as_mut()?))
   }
 
   pub fn handle_event(&mut self, event: &LuaRuntimeEvent) -> Result<(), LuaSessionError> {
@@ -440,11 +456,15 @@ impl LuaSession {
     for (_, callback) in self.event_callbacks.drain() {
       let _ = self.lua.remove_registry_value(callback.key);
     }
-    self.objects.take();
+    self.objects.borrow_mut().take();
     let _ = self.lua.gc_collect();
   }
 
-  fn context_table(&self, continue_data: Option<&JsonValue>) -> Result<Table, LuaSessionError> {
+  fn context_table(
+    &self,
+    continue_data: Option<&JsonValue>,
+    best_data: Option<&JsonValue>,
+  ) -> Result<Table, LuaSessionError> {
     let context = self
       .lua
       .create_table()
@@ -472,6 +492,14 @@ impl LuaSession {
     };
     context
       .set("continue_data", continue_value)
+      .map_err(|error| self.error(LuaErrorStage::Callback, Some("Init"), error))?;
+    let best_value = match best_data {
+      Some(value) => json_to_lua(&self.lua, value)
+        .map_err(|error| self.error(LuaErrorStage::Callback, Some("Init"), error))?,
+      None => Value::Nil,
+    };
+    context
+      .set("best_data", best_value)
       .map_err(|error| self.error(LuaErrorStage::Callback, Some("Init"), error))?;
     Ok(context)
   }
@@ -669,6 +697,13 @@ impl LuaSession {
       .map_err(|error| self.error(LuaErrorStage::Callback, Some(callback.name()), error))?;
 
     let value = values.into_iter().next().unwrap_or(Value::Nil);
+    if matches!(value, Value::Nil) {
+      return Err(self.error(
+        LuaErrorStage::SaveValidation,
+        Some(callback.name()),
+        "callback must return a serializable value",
+      ));
+    }
     let mut seen = HashSet::new();
     let json = lua_to_json(value, 0, self.policy.save_max_depth, &mut seen).map_err(|message| {
       self.error(
@@ -689,6 +724,19 @@ impl LuaSession {
           self.policy.save_limit_bytes
         ),
       ));
+    }
+    if callback == Callback::SaveBest {
+      let best_string = json
+        .as_object()
+        .and_then(|value| value.get("best_string"))
+        .and_then(JsonValue::as_str);
+      if best_string.is_none() {
+        return Err(self.error(
+          LuaErrorStage::SaveValidation,
+          Some(callback.name()),
+          "callback must return a table containing string field 'best_string'",
+        ));
+      }
     }
     Ok(Some(json))
   }
@@ -880,7 +928,7 @@ fn validate_continue_data(
   let Some(value) = spec.continue_data.as_ref() else {
     return Ok(());
   };
-  validate_json_depth(value, 0, policy.save_max_depth).map_err(|message| {
+  validate_json_depth(value, 0, policy.save_max_depth, "continue data").map_err(|message| {
     session_error(
       spec,
       LuaErrorStage::ContinueDataValidation,
@@ -911,19 +959,53 @@ fn validate_continue_data(
   Ok(())
 }
 
-fn validate_json_depth(value: &JsonValue, depth: usize, max_depth: usize) -> Result<(), String> {
+fn validate_best_data(spec: &LuaSessionSpec, policy: &LuaPolicy) -> Result<(), LuaSessionError> {
+  let Some(value) = spec.best_data.as_ref() else {
+    return Ok(());
+  };
+  validate_json_depth(value, 0, policy.save_max_depth, "best data").map_err(|message| {
+    session_error(
+      spec,
+      LuaErrorStage::BestDataValidation,
+      Some("Init"),
+      message,
+    )
+  })?;
+  let encoded = serde_json::to_vec(value)
+    .map_err(|error| session_error(spec, LuaErrorStage::BestDataValidation, Some("Init"), error))?;
+  if encoded.len() > policy.save_limit_bytes {
+    return Err(session_error(
+      spec,
+      LuaErrorStage::BestDataValidation,
+      Some("Init"),
+      format!(
+        "best data is {} bytes; limit is {} bytes",
+        encoded.len(),
+        policy.save_limit_bytes
+      ),
+    ));
+  }
+  Ok(())
+}
+
+fn validate_json_depth(
+  value: &JsonValue,
+  depth: usize,
+  max_depth: usize,
+  label: &str,
+) -> Result<(), String> {
   if depth > max_depth {
-    return Err(format!("continue data exceeds maximum depth {max_depth}"));
+    return Err(format!("{label} exceeds maximum depth {max_depth}"));
   }
   match value {
     JsonValue::Array(values) => {
       for value in values {
-        validate_json_depth(value, depth + 1, max_depth)?;
+        validate_json_depth(value, depth + 1, max_depth, label)?;
       }
     }
     JsonValue::Object(values) => {
       for value in values.values() {
-        validate_json_depth(value, depth + 1, max_depth)?;
+        validate_json_depth(value, depth + 1, max_depth, label)?;
       }
     }
     _ => {}
@@ -982,14 +1064,20 @@ fn discover_callbacks(
     update: keys.next().unwrap(),
     update_frame: keys.next().unwrap(),
     render: keys.next().unwrap(),
-    save_game: (spec.session_kind == LuaSessionKind::Game)
-      .then(|| optional("SaveGame"))
-      .transpose()?
-      .flatten(),
-    save_best: (spec.session_kind == LuaSessionKind::Game)
-      .then(|| optional("SaveBest"))
-      .transpose()?
-      .flatten(),
+    save_game: if spec.session_kind != LuaSessionKind::Game {
+      None
+    } else if spec.save_game_enabled {
+      Some(required("SaveGame")?)
+    } else {
+      optional("SaveGame")?
+    },
+    save_best: if spec.session_kind != LuaSessionKind::Game {
+      None
+    } else if spec.save_best_enabled {
+      Some(required("SaveBest")?)
+    } else {
+      optional("SaveBest")?
+    },
   })
 }
 
@@ -1270,6 +1358,8 @@ mod tests {
   use std::fs;
   use std::sync::atomic::{AtomicU64, Ordering};
 
+  use crate::host_engine::services::{LuaFileOperation, SliceId};
+
   use super::super::LuaEventData;
   use super::*;
 
@@ -1299,19 +1389,22 @@ mod tests {
         height: 40,
       },
       continue_data: None,
+      best_data: None,
+      save_game_enabled: false,
+      save_best_enabled: false,
     }
   }
 
   fn valid_script(extra: &str) -> String {
     format!(
-      r#"
+      r##"
         function Init(ctx) init_ctx = ctx end
         function HandleEvent(event) last_event = event end
         function Update(dt) last_update = dt end
         function UpdateFrame(dt, alpha) last_frame = {{ dt, alpha }} end
         function Render(draw) last_draw = draw end
         {extra}
-      "#
+      "##
     )
   }
 
@@ -1345,20 +1438,29 @@ mod tests {
     assert_eq!(first.environment_value("_G"), Value::Nil);
     assert_eq!(second.environment_value("_G"), Value::Nil);
 
-    let first_pool_id = first.objects().unwrap().ui().id();
-    let second_pool_id = second.objects().unwrap().ui().id();
+    let first_pool_id = first.with_objects(|objects| objects.ui().id()).unwrap();
+    let second_pool_id = second.with_objects(|objects| objects.ui().id()).unwrap();
     assert_ne!(first_pool_id, second_pool_id);
 
     let time = crate::host_engine::services::TimeService::new();
-    let timer = time.create_count_up(first.objects_mut().unwrap().runtime_mut());
+    let timer = first
+      .with_objects_mut(|objects| time.create_count_up(objects.runtime_mut()))
+      .unwrap();
     assert_eq!(
-      time.state(first.objects().unwrap().runtime(), timer),
+      first
+        .with_objects(|objects| time.state(objects.runtime(), timer))
+        .flatten(),
       Some(crate::host_engine::services::TimerState::Idle)
     );
-    assert_eq!(time.state(second.objects().unwrap().runtime(), timer), None);
+    assert_eq!(
+      second
+        .with_objects(|objects| time.state(objects.runtime(), timer))
+        .flatten(),
+      None
+    );
 
     first.stop();
-    assert!(first.objects().is_none());
+    assert!(!first.has_objects());
   }
 
   #[test]
@@ -1384,6 +1486,10 @@ mod tests {
       "event",
       "loader",
       "file",
+      "random",
+      "slice",
+      "serialization",
+      "encoding",
     ] {
       assert_ne!(session.environment_value(name), Value::Nil, "{name}");
     }
@@ -1424,6 +1530,131 @@ mod tests {
           local iterator, state = base.pairs(math)
           state.PI = 0
           debug.assert{ value = math.PI > 3, message = "iterator leaked backing table" }
+        end
+      "#,
+    );
+    LuaSession::load(spec(&source, LuaSessionKind::Game), LuaPolicy::default()).unwrap();
+  }
+
+  #[test]
+  fn random_slice_serialization_and_encoding_libraries_work_together() {
+    let source = valid_script(
+      r##"
+        local slice_id
+
+        function Init(ctx)
+          local first = random.create{
+            type = random.INT,
+            min = -10,
+            max = 10,
+            seed = 2468,
+          }
+          local second = random.create{
+            type = random.INT,
+            min = -10,
+            max = 10,
+            seed = 2468,
+          }
+          debug.assert{ value = random.generate(first) == random.generate(second) }
+          debug.assert{ value = random.generate(first) == random.generate(second) }
+
+          slice_id = slice.create{ width = 20, height = slice["50P"], layer = 3 }
+          slice.draw{ id = slice_id, x = -4, y = 2 }
+          local info = slice.get_info(slice_id)
+          debug.assert{
+            value = info.width == 20 and info.height == 20 and info.layer == 3,
+          }
+
+          local json = serialization.json_encode{
+            title = "TUI GAME",
+            enabled = true,
+            values = { 1, 2, 3 },
+          }
+          local decoded = serialization.json_decode(json)
+          debug.assert{
+            value = decoded.title == "TUI GAME" and decoded.enabled
+              and decoded.values[3] == 3,
+          }
+
+          local packed = serialization.binary_pack{
+            fmt = "<i2c3",
+            values = { 513, "abc" },
+          }
+          local number, text, next_position = serialization.binary_unpack{
+            fmt = "<i2c3",
+            s = packed,
+          }
+          debug.assert{
+            value = number == 513 and text == "abc" and next_position == 6,
+          }
+
+          local encoded = encoding.base64_encode("TUI GAME")
+          debug.assert{ value = encoding.base64_decode(encoded) == "TUI GAME" }
+          debug.assert{ value = encoding.url_decode(encoding.url_encode("a b/中")) == "a b/中" }
+          debug.assert{ value = encoding.hex_decode(encoding.hex_encode("abc")) == "abc" }
+        end
+
+        function Render(draw)
+          draw.fill_rect{
+            x = -2,
+            y = 1,
+            width = 5,
+            height = 2,
+            char = "#",
+            slice_layer = slice_id,
+          }
+        end
+      "##,
+    );
+    let mut session =
+      LuaSession::load(spec(&source, LuaSessionKind::Game), LuaPolicy::default()).unwrap();
+    session
+      .render(Size {
+        width: 120,
+        height: 40,
+      })
+      .unwrap();
+
+    let commands = session.take_draw_commands();
+    assert!(commands.iter().any(|command| matches!(
+      command,
+      LuaDrawCommand::FillRect {
+        target: super::super::LuaDrawTarget::Slice(SliceId(1)),
+        x: -2,
+        y: 1,
+        width: 5,
+        height: 2,
+        ..
+      }
+    )));
+  }
+
+  #[test]
+  fn serialization_rejects_cycles_sparse_tables_entities_and_malformed_encoding() {
+    let source = valid_script(
+      r#"
+        function Init(ctx)
+          local cyclic = {}
+          cyclic.self = cyclic
+          local cyclic_ok = debug.pcall{
+            func = function() serialization.json_encode(cyclic) end,
+          }
+          local sparse_ok = debug.pcall{
+            func = function() serialization.json_encode{ [1] = "a", [3] = "c" } end,
+          }
+          local entity_ok = debug.pcall{
+            func = function()
+              serialization.xml_decode(
+                "<!DOCTYPE root [<!ENTITY secret 'hidden'>]><root>&secret;</root>"
+              )
+            end,
+          }
+          local hex_ok = debug.pcall{
+            func = function() encoding.hex_decode("0xz1") end,
+          }
+          debug.assert{
+            value = not cyclic_ok and not sparse_ok and not entity_ok and not hex_ok,
+          }
         end
       "#,
     );
@@ -1557,6 +1788,79 @@ mod tests {
   }
 
   #[test]
+  fn safe_mode_lab_exercises_debug_logging_and_file_write_permissions() {
+    let package_root =
+      PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_package/game/safe_mode_lab");
+    let entry_path = package_root.join("scripts/main.lua");
+    let make_spec = || LuaSessionSpec {
+      package_id: "test.safe_mode_lab".to_string(),
+      session_kind: LuaSessionKind::Game,
+      entry_path: entry_path.clone(),
+      fixed_delta: Duration::from_secs_f64(1.0 / 60.0),
+      terminal_size: Size {
+        width: 120,
+        height: 40,
+      },
+      continue_data: None,
+      best_data: None,
+      save_game_enabled: true,
+      save_best_enabled: true,
+    };
+    let action = LuaRuntimeEvent {
+      sequence: 1,
+      frame: 1,
+      data: LuaEventData::Action {
+        action: "write_probe".to_string(),
+        state: super::super::LuaActionState::Pressed,
+      },
+    };
+
+    let mut restricted =
+      LuaSession::load_with_api(make_spec(), LuaPolicy::default(), LuaApiConfig::default())
+        .unwrap();
+    restricted.handle_event(&action).unwrap();
+    let restricted_commands = restricted.take_host_commands();
+    assert!(restricted_commands.iter().any(|command| matches!(
+      command,
+      LuaHostCommand::Ignored {
+        method: "file.write",
+        ..
+      }
+    )));
+    assert!(
+      !restricted_commands
+        .iter()
+        .any(|command| matches!(command, LuaHostCommand::FileRequest { .. }))
+    );
+
+    let mut permitted = LuaSession::load_with_api(
+      make_spec(),
+      LuaPolicy::default(),
+      LuaApiConfig {
+        debug_enabled: true,
+        safe_mode_enabled: false,
+        ..LuaApiConfig::default()
+      },
+    )
+    .unwrap();
+    permitted.handle_event(&action).unwrap();
+    let permitted_commands = permitted.take_host_commands();
+    assert!(
+      permitted_commands
+        .iter()
+        .any(|command| matches!(command, LuaHostCommand::Log { .. }))
+    );
+    assert!(permitted_commands.iter().any(|command| matches!(
+      command,
+      LuaHostCommand::FileRequest {
+        operation: LuaFileOperation::WriteText,
+        virtual_path,
+        ..
+      } if virtual_path == "state/probe.log"
+    )));
+  }
+
+  #[test]
   fn loader_isolates_modules_and_rejects_unsafe_sources() {
     let source = valid_script(
       r#"
@@ -1644,6 +1948,39 @@ mod tests {
   }
 
   #[test]
+  fn enabled_save_callbacks_are_required_and_best_needs_best_string() {
+    let source = valid_script("");
+    let mut game_save_spec = spec(&source, LuaSessionKind::Game);
+    game_save_spec.save_game_enabled = true;
+    let error = LuaSession::load(game_save_spec, LuaPolicy::default())
+      .err()
+      .expect("SaveGame should be required");
+    assert_eq!(error.stage, LuaErrorStage::DiscoverCallbacks);
+    assert_eq!(error.callback, Some("SaveGame"));
+
+    let source = valid_script("function SaveGame() return {} end");
+    let mut best_spec = spec(&source, LuaSessionKind::Game);
+    best_spec.save_game_enabled = true;
+    best_spec.save_best_enabled = true;
+    let error = LuaSession::load(best_spec, LuaPolicy::default())
+      .err()
+      .expect("SaveBest should be required");
+    assert_eq!(error.stage, LuaErrorStage::DiscoverCallbacks);
+    assert_eq!(error.callback, Some("SaveBest"));
+
+    let source = valid_script(
+      "function SaveGame() return {} end\nfunction SaveBest() return { score = 1 } end",
+    );
+    let mut invalid_best_spec = spec(&source, LuaSessionKind::Game);
+    invalid_best_spec.save_game_enabled = true;
+    invalid_best_spec.save_best_enabled = true;
+    let mut session = LuaSession::load(invalid_best_spec, LuaPolicy::default()).unwrap();
+    let error = session.save_best().unwrap_err();
+    assert_eq!(error.stage, LuaErrorStage::SaveValidation);
+    assert!(error.message.contains("best_string"));
+  }
+
+  #[test]
   fn instruction_budget_faults_an_infinite_update() {
     let source = valid_script("function Update(dt) while true do end end");
     let mut session =
@@ -1651,7 +1988,7 @@ mod tests {
     let error = session.update().unwrap_err();
     assert_eq!(error.stage, LuaErrorStage::ExecutionLimit);
     assert_eq!(session.state(), LuaSessionState::Faulted);
-    assert!(session.objects().is_none());
+    assert!(!session.has_objects());
   }
 
   #[test]
@@ -1701,6 +2038,9 @@ mod tests {
           terminal_width = context.terminal.width,
           terminal_height = context.terminal.height,
           api_version = context.api_version,
+          continue_level = context.continue_data.level,
+          best_score = context.best_data.score,
+          best_string = context.best_data.best_string,
           event_type = event_value.type,
           event_sequence = event_value.sequence,
           event_frame = event_value.frame,
@@ -1711,8 +2051,13 @@ mod tests {
         }
       end
     "#;
-    let mut session =
-      LuaSession::load(spec(source, LuaSessionKind::Game), LuaPolicy::default()).unwrap();
+    let mut session_spec = spec(source, LuaSessionKind::Game);
+    session_spec.continue_data = Some(serde_json::json!({"level": 4}));
+    session_spec.best_data = Some(serde_json::json!({
+      "best_string": "Best: 12",
+      "score": 12
+    }));
+    let mut session = LuaSession::load(session_spec, LuaPolicy::default()).unwrap();
     session
       .handle_event(&LuaRuntimeEvent {
         sequence: 9,
@@ -1744,6 +2089,9 @@ mod tests {
     assert_eq!(save["terminal_width"], 120);
     assert_eq!(save["terminal_height"], 40);
     assert_eq!(save["api_version"], 1);
+    assert_eq!(save["continue_level"], 4);
+    assert_eq!(save["best_score"], 12);
+    assert_eq!(save["best_string"], "Best: 12");
     assert_eq!(save["event_type"], "action");
     assert_eq!(save["event_sequence"], 9);
     assert_eq!(save["event_frame"], 15);
@@ -1913,6 +2261,9 @@ mod tests {
               height: 40,
             },
             continue_data: None,
+            best_data: None,
+            save_game_enabled: session_kind == LuaSessionKind::Game,
+            save_best_enabled: session_kind == LuaSessionKind::Game,
           },
           LuaPolicy::default(),
         )
@@ -1953,7 +2304,10 @@ mod tests {
         }
       }
 
-      assert!(package_count > 0, "no test packages found in {directory}");
+      assert_eq!(
+        package_count, 3,
+        "expected three test packages in {directory}"
+      );
     }
   }
 
@@ -1980,6 +2334,9 @@ mod tests {
           height: 24,
         },
         continue_data: None,
+        best_data: None,
+        save_game_enabled: false,
+        save_best_enabled: false,
       },
       LuaPolicy::default(),
     ) {
@@ -2014,6 +2371,9 @@ mod tests {
           height: 24,
         },
         continue_data: None,
+        best_data: None,
+        save_game_enabled: false,
+        save_best_enabled: false,
       },
       LuaPolicy::default(),
     ) {

@@ -1,12 +1,12 @@
 use std::collections::HashSet;
 
-use super::{EngineClock, HostMachineState};
+use super::{EngineClock, HostMachineState, PackageId};
 
 /// 运行时世界，持有引擎时钟与主机状态机
 pub struct RuntimeWorld {
   pub clock: EngineClock,
   pub state: HostMachineState,
-  pub temporary_safe_mode_disabled: HashSet<String>,
+  pub temporary_safe_mode_disabled: HashSet<PackageId>,
   pub safe_mode_warning_all: bool,
 }
 

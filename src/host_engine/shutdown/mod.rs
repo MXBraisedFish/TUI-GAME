@@ -18,10 +18,40 @@ pub fn close(services: &mut EngineServices, mut world: RuntimeWorld, _exit_state
     );
   }
 
-  services.screensaver.stop();
+  if let Some(id) = services.screensaver.stop() {
+    services.log.close_session(id);
+  }
   let stop_data = services.game.stop(true);
-  for error in stop_data.save_errors {
-    services.log.error(LogSource::Lua, error.to_string());
+  if let Some(package) = stop_data.package.as_ref() {
+    let best = stop_data.best.clone().and_then(|value| {
+      match crate::host_engine::services::BestGameSave::try_from(value) {
+        Ok(best) => Some(best),
+        Err(error) => {
+          services.log.error_package(package, LogSource::Lua, error);
+          None
+        }
+      }
+    });
+    let _ =
+      services
+        .storage
+        .write_game_results(package, stop_data.game.clone(), best, &mut services.log);
+  }
+  for error in &stop_data.save_errors {
+    if let Some(id) = stop_data.log_session {
+      services
+        .log
+        .error_session(id, LogSource::Lua, error.to_string());
+    } else if let Some(package) = &stop_data.package {
+      services
+        .log
+        .error_package(package, LogSource::Lua, error.to_string());
+    } else {
+      services.log.error(LogSource::Lua, error.to_string());
+    }
+  }
+  if let Some(id) = stop_data.log_session {
+    services.log.close_session(id);
   }
   let _ = services.input_method.release_input_method();
 

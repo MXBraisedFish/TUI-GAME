@@ -8,6 +8,7 @@ pub(super) fn draw(lua: &Lua, state: SharedApiState) -> mlua::Result<Table> {
     lua.create_function(move |_, values: MultiValue| {
       let method = "draw.text";
       let table = text_parameters(method, values)?;
+      let target = parse_draw_target(&table, method, &text_state)?;
       let context = text_state.borrow().context.clone();
       let params = parse_draw_text_params(&table, method, &context, true)?;
       let x = args::integer(args::required(&table, method, "x")?, method, "x")?;
@@ -16,6 +17,7 @@ pub(super) fn draw(lua: &Lua, state: SharedApiState) -> mlua::Result<Table> {
         &text_state,
         method,
         LuaDrawCommand::Text {
+          target,
           x: checked_i32(x, method, "x")?,
           y: checked_i32(y, method, "y")?,
           params,
@@ -42,9 +44,10 @@ pub(super) fn draw(lua: &Lua, state: SharedApiState) -> mlua::Result<Table> {
           "slice_layer",
         ],
       )?;
-      require_base_layer(&table, method)?;
+      let target = parse_draw_target(&table, method, &fill_state)?;
       let fill_char = optional_single_char(&table, method, "char")?;
       let command = LuaDrawCommand::FillRect {
+        target,
         x: signed_coordinate(&table, method, "x")?,
         y: signed_coordinate(&table, method, "y")?,
         width: positive_u16(&table, method, "width")?,
@@ -75,8 +78,9 @@ pub(super) fn draw(lua: &Lua, state: SharedApiState) -> mlua::Result<Table> {
           "slice_layer",
         ],
       )?;
-      require_base_layer(&table, method)?;
+      let target = parse_draw_target(&table, method, &stroke_state)?;
       let command = LuaDrawCommand::StrokeRect {
+        target,
         x: signed_coordinate(&table, method, "x")?,
         y: signed_coordinate(&table, method, "y")?,
         width: positive_u16(&table, method, "width")?,
@@ -98,8 +102,9 @@ pub(super) fn draw(lua: &Lua, state: SharedApiState) -> mlua::Result<Table> {
         values,
         &["x", "y", "width", "height", "slice_layer"],
       )?;
-      require_base_layer(&table, method)?;
+      let target = parse_draw_target(&table, method, &erase_state)?;
       let command = LuaDrawCommand::EraseRect {
+        target,
         x: signed_coordinate(&table, method, "x")?,
         y: signed_coordinate(&table, method, "y")?,
         width: positive_u16(&table, method, "width")?,

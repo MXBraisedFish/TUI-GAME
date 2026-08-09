@@ -9,7 +9,7 @@ use serde_json::{Map, Value};
 use super::atomic_write;
 use super::layout;
 use super::service::StorageService;
-use crate::host_engine::services::{LogService, LogSource};
+use crate::host_engine::services::{LogService, LogSource, PackageId};
 
 /// 终端配置文件：存储 Unicode 支持、颜色模式和鼠标支持的用户偏好。
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -31,6 +31,16 @@ pub struct PackageStateProfile {
 
   #[serde(default)]
   pub screensavers: HashMap<String, ScreensaverPackageState>,
+}
+
+impl PackageStateProfile {
+  pub fn game(&self, id: &PackageId) -> Option<&GamePackageState> {
+    self.games.get(&id.storage_key())
+  }
+
+  pub fn screensaver(&self, id: &PackageId) -> Option<&ScreensaverPackageState> {
+    self.screensavers.get(&id.storage_key())
+  }
 }
 
 pub type ActionKeyMap = BTreeMap<String, Vec<Vec<String>>>;
@@ -963,7 +973,7 @@ impl StorageService {
 
   pub fn update_game_package_state(
     &self,
-    mod_id: &str,
+    package_id: &PackageId,
     log: &mut LogService,
     f: impl FnOnce(&mut GamePackageState),
   ) -> std::io::Result<()> {
@@ -974,13 +984,16 @@ impl StorageService {
       debug: defaults.debug,
       safe_mode: defaults.safe_mode == SafeModeDefault::On,
     };
-    f(profile.games.entry(mod_id.to_string()).or_insert(initial));
+    f(profile
+      .games
+      .entry(package_id.storage_key())
+      .or_insert(initial));
     self.write_package_state(&profile, log)
   }
 
   pub fn update_screensaver_package_state(
     &self,
-    mod_id: &str,
+    package_id: &PackageId,
     log: &mut LogService,
     f: impl FnOnce(&mut ScreensaverPackageState),
   ) -> std::io::Result<()> {
@@ -993,7 +1006,7 @@ impl StorageService {
     };
     f(profile
       .screensavers
-      .entry(mod_id.to_string())
+      .entry(package_id.storage_key())
       .or_insert(initial));
     self.write_package_state(&profile, log)
   }
@@ -1214,16 +1227,28 @@ mod tests {
   fn package_state_persists_game_and_screensaver_independently() {
     let storage = temp_storage("package_state_persists");
     let mut log = LogService::new();
+    let game_id = PackageId::new(
+      crate::host_engine::services::PackageSource::Official,
+      crate::host_engine::services::PackageType::Game,
+      "same_id",
+    )
+    .unwrap();
+    let screensaver_id = PackageId::new(
+      crate::host_engine::services::PackageSource::Official,
+      crate::host_engine::services::PackageType::Screensaver,
+      "same_id",
+    )
+    .unwrap();
 
     storage
-      .update_game_package_state("same_id", &mut log, |state| {
+      .update_game_package_state(&game_id, &mut log, |state| {
         state.enabled = false;
         state.debug = true;
         state.safe_mode = false;
       })
       .unwrap();
     storage
-      .update_screensaver_package_state("same_id", &mut log, |state| {
+      .update_screensaver_package_state(&screensaver_id, &mut log, |state| {
         state.enabled = false;
         state.debug = true;
       })
@@ -1231,7 +1256,7 @@ mod tests {
 
     let profile = storage.read_package_state_or_default(&mut log);
     assert_eq!(
-      profile.games.get("same_id"),
+      profile.games.get(&game_id.storage_key()),
       Some(&GamePackageState {
         enabled: false,
         debug: true,
@@ -1239,7 +1264,7 @@ mod tests {
       })
     );
     assert_eq!(
-      profile.screensavers.get("same_id"),
+      profile.screensavers.get(&screensaver_id.storage_key()),
       Some(&ScreensaverPackageState {
         enabled: false,
         debug: true,
@@ -1272,18 +1297,34 @@ mod tests {
     };
     storage.write_package_state(&profile, &mut log).unwrap();
 
+    let game_id = PackageId::new(
+      crate::host_engine::services::PackageSource::Official,
+      crate::host_engine::services::PackageType::Game,
+      "game",
+    )
+    .unwrap();
+    let screensaver_id = PackageId::new(
+      crate::host_engine::services::PackageSource::Official,
+      crate::host_engine::services::PackageType::Screensaver,
+      "screen",
+    )
+    .unwrap();
+
     storage
-      .update_game_package_state("game", &mut log, |state| state.debug = false)
+      .update_game_package_state(&game_id, &mut log, |state| state.debug = false)
       .unwrap();
     storage
-      .update_screensaver_package_state("screen", &mut log, |state| state.debug = false)
+      .update_screensaver_package_state(&screensaver_id, &mut log, |state| state.debug = false)
       .unwrap();
 
     let profile = storage.read_package_state_or_default(&mut log);
     assert_eq!(profile.defaults.safe_mode, SafeModeDefault::OffPermanent);
-    assert_eq!(profile.games["game"].enabled, false);
-    assert_eq!(profile.games["game"].safe_mode, false);
-    assert_eq!(profile.screensavers["screen"].enabled, false);
+    assert_eq!(profile.games[&game_id.storage_key()].enabled, false);
+    assert_eq!(profile.games[&game_id.storage_key()].safe_mode, false);
+    assert_eq!(
+      profile.screensavers[&screensaver_id.storage_key()].enabled,
+      false
+    );
   }
 
   #[test]

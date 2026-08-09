@@ -73,24 +73,25 @@ pub use image::{ImageConvertParams, ImageService};
 pub use input::{
   ActionMapEntry, InputActionEvent, InputEventType, InputService, Key, KeyEvent, KeyEventKind,
   KeyState, MouseButton, MouseEvent, MouseEventKind, RawKeyEvent, ScrollDirection, SystemEvent,
-  TerminalKeyCode, TerminalKeyEvent, format_key_display, key_token, translate_action_map,
+  TerminalKeyCode, TerminalKeyEvent, canonical_key_token, format_key_display, key_token,
+  translate_action_map,
 };
 pub use input_method::{ImPolicy, InputMethodService};
 pub use layout::{LayoutService, Rect, Size};
-pub use log::{LogService, LogSource};
+pub use log::{LogService, LogSessionId, LogSessionKind, LogSource};
 pub use lua::{
-  GameService, LuaActionState, LuaAnimationEvent, LuaAnimationEventKind, LuaApiConfig,
-  LuaApiContext, LuaAudioEvent, LuaAudioEventKind, LuaBudgetKind, LuaCallbackLifetime,
-  LuaDrawCommand, LuaEnqueueError, LuaErrorStage, LuaEventBroker, LuaEventCallbackId, LuaEventData,
-  LuaEventDelivery, LuaEventError, LuaEventErrorCode, LuaEventRoute, LuaExecutionBudget,
-  LuaExecutionStats, LuaFileEntry, LuaFileEvent, LuaFileOperation, LuaFileOutcome, LuaHitAreaEvent,
-  LuaHostCommand, LuaHyperlinkEvent, LuaImageEvent, LuaImageOutcome, LuaMarkdownEvent,
-  LuaNetworkBody, LuaNetworkEvent, LuaNetworkOutcome, LuaObjectPool, LuaPolicy, LuaRuntimeEvent,
-  LuaScrollBoxEvent, LuaService, LuaSession, LuaSessionDiagnostics, LuaSessionError,
-  LuaSessionKind, LuaSessionSpec, LuaSessionState, LuaSessionToken, LuaTaskOperation,
-  LuaTextInputEvent, LuaTimerEvent, LuaTimerEventKind, LuaTimerKind, MAX_LUA_EVENTS_PER_FRAME,
-  MAX_LUA_FILE_TASKS_PER_SESSION, MAX_LUA_NETWORK_TASKS_PER_SESSION, MAX_LUA_PENDING_EVENTS,
-  ScreensaverService,
+  GameService, GameStopData, LuaActionState, LuaAnimationEvent, LuaAnimationEventKind,
+  LuaApiConfig, LuaApiContext, LuaAudioEvent, LuaAudioEventKind, LuaBudgetKind,
+  LuaCallbackLifetime, LuaDrawCommand, LuaDrawTarget, LuaEnqueueError, LuaErrorStage,
+  LuaEventBroker, LuaEventCallbackId, LuaEventData, LuaEventDelivery, LuaEventError,
+  LuaEventErrorCode, LuaEventRoute, LuaExecutionBudget, LuaExecutionStats, LuaFileEntry,
+  LuaFileEvent, LuaFileOperation, LuaFileOutcome, LuaHitAreaEvent, LuaHostCommand,
+  LuaHyperlinkEvent, LuaImageEvent, LuaImageOutcome, LuaMarkdownEvent, LuaNetworkBody,
+  LuaNetworkEvent, LuaNetworkOutcome, LuaObjectPool, LuaPolicy, LuaRuntimeEvent, LuaScrollBoxEvent,
+  LuaService, LuaSession, LuaSessionDiagnostics, LuaSessionError, LuaSessionKind, LuaSessionSpec,
+  LuaSessionState, LuaSessionToken, LuaTaskOperation, LuaTextInputEvent, LuaTimerEvent,
+  LuaTimerEventKind, LuaTimerKind, MAX_LUA_EVENTS_PER_FRAME, MAX_LUA_FILE_TASKS_PER_SESSION,
+  MAX_LUA_NETWORK_TASKS_PER_SESSION, MAX_LUA_PENDING_EVENTS, ScreensaverService,
 };
 pub use network::{
   NetworkError, NetworkErrorCode, NetworkEvent, NetworkHeader, NetworkMethod, NetworkRequest,
@@ -98,8 +99,8 @@ pub use network::{
   NetworkResponseMode, NetworkService, NetworkSubmitError, NetworkTask,
 };
 pub use package::{
-  PackageAsset, PackageEvent, PackageInfo, PackageListEntry, PackageService, PackageSource,
-  PackageType,
+  PackageAsset, PackageEvent, PackageId, PackageInfo, PackageListEntry, PackageService,
+  PackageSource, PackageType,
 };
 pub use popup::{PopupDismissEvent, PopupRequest, PopupService, PopupView};
 pub use random::RandomService;
@@ -116,12 +117,12 @@ pub use rich_text::{
 };
 pub use screenshot::{ScreenshotAsyncEvent, ScreenshotRect, ScreenshotService, ScreenshotTask};
 pub use storage::{
-  ActionKeyMap, AutoRecordingMode, AutoSplitDuration, DisplayFpsLimit, DisplayLogoMode,
-  DisplayOrderMode, DisplaySettingsProfile, DisplaySourceMode, GamePackageState,
-  KeyBindingsProfile, PackageDefaultState, PackageStateProfile, RecordingExportFrameRate,
-  RecordingExportQuality, RecordingFrameRate, RecordingGpuAcceleration, RecordingPixelScale,
-  RecordingPopupMode, RecordingProfile, SafeModeDefault, ScreensaverPackageState,
-  ScreenshotDoubleAction, ScreenshotProfile, StorageService,
+  ActionKeyMap, AutoRecordingMode, AutoSplitDuration, BestGameSave, ContinueGameSave,
+  DisplayFpsLimit, DisplayLogoMode, DisplayOrderMode, DisplaySettingsProfile, DisplaySourceMode,
+  GamePackageState, GameSaveProfile, KeyBindingsProfile, PackageDefaultState, PackageStateProfile,
+  RecordingExportFrameRate, RecordingExportQuality, RecordingFrameRate, RecordingGpuAcceleration,
+  RecordingPixelScale, RecordingPopupMode, RecordingProfile, SafeModeDefault,
+  ScreensaverPackageState, ScreenshotDoubleAction, ScreenshotProfile, StorageService,
 };
 pub use terminal::TerminalService;
 pub use text_layout::{DrawTextParams, TextAlign, TextWrapMode};
@@ -138,7 +139,8 @@ pub use widget::{
   HitAreaService, HyperlinkEvent, HyperlinkId, HyperlinkOptions, HyperlinkService, MarkdownEvent,
   MarkdownRenderParams, MarkdownService, MarkdownTheme, MarkdownViewId, MarkdownViewOptions,
   Overflow, ProgressBarFillOrigin, ProgressBarId, ProgressBarOptions, ProgressBarSegmentStyle,
-  ProgressBarService, RandomAlgorithm, RandomGeneratorId, RandomSeed, RandomSnapshot, RepeatMode,
+  ProgressBarService, RandomAlgorithm, RandomConfiguration, RandomConfiguredRange,
+  RandomGeneratedValue, RandomGeneratorId, RandomSeed, RandomSnapshot, RepeatMode,
   RepeatTimerEvent, RepeatTimerId, RepeatTimerOptions, RuntimeObjectPool, RuntimeObjectPoolOwner,
   ScrollBoxEvent, ScrollBoxId, ScrollBoxOptions, ScrollBoxService, ScrollbarLayout,
   ScrollbarPolicy, ScrollbarSide, ScrollbarStyle, ScrollbarVisibility, SliceId, SliceLength,

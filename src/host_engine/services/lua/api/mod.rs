@@ -11,8 +11,10 @@ use std::time::Instant;
 use mlua::{Lua, Table};
 
 use super::LuaSessionKind;
+use super::object_pool::WeakLuaObjectPool;
 use crate::host_engine::services::{
-  BorderStyle, DrawTextParams, FileTask, LuaFileOperation, Size, TextColor,
+  BorderStyle, DrawTextParams, FileTask, LuaFileOperation, RandomGeneratorId, Size, SliceId,
+  TextColor,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -59,14 +61,22 @@ pub struct LuaApiContext {
   pub key_default_actions: HashMap<String, Vec<Vec<String>>>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LuaDrawTarget {
+  Base,
+  Slice(SliceId),
+}
+
 #[derive(Clone, Debug)]
 pub enum LuaDrawCommand {
   Text {
+    target: LuaDrawTarget,
     x: i32,
     y: i32,
     params: DrawTextParams,
   },
   FillRect {
+    target: LuaDrawTarget,
     x: i32,
     y: i32,
     width: u16,
@@ -76,6 +86,7 @@ pub enum LuaDrawCommand {
     bg: Option<TextColor>,
   },
   StrokeRect {
+    target: LuaDrawTarget,
     x: i32,
     y: i32,
     width: u16,
@@ -85,6 +96,7 @@ pub enum LuaDrawCommand {
     bg: Option<TextColor>,
   },
   EraseRect {
+    target: LuaDrawTarget,
     x: i32,
     y: i32,
     width: u16,
@@ -121,6 +133,7 @@ pub enum LuaHostCommand {
 #[derive(Debug)]
 pub(crate) struct LuaApiState {
   pub context: LuaApiContext,
+  pub objects: WeakLuaObjectPool,
   pub phase: LuaCallPhase,
   pub commands: Vec<LuaHostCommand>,
   pub draw_command_count: usize,
@@ -128,6 +141,7 @@ pub(crate) struct LuaApiState {
   pub loader_stack: Vec<PathBuf>,
   pub loader_source_bytes: usize,
   pub next_file_request_id: u64,
+  pub direct_random_id: Option<RandomGeneratorId>,
   pub ignored_methods: HashSet<&'static str>,
   pub fatal_budget_exceeded: bool,
   pub fatal_api_error: bool,
@@ -141,9 +155,11 @@ pub(crate) type SharedApiState = Rc<RefCell<LuaApiState>>;
 pub(crate) fn build_environment(
   lua: &Lua,
   context: LuaApiContext,
+  objects: WeakLuaObjectPool,
 ) -> mlua::Result<(Table, SharedApiState)> {
   let state = Rc::new(RefCell::new(LuaApiState {
     context,
+    objects,
     phase: LuaCallPhase::Loading,
     commands: Vec::new(),
     draw_command_count: 0,
@@ -151,6 +167,7 @@ pub(crate) fn build_environment(
     loader_stack: Vec::new(),
     loader_source_bytes: 0,
     next_file_request_id: 1,
+    direct_random_id: None,
     ignored_methods: HashSet::new(),
     fatal_budget_exceeded: false,
     fatal_api_error: false,

@@ -9,12 +9,13 @@ skills.md
 todo.md
 future_todo.md
 test_*
+!test_package/
+!test_package/**
 preview_mod_pack_full_list.py
 cancelIME
 test_code
 .claude
 AGENTS.md
-dev_docs
 tui_capture_demo
 tg_rich_tect.py
 print_test.py

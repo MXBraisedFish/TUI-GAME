@@ -75,10 +75,12 @@ pub(super) fn route_render(
 
   if world.state.current_overlay_kind() == Some(OverlayKind::Screensaver) {
     apply_host_viewport(services, false);
-    if let Some(objects) = services.screensaver.objects_mut() {
-      objects.ui_mut().begin_render();
-      services.canvas.prepare(objects.ui(), &services.layout);
+    if services.screensaver.has_objects() {
       let commands = services.screensaver.take_draw_commands();
+      services.screensaver.with_objects_mut(|objects| {
+        objects.ui_mut().begin_render();
+        services.canvas.prepare(objects.ui(), &services.layout);
+      });
       apply_lua_draw_commands(services, commands);
     } else {
       screensaver_overlay_ui.objects_mut().begin_render();
@@ -183,10 +185,12 @@ pub(super) fn route_render(
   apply_host_viewport(services, show_top_toolbar);
 
   let lua_game_prepared = world.state.current_ui_kind().is_none() && services.game.is_active();
-  if lua_game_prepared && let Some(objects) = services.game.objects_mut() {
-    objects.ui_mut().begin_render();
-    services.canvas.prepare(objects.ui(), &services.layout);
+  if lua_game_prepared && services.game.has_objects() {
     let commands = services.game.take_draw_commands();
+    services.game.with_objects_mut(|objects| {
+      objects.ui_mut().begin_render();
+      services.canvas.prepare(objects.ui(), &services.layout);
+    });
     apply_lua_draw_commands(services, commands);
   }
 
@@ -617,15 +621,26 @@ fn apply_lua_draw_commands(
   services: &mut EngineServices,
   commands: Vec<crate::host_engine::services::LuaDrawCommand>,
 ) {
-  use crate::host_engine::services::{LuaDrawCommand, TextColor};
+  use crate::host_engine::services::{LuaDrawCommand, LuaDrawTarget, TextColor};
   for command in commands {
     match command {
-      LuaDrawCommand::Text { x, y, params } => {
-        services
+      LuaDrawCommand::Text {
+        target,
+        x,
+        y,
+        params,
+      } => match target {
+        LuaDrawTarget::Base => services
           .render
-          .draw_text_at(&mut services.canvas, x, y, &params);
-      }
+          .draw_text_at(&mut services.canvas, x, y, &params),
+        LuaDrawTarget::Slice(id) => {
+          services
+            .render
+            .draw_text_at_on(&mut services.canvas, id, x, y, &params);
+        }
+      },
       LuaDrawCommand::FillRect {
+        target,
         x,
         y,
         width,
@@ -633,17 +648,33 @@ fn apply_lua_draw_commands(
         fill_char,
         fg,
         bg,
-      } => services.render.draw_filled_rect(
-        &mut services.canvas,
-        x,
-        y,
-        width,
-        height,
-        fill_char,
-        fg,
-        bg,
-      ),
+      } => match target {
+        LuaDrawTarget::Base => services.render.draw_filled_rect(
+          &mut services.canvas,
+          x,
+          y,
+          width,
+          height,
+          fill_char,
+          fg,
+          bg,
+        ),
+        LuaDrawTarget::Slice(id) => {
+          services.render.draw_filled_rect_on(
+            &mut services.canvas,
+            id,
+            x,
+            y,
+            width,
+            height,
+            fill_char,
+            fg,
+            bg,
+          );
+        }
+      },
       LuaDrawCommand::StrokeRect {
+        target,
         x,
         y,
         width,
@@ -651,33 +682,66 @@ fn apply_lua_draw_commands(
         border,
         fg,
         bg,
-      } => services.render.draw_border_rect(
-        &mut services.canvas,
-        x,
-        y,
-        width,
-        height,
-        &border,
-        fg,
-        bg,
-        None,
-        None,
-      ),
+      } => match target {
+        LuaDrawTarget::Base => services.render.draw_border_rect(
+          &mut services.canvas,
+          x,
+          y,
+          width,
+          height,
+          &border,
+          fg,
+          bg,
+          None,
+          None,
+        ),
+        LuaDrawTarget::Slice(id) => {
+          services.render.draw_border_rect_on(
+            &mut services.canvas,
+            id,
+            x,
+            y,
+            width,
+            height,
+            &border,
+            fg,
+            bg,
+            None,
+            None,
+          );
+        }
+      },
       LuaDrawCommand::EraseRect {
+        target,
         x,
         y,
         width,
         height,
-      } => services.render.draw_filled_rect(
-        &mut services.canvas,
-        x,
-        y,
-        width,
-        height,
-        Some(" ".to_string()),
-        Some(TextColor::Transparent),
-        Some(TextColor::Transparent),
-      ),
+      } => match target {
+        LuaDrawTarget::Base => services.render.draw_filled_rect(
+          &mut services.canvas,
+          x,
+          y,
+          width,
+          height,
+          Some(" ".to_string()),
+          Some(TextColor::Transparent),
+          Some(TextColor::Transparent),
+        ),
+        LuaDrawTarget::Slice(id) => {
+          services.render.draw_filled_rect_on(
+            &mut services.canvas,
+            id,
+            x,
+            y,
+            width,
+            height,
+            Some(" ".to_string()),
+            Some(TextColor::Transparent),
+            Some(TextColor::Transparent),
+          );
+        }
+      },
     }
   }
 }

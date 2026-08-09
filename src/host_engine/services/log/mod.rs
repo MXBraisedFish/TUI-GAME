@@ -11,5 +11,5 @@ pub use formatter::{format_file_log_entry, format_log_entry};
 pub use labels::LogLabels;
 pub use level::{LogLevel, format_log_level};
 pub use phase::LogPhase;
-pub use service::LogService;
+pub use service::{LogService, LogSessionId, LogSessionKind};
 pub use source::LogSource;

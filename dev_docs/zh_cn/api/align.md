@@ -120,7 +120,7 @@
 | 参数名 | 类型 | 必填 | 默认值 | 说明 | 额外补充 |
 | ------ | ---- | ---- | ------ | ---- | -------- |
 | `width` | integer | 是 | — | 元素宽度（显示列数） | 必须为正整数 |
-| `horizontal_align` | string | 是 | — | 水平对齐方式 | 使用 `align.AUTO/LEFT/HORIZONTAL_CENTER/RIGHT/CENTER` |
+| `horizontal_align` | const | 是 | — | 水平对齐方式 | 使用 `align.AUTO/LEFT/HORIZONTAL_CENTER/RIGHT/CENTER` |
 | `offset_x` | integer | 否 | `0` | 锚点上的水平偏移 | 正数向右、负数向左 |
 | `relative_x` | integer | 否 | `nil` | 自定义水平锚点 | 省略时按对齐方式取边缘/中心作为锚点 |
 | `slice_layer` | string | 否 | `"base"` | 图层 | 当前仅支持 `"base"` |
@@ -148,7 +148,7 @@
 | 参数名 | 类型 | 必填 | 默认值 | 说明 | 额外补充 |
 | ------ | ---- | ---- | ------ | ---- | -------- |
 | `height` | integer | 是 | — | 元素高度（显示行数） | 必须为正整数 |
-| `vertical_align` | string | 是 | — | 垂直对齐方式 | 使用 `align.AUTO/TOP/VERTICAL_CENTER/BOTTOM/CENTER` |
+| `vertical_align` | const | 是 | — | 垂直对齐方式 | 使用 `align.AUTO/TOP/VERTICAL_CENTER/BOTTOM/CENTER` |
 | `offset_y` | integer | 否 | `0` | 锚点上的垂直偏移 | 正数向下、负数向上 |
 | `relative_y` | integer | 否 | `nil` | 自定义垂直锚点 | 省略时按对齐方式取边缘/中心作为锚点 |
 | `slice_layer` | string | 否 | `"base"` | 图层 | 当前仅支持 `"base"` |
@@ -177,8 +177,8 @@
 | ------ | ---- | ---- | ------ | ---- | -------- |
 | `width` | integer | 是 | — | 矩形宽度 | 必须为正整数 |
 | `height` | integer | 是 | — | 矩形高度 | 必须为正整数 |
-| `horizontal_align` | string | 是 | — | 水平对齐方式 | 使用 `align.AUTO/LEFT/HORIZONTAL_CENTER/RIGHT/CENTER` |
-| `vertical_align` | string | 是 | — | 垂直对齐方式 | 使用 `align.AUTO/TOP/VERTICAL_CENTER/BOTTOM/CENTER` |
+| `horizontal_align` | const | 是 | — | 水平对齐方式 | 使用 `align.AUTO/LEFT/HORIZONTAL_CENTER/RIGHT/CENTER` |
+| `vertical_align` | const | 是 | — | 垂直对齐方式 | 使用 `align.AUTO/TOP/VERTICAL_CENTER/BOTTOM/CENTER` |
 | `offset_x` | integer | 否 | `0` | 水平偏移 | — |
 | `offset_y` | integer | 否 | `0` | 垂直偏移 | — |
 | `relative_x` | integer | 否 | `nil` | 自定义水平锚点 | 省略时按对齐方式计算 |

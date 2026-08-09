@@ -6,7 +6,9 @@ mod policy;
 mod screensaver;
 mod session;
 
-pub use api::{LuaApiConfig, LuaApiContext, LuaCallPhase, LuaDrawCommand, LuaHostCommand};
+pub use api::{
+  LuaApiConfig, LuaApiContext, LuaCallPhase, LuaDrawCommand, LuaDrawTarget, LuaHostCommand,
+};
 pub use events::{
   LuaActionState, LuaAnimationEvent, LuaAnimationEventKind, LuaAudioEvent, LuaAudioEventKind,
   LuaEnqueueError, LuaEventBroker, LuaEventCallbackId, LuaEventData, LuaEventDelivery,
@@ -20,7 +22,7 @@ pub use events::{
   translate_markdown_event, translate_repeat_timer_event, translate_scroll_box_event,
   translate_text_input_event, translate_timer_event,
 };
-pub use game::{GameService, LuaSessionDiagnostics};
+pub use game::{GameService, GameStopData, LuaSessionDiagnostics};
 pub use object_pool::LuaObjectPool;
 pub use policy::{LuaBudgetKind, LuaExecutionBudget, LuaPolicy};
 pub use screensaver::ScreensaverService;

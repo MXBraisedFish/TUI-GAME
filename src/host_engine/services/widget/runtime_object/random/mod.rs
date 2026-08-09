@@ -27,12 +27,32 @@ pub struct RandomSnapshot {
   pub draw_count: u64,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum RandomConfiguredRange {
+  Integer { min: i64, max: i64 },
+  Float { min: f64, max: f64 },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RandomConfiguration {
+  pub range: RandomConfiguredRange,
+  pub seed: i64,
+  pub step: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum RandomGeneratedValue {
+  Integer(i64),
+  Float(f64),
+}
+
 pub(crate) struct RandomGenerator {
   pub(crate) algorithm: RandomAlgorithm,
   pub(crate) seed: [u8; 32],
   pub(crate) stream: u64,
   pub(crate) draw_count: u64,
   pub(crate) rng: ChaCha8Rng,
+  pub(crate) configuration: Option<RandomConfiguration>,
 }
 
 impl RandomGenerator {
@@ -78,6 +98,7 @@ impl RandomGenerator {
       stream,
       draw_count,
       rng,
+      configuration: None,
     }
   }
 }

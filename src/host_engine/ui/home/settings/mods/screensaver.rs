@@ -432,13 +432,13 @@ impl ScreensaverPackageUi {
   }
 
   pub fn toggle_selected_enabled(&mut self, storage: &StorageService, log: &mut LogService) {
-    let Some((mod_id, enabled)) =
-      self.selected_entry_state(|entry| (entry.mod_id.clone(), !entry.enabled))
+    let Some((mod_id, package_id, enabled)) =
+      self.selected_entry_state(|entry| (entry.mod_id.clone(), entry.id.clone(), !entry.enabled))
     else {
       return;
     };
     self.update_entry(&mod_id, |entry| entry.enabled = enabled);
-    let _ = storage.update_screensaver_package_state(&mod_id, log, |state| {
+    let _ = storage.update_screensaver_package_state(&package_id, log, |state| {
       state.enabled = enabled;
       if enabled {
         // 包总开关重新打开时只恢复可见性，不自动加入局内屏保列表。
@@ -449,13 +449,13 @@ impl ScreensaverPackageUi {
   }
 
   pub fn toggle_selected_debug(&mut self, storage: &StorageService, log: &mut LogService) {
-    let Some((mod_id, debug)) =
-      self.selected_entry_state(|entry| (entry.mod_id.clone(), !entry.debug))
+    let Some((mod_id, package_id, debug)) =
+      self.selected_entry_state(|entry| (entry.mod_id.clone(), entry.id.clone(), !entry.debug))
     else {
       return;
     };
     self.update_entry(&mod_id, |entry| entry.debug = debug);
-    let _ = storage.update_screensaver_package_state(&mod_id, log, |state| state.debug = debug);
+    let _ = storage.update_screensaver_package_state(&package_id, log, |state| state.debug = debug);
   }
 
   pub fn scroll_info(&mut self, scroll_box: &ScrollBoxService, layout: &LayoutService, lines: i32) {
@@ -2033,7 +2033,7 @@ impl ScreensaverPackageUi {
   ) {
     let profile = storage.read_package_state_or_default(log);
     for entry in &mut entries {
-      if let Some(state) = profile.screensavers.get(&entry.mod_id) {
+      if let Some(state) = profile.screensaver(&entry.id) {
         entry.enabled = state.enabled;
         entry.debug = state.debug;
       } else {

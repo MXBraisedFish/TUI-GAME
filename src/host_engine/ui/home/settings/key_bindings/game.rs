@@ -309,7 +309,7 @@ impl GameKeyBindingsUi {
               .profile
               .user
               .games
-              .get(&package.mod_id)
+              .get(&package.id.storage_key())
               .and_then(|actions| actions.get(&action))
               .cloned()
               .unwrap_or_else(|| config.keys.clone());
@@ -328,7 +328,7 @@ impl GameKeyBindingsUi {
           })
           .collect();
         Some(GameBindingEntry {
-          id: package.mod_id,
+          id: package.id.storage_key(),
           title,
           rows,
         })

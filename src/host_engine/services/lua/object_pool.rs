@@ -1,6 +1,16 @@
+use std::cell::RefCell;
+use std::rc::{Rc, Weak};
+
 use crate::host_engine::services::{
   RuntimeObjectPool, RuntimeObjectPoolOwner, UiObjectPool, UiObjectPoolOwner,
 };
+
+pub(crate) type SharedLuaObjectPool = Rc<RefCell<Option<LuaObjectPool>>>;
+pub(crate) type WeakLuaObjectPool = Weak<RefCell<Option<LuaObjectPool>>>;
+
+pub(crate) fn shared_lua_object_pool() -> SharedLuaObjectPool {
+  Rc::new(RefCell::new(Some(LuaObjectPool::new())))
+}
 
 /// 单个 Lua Session 拥有的全部宿主管理对象。
 ///

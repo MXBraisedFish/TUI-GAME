@@ -10,7 +10,9 @@ use regex::{Regex, RegexBuilder};
 
 use super::args;
 use super::readonly;
-use super::{LuaApiContext, LuaCallPhase, LuaDrawCommand, LuaHostCommand, SharedApiState};
+use super::{
+  LuaApiContext, LuaCallPhase, LuaDrawCommand, LuaDrawTarget, LuaHostCommand, SharedApiState,
+};
 use crate::host_engine::services::lua::LuaSessionKind;
 use crate::host_engine::services::{
   BorderCharacter, BorderStyle, CustomBorder, DrawTextParams, FileTask, LuaFileOperation,
@@ -24,18 +26,23 @@ mod chars;
 mod color;
 mod debug;
 mod draw;
+mod encoding;
 mod event;
 mod file;
 mod game;
 mod loader;
 mod math;
 mod measurement;
+mod random;
+mod serialization;
+mod slice;
 mod string;
 mod table;
 mod utf8;
 
 use measurement::{
-  parse_color, parse_draw_text_params, positive_u16, require_base_layer, text_parameters,
+  draw_target_size, parse_color, parse_draw_target, parse_draw_text_params, positive_u16,
+  text_parameters,
 };
 use string::{rich_text_params, text_parameter};
 use utf8::resolve_index;
@@ -52,6 +59,10 @@ pub fn install(lua: &Lua, environment: &Table, state: SharedApiState) -> mlua::R
   environment.set("char", chars::char_lib(lua)?)?;
   environment.set("align", align::align(lua, state.clone())?)?;
   environment.set("measurement", measurement::measurement(lua, state.clone())?)?;
+  environment.set("random", random::random(lua, state.clone())?)?;
+  environment.set("slice", slice::slice(lua, state.clone())?)?;
+  environment.set("serialization", serialization::serialization(lua)?)?;
+  environment.set("encoding", encoding::encoding(lua)?)?;
   environment.set("draw", draw::draw(lua, state.clone())?)?;
   environment.set("debug", debug::debug(lua, state.clone())?)?;
   environment.set("game", game::game(lua, state.clone())?)?;

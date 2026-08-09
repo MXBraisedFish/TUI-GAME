@@ -18,8 +18,8 @@ pub enum SliceLength {
 /// 切片矩形区域
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SliceRect {
-  pub x: u16,
-  pub y: u16,
+  pub x: i32,
+  pub y: i32,
   pub width: SliceLength,
   pub height: SliceLength,
 }
@@ -30,6 +30,7 @@ pub struct SliceOptions {
   pub rect: SliceRect,
   pub visible: bool,
   pub opaque: bool,
+  pub layer: Option<i32>,
 }
 
 impl Default for SliceOptions {
@@ -43,6 +44,7 @@ impl Default for SliceOptions {
       },
       visible: true,
       opaque: true,
+      layer: None,
     }
   }
 }
@@ -52,11 +54,13 @@ pub(crate) struct SliceState {
   pub rect: SliceRect,
   pub visible: bool,
   pub opaque: bool,
+  pub layer: i32,
 }
 
 pub(crate) struct SliceObjects {
   pub next_id: u64,
   pub slices: HashMap<SliceId, SliceState>,
+  pub next_auto_layer: i32,
 }
 
 impl SliceObjects {
@@ -64,6 +68,7 @@ impl SliceObjects {
     Self {
       next_id: 1,
       slices: HashMap::new(),
+      next_auto_layer: 0,
     }
   }
 }
@@ -81,15 +86,19 @@ impl SliceService {
     valid_rect(options.rect).then(|| {
       let id = SliceId(pool.slices.next_id);
       pool.slices.next_id += 1;
+      let layer = options.layer.unwrap_or(pool.slices.next_auto_layer);
+      pool.slices.next_auto_layer = pool.slices.next_auto_layer.max(layer.saturating_add(1));
       pool.slices.slices.insert(
         id,
         SliceState {
           rect: options.rect,
           visible: options.visible,
           opaque: options.opaque,
+          layer,
         },
       );
       pool.surfaces.push(SurfaceId::Slice(id));
+      reorder_slices(pool);
       id
     })
   }
@@ -168,6 +177,41 @@ impl SliceService {
     true
   }
 
+  pub fn set_position(&self, pool: &mut UiObjectPool, id: SliceId, x: i32, y: i32) -> bool {
+    let Some(state) = pool.slices.slices.get_mut(&id) else {
+      return false;
+    };
+    state.rect.x = x;
+    state.rect.y = y;
+    true
+  }
+
+  pub fn layer(&self, pool: &UiObjectPool, id: SliceId) -> Option<i32> {
+    Some(pool.slices.slices.get(&id)?.layer)
+  }
+
+  pub fn set_layer(&self, pool: &mut UiObjectPool, id: SliceId, layer: i32) -> bool {
+    let Some(state) = pool.slices.slices.get_mut(&id) else {
+      return false;
+    };
+    state.layer = layer;
+    pool.slices.next_auto_layer = pool.slices.next_auto_layer.max(layer.saturating_add(1));
+    reorder_slices(pool);
+    true
+  }
+
+  pub fn ids(&self, pool: &UiObjectPool) -> Vec<SliceId> {
+    let mut ids = pool.slices.slices.keys().copied().collect::<Vec<_>>();
+    ids.sort_by_key(|id| id.0);
+    ids
+  }
+
+  pub fn ids_by_layer(&self, pool: &UiObjectPool) -> Vec<SliceId> {
+    let mut ids = self.ids(pool);
+    ids.sort_by_key(|id| (pool.slices.slices[id].layer, id.0));
+    ids
+  }
+
   pub fn is_visible(&self, pool: &UiObjectPool, id: SliceId) -> bool {
     pool
       .slices
@@ -217,18 +261,36 @@ impl SliceService {
 // 根据布局将切片相对坐标解析为绝对像素坐标
 pub(crate) fn resolve_rect(rect: SliceRect, layout: &LayoutService) -> Rect {
   let viewport = layout.developer_size();
-  let x = rect.x.min(viewport.width);
-  let y = rect.y.min(viewport.height);
-  let resolve = |length: SliceLength, total: u16, offset: u16| match length {
-    SliceLength::Fixed(value) => value,
-    SliceLength::Auto => total.saturating_sub(offset),
-    SliceLength::Percent(value) => (total as u32 * value as u32 / 100) as u16,
+  let resolve = |length: SliceLength, total: u16, offset: i32| match length {
+    SliceLength::Fixed(value) => i64::from(value),
+    SliceLength::Auto => (i64::from(total) - i64::from(offset.max(0))).max(0),
+    SliceLength::Percent(value) => i64::from((total as u32 * value as u32 / 100) as u16),
   };
+  let clip_axis = |offset: i32, length: i64, total: u16| {
+    let start = i64::from(offset);
+    let end = start.saturating_add(length);
+    let visible_start = start.clamp(0, i64::from(total));
+    let visible_end = end.clamp(0, i64::from(total));
+    (
+      visible_start as u16,
+      visible_end.saturating_sub(visible_start) as u16,
+    )
+  };
+  let (x, width) = clip_axis(
+    rect.x,
+    resolve(rect.width, viewport.width, rect.x),
+    viewport.width,
+  );
+  let (y, height) = clip_axis(
+    rect.y,
+    resolve(rect.height, viewport.height, rect.y),
+    viewport.height,
+  );
   Rect {
     x,
     y,
-    width: resolve(rect.width, viewport.width, x).min(viewport.width.saturating_sub(x)),
-    height: resolve(rect.height, viewport.height, y).min(viewport.height.saturating_sub(y)),
+    width,
+    height,
   }
 }
 
@@ -237,11 +299,24 @@ fn valid_rect(rect: SliceRect) -> bool {
   valid(rect.width) && valid(rect.height)
 }
 
+fn reorder_slices(pool: &mut UiObjectPool) {
+  let mut ordered = pool.slices.slices.keys().copied().collect::<Vec<_>>();
+  ordered.sort_by_key(|id| (pool.slices.slices[id].layer, id.0));
+  let mut ordered = ordered.into_iter();
+  for surface in &mut pool.surfaces {
+    if matches!(surface, SurfaceId::Slice(_))
+      && let Some(id) = ordered.next()
+    {
+      *surface = SurfaceId::Slice(id);
+    }
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
 
-  fn rect(x: u16, y: u16, width: SliceLength, height: SliceLength) -> SliceRect {
+  fn rect(x: i32, y: i32, width: SliceLength, height: SliceLength) -> SliceRect {
     SliceRect {
       x,
       y,
@@ -272,6 +347,7 @@ mod tests {
           rect: rect(0, 0, SliceLength::Fixed(20), SliceLength::Fixed(10)),
           visible: false,
           opaque: false,
+          ..Default::default()
         },
       )
       .unwrap();
@@ -358,6 +434,52 @@ mod tests {
         y: 8,
         width: 2,
         height: 2
+      })
+    );
+  }
+
+  #[test]
+  fn negative_and_far_positive_positions_are_clipped_without_wrapping() {
+    let service = SliceService::new();
+    let mut pool = UiObjectPool::new();
+    let mut layout = LayoutService::new();
+    layout.resize_physical(20, 10);
+
+    let partially_visible = service
+      .create(
+        &mut pool,
+        SliceOptions {
+          rect: rect(-4, -2, SliceLength::Fixed(10), SliceLength::Auto),
+          ..Default::default()
+        },
+      )
+      .unwrap();
+    assert_eq!(
+      service.resolved_rect(&pool, partially_visible, &layout),
+      Some(Rect {
+        x: 0,
+        y: 0,
+        width: 6,
+        height: 8,
+      })
+    );
+
+    let outside = service
+      .create(
+        &mut pool,
+        SliceOptions {
+          rect: rect(i32::MAX, i32::MAX, SliceLength::Auto, SliceLength::Auto),
+          ..Default::default()
+        },
+      )
+      .unwrap();
+    assert_eq!(
+      service.resolved_rect(&pool, outside, &layout),
+      Some(Rect {
+        x: 20,
+        y: 10,
+        width: 0,
+        height: 0,
       })
     );
   }

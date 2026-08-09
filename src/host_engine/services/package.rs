@@ -13,8 +13,11 @@ use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, unbounded};
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Deserialize;
 
+pub use crate::host_engine::core::{PackageId, PackageSource, PackageType};
+
 use crate::host_engine::services::{
   async_runtime::{AsyncRuntime, EngineEvent, EngineTask, ManagedThreadId, TaskId},
+  input::canonical_key_token,
   log::{LogService, LogSource},
   version::{HOST_API_VERSION, PACKAGE_MANIFEST_VERSION},
 };
@@ -26,20 +29,6 @@ const MAX_PACKAGE_MANIFEST_BYTES: usize = 1024 * 1024;
 const MAX_PACKAGE_TEXT_BYTES: usize = 1024 * 1024;
 const MAX_PACKAGE_I18N_BYTES: usize = 1024 * 1024;
 
-/// 包来源（官方或模组）
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum PackageSource {
-  Official,
-  Mod,
-}
-
-/// 包类型（游戏或屏保）
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum PackageType {
-  Game,
-  Screensaver,
-}
-
 /// 包文本字段：普通字符串直接使用，@ 开头的字符串在扫描时解析包内 i18n。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PackageText {
@@ -50,6 +39,7 @@ pub enum PackageText {
 /// 包完整信息
 #[derive(Clone, Debug)]
 pub struct PackageInfo {
+  pub id: PackageId,
   pub source: PackageSource,
   pub dir_name: String,
   pub mod_id: String,
@@ -70,6 +60,7 @@ pub struct PackageInfo {
 /// 面向 UI 列表的轻量包条目快照。
 #[derive(Clone, Debug)]
 pub struct PackageListEntry {
+  pub id: PackageId,
   pub mod_id: String,
   pub source: PackageSource,
   pub package_type: PackageType,
@@ -94,6 +85,7 @@ pub struct PackageListEntry {
   pub high_privilege_required: bool,
   pub score_enabled: bool,
   pub score_empty_text: String,
+  pub best_string: Option<String>,
   pub min_width: u32,
   pub min_height: u32,
   pub screensaver_command: String,
@@ -206,6 +198,10 @@ pub enum PackageAsyncEvent {
 pub enum PackageEvent {
   Info(String),
   Warn(String),
+  PackageWarn {
+    package_id: PackageId,
+    message: String,
+  },
   ScanStarted {
     total: usize,
   },
@@ -399,64 +395,41 @@ impl PackageService {
     find_package(&self.snapshot.screensavers, source, mod_id)
   }
 
+  pub fn find_by_id(&self, package_id: &PackageId) -> Option<PackageInfo> {
+    let packages = match package_id.package_type {
+      PackageType::Game => &self.snapshot.games,
+      PackageType::Screensaver => &self.snapshot.screensavers,
+    };
+    packages
+      .iter()
+      .find(|package| package.id == *package_id)
+      .cloned()
+  }
+
+  /// 启动前重新验证扫描快照，并重新解析入口以抵御热更新或损坏数据。
+  pub fn validate_for_launch(&self, package: &PackageInfo) -> Result<PathBuf, String> {
+    validate_loaded_package(package)?;
+    resolve_package_entry_path(package)
+  }
+
+  pub fn validate_game_action_map(
+    &self,
+    actions: &HashMap<String, Vec<Vec<String>>>,
+  ) -> Result<(), String> {
+    for (action, keys) in actions {
+      let normalized = normalize_action_keys(action, keys.clone())?;
+      if normalized != *keys {
+        return Err(format!(
+          "game action '{action}' contains non-canonical keys"
+        ));
+      }
+    }
+    Ok(())
+  }
+
   /// 解析包的实际 Lua 入口，并确保规范路径仍位于 scripts/ 内。
   pub fn resolve_entry_path(&self, package: &PackageInfo) -> Result<PathBuf, String> {
-    let canonical_package = package.path.canonicalize().map_err(|error| {
-      format!(
-        "Failed to resolve package directory '{}': {error}",
-        package.path.display()
-      )
-    })?;
-    if !canonical_package.is_dir() {
-      return Err(format!(
-        "Package path '{}' is not a directory",
-        canonical_package.display()
-      ));
-    }
-
-    let scripts_dir = package.path.join("scripts");
-    let canonical_scripts = scripts_dir.canonicalize().map_err(|error| {
-      format!(
-        "Failed to resolve scripts directory '{}': {error}",
-        scripts_dir.display()
-      )
-    })?;
-    if !canonical_scripts.is_dir() || !canonical_scripts.starts_with(&canonical_package) {
-      return Err(format!(
-        "Scripts directory '{}' escapes package directory '{}'",
-        canonical_scripts.display(),
-        canonical_package.display()
-      ));
-    }
-
-    let normalized_entry = resolve_entry(&package.path, &package.entry)?;
-    let entry_path = scripts_dir.join(normalized_entry);
-    let canonical_entry = entry_path.canonicalize().map_err(|error| {
-      format!(
-        "Failed to resolve package entry '{}': {error}",
-        entry_path.display()
-      )
-    })?;
-    if !canonical_entry.starts_with(&canonical_scripts) {
-      return Err(format!(
-        "Package entry '{}' escapes scripts directory '{}'",
-        canonical_entry.display(),
-        canonical_scripts.display()
-      ));
-    }
-    if !extension_is(canonical_entry.to_string_lossy().as_ref(), &["lua"]) {
-      return Err(format!(
-        "Package entry '{}' is not a Lua source file",
-        canonical_entry.display()
-      ));
-    }
-    if !canonical_entry.is_file() {
-      return Err(format!(
-        "Package entry '{}' is not a file",
-        canonical_entry.display()
-      ));
-    }
-    Ok(canonical_entry)
+    resolve_package_entry_path(package)
   }
 
   /// Resolve a package audio asset without permitting access outside its assets directory.
@@ -525,7 +498,7 @@ impl PackageService {
 
   fn package_list_entry(&self, info: PackageInfo) -> PackageListEntry {
     let mut entry = package_list_entry(info);
-    if let Some(actions) = self.user_game_key_actions.get(&entry.mod_id) {
+    if let Some(actions) = self.user_game_key_actions.get(&entry.id.storage_key()) {
       entry.key_actions = actions
         .iter()
         .map(|(k, v)| (k.clone(), v.clone()))
@@ -595,6 +568,20 @@ fn log_package_event(log: &mut LogService, event: PackageEvent) {
   match event {
     PackageEvent::Info(message) => log.info(LogSource::Pack, message),
     PackageEvent::Warn(message) => log.warn(LogSource::Pack, message),
+    PackageEvent::PackageWarn {
+      package_id,
+      message,
+    } => {
+      log.warn_package(&package_id, LogSource::Pack, message);
+      let location = log
+        .package_log_path(&package_id)
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|_| "the package log".to_string());
+      log.warn(
+        LogSource::Pack,
+        format!("Package '{package_id}' was rejected; see '{location}'"),
+      );
+    }
     PackageEvent::ScanStarted { total } => log.info(
       LogSource::Pack,
       format!("Started package scan ({} candidates)", total),
@@ -956,6 +943,7 @@ fn package_list_entry(info: PackageInfo) -> PackageListEntry {
     .unwrap_or_default();
 
   PackageListEntry {
+    id: info.id,
     mod_id: info.mod_id,
     source: info.source,
     package_type: info.package_type,
@@ -980,6 +968,7 @@ fn package_list_entry(info: PackageInfo) -> PackageListEntry {
     high_privilege_required,
     score_enabled,
     score_empty_text,
+    best_string: None,
     min_width: info.runtime.min_width,
     min_height: info.runtime.min_height,
     screensaver_command,
@@ -1094,11 +1083,14 @@ fn scan_dir(
 
     match read_package(&path, &dir_name, &expected_type, &source, request) {
       Ok(info) => {
-        if has_mod_id(&report.snapshot, &info.mod_id) {
-          report.events.push(PackageEvent::Warn(format!(
-            "Duplicate mod_id '{}' in '{}', keeping first",
-            info.mod_id, dir_name,
-          )));
+        if has_package_id(&report.snapshot, &info.id) {
+          report.events.push(PackageEvent::PackageWarn {
+            package_id: info.id.clone(),
+            message: format!(
+              "Duplicate package id '{}' in '{}', keeping first",
+              info.id, dir_name,
+            ),
+          });
           report.duplicates += 1;
           continue;
         }
@@ -1106,10 +1098,15 @@ fn scan_dir(
         insert(&mut report.snapshot, info);
       }
       Err(msg) => {
-        report.events.push(PackageEvent::Warn(format!(
-          "Skipping '{}/{}': {}",
-          relative, dir_name, msg
-        )));
+        let message = format!("Skipping '{}/{}': {}", relative, dir_name, msg);
+        if let Some(package_id) = read_manifest_package_id(&path, source) {
+          report.events.push(PackageEvent::PackageWarn {
+            package_id,
+            message,
+          });
+        } else {
+          report.events.push(PackageEvent::Warn(message));
+        }
         report.errors += 1;
       }
     }
@@ -1168,10 +1165,6 @@ fn read_package(
   let raw: RawPackageJson =
     serde_json::from_str(&content).map_err(|e| format!("Invalid JSON: {}", e))?;
 
-  if raw.mod_id.trim().is_empty() {
-    return Err("mod_id is empty".into());
-  }
-
   if raw.schema_version != PACKAGE_MANIFEST_VERSION {
     return Err(format!(
       "schema_version {} != host {}",
@@ -1186,6 +1179,7 @@ fn read_package(
       pkg_type, expected_type
     ));
   }
+  let package_id = PackageId::new(*source, pkg_type, raw.mod_id.clone())?;
 
   if raw.version_code == 0 {
     return Err("version_code must be > 0".into());
@@ -1250,7 +1244,7 @@ fn read_package(
                 .description
                 .map(|value| resolve_package_text(dir, value, request, &mut watched_files))
                 .unwrap_or_default(),
-              keys: a.keys,
+              keys: normalize_action_keys(name, a.keys)?,
               lock: a.lock,
             },
           );
@@ -1299,8 +1293,9 @@ fn read_package(
     PackageType::Game => None,
   };
 
-  Ok(PackageInfo {
-    source: source.clone(),
+  let package = PackageInfo {
+    id: package_id,
+    source: *source,
     dir_name: dir_name.to_string(),
     mod_id: raw.mod_id,
     package_type: pkg_type,
@@ -1332,7 +1327,162 @@ fn read_package(
     screensaver,
     path: dir.to_path_buf(),
     watched_files,
-  })
+  };
+  validate_loaded_package(&package)?;
+  resolve_package_entry_path(&package)?;
+  Ok(package)
+}
+
+fn normalize_action_keys(action: &str, keys: Vec<Vec<String>>) -> Result<Vec<Vec<String>>, String> {
+  if action.trim().is_empty() {
+    return Err("game action name is empty".to_string());
+  }
+  if keys.len() > 2 {
+    return Err(format!(
+      "game action '{action}' contains more than two bindings"
+    ));
+  }
+  keys
+    .into_iter()
+    .enumerate()
+    .map(|(pattern_index, pattern)| {
+      if pattern.is_empty() {
+        return Err(format!(
+          "game action '{action}' key pattern {pattern_index} is empty"
+        ));
+      }
+      if pattern.len() > 2 {
+        return Err(format!(
+          "game action '{action}' key pattern {pattern_index} contains more than two keys"
+        ));
+      }
+      pattern
+        .into_iter()
+        .map(|token| {
+          canonical_key_token(&token)
+            .ok_or_else(|| format!("game action '{action}' contains unknown key token '{token}'"))
+        })
+        .collect()
+    })
+    .collect()
+}
+
+fn read_manifest_package_id(dir: &Path, source: PackageSource) -> Option<PackageId> {
+  let content =
+    read_utf8_file_limited(&dir.join("package.json"), MAX_PACKAGE_MANIFEST_BYTES).ok()?;
+  let value: serde_json::Value = serde_json::from_str(&content).ok()?;
+  let mod_id = value.get("mod_id")?.as_str()?;
+  let package_type = value
+    .get("type")?
+    .as_str()
+    .and_then(|value| parse_package_type(value).ok())?;
+  PackageId::new(source, package_type, mod_id).ok()
+}
+
+fn validate_loaded_package(package: &PackageInfo) -> Result<(), String> {
+  let expected_id = PackageId::new(package.source, package.package_type, package.mod_id.clone())?;
+  if expected_id != package.id {
+    return Err("package identity does not match the loaded manifest".to_string());
+  }
+  if package.api_min > package.api_max
+    || package.api_min > HOST_API_VERSION
+    || package.api_max < HOST_API_VERSION
+  {
+    return Err(format!(
+      "package API range {}..={} is incompatible with host API {}",
+      package.api_min, package.api_max, HOST_API_VERSION
+    ));
+  }
+  match package.package_type {
+    PackageType::Game => {
+      let game = package
+        .game
+        .as_ref()
+        .ok_or("game package has no game configuration")?;
+      if package.screensaver.is_some() {
+        return Err("game package contains screensaver configuration".to_string());
+      }
+      if !VALID_TARGET_FPS.contains(&game.target_fps) {
+        return Err(format!("invalid game target_fps {}", game.target_fps));
+      }
+      for (action, config) in &game.actions {
+        let normalized = normalize_action_keys(action, config.keys.clone())?;
+        if normalized != config.keys {
+          return Err(format!(
+            "game action '{action}' contains non-canonical keys"
+          ));
+        }
+      }
+    }
+    PackageType::Screensaver => {
+      if package.screensaver.is_none() {
+        return Err("screensaver package has no screensaver configuration".to_string());
+      }
+      if package.game.is_some() {
+        return Err("screensaver package contains game configuration".to_string());
+      }
+    }
+  }
+  Ok(())
+}
+
+fn resolve_package_entry_path(package: &PackageInfo) -> Result<PathBuf, String> {
+  let canonical_package = package.path.canonicalize().map_err(|error| {
+    format!(
+      "Failed to resolve package directory '{}': {error}",
+      package.path.display()
+    )
+  })?;
+  if !canonical_package.is_dir() {
+    return Err(format!(
+      "Package path '{}' is not a directory",
+      canonical_package.display()
+    ));
+  }
+
+  let scripts_dir = package.path.join("scripts");
+  let canonical_scripts = scripts_dir.canonicalize().map_err(|error| {
+    format!(
+      "Failed to resolve scripts directory '{}': {error}",
+      scripts_dir.display()
+    )
+  })?;
+  if !canonical_scripts.is_dir() || !canonical_scripts.starts_with(&canonical_package) {
+    return Err(format!(
+      "Scripts directory '{}' escapes package directory '{}'",
+      canonical_scripts.display(),
+      canonical_package.display()
+    ));
+  }
+
+  let normalized_entry = resolve_entry(&package.path, &package.entry)?;
+  let entry_path = scripts_dir.join(normalized_entry);
+  let canonical_entry = entry_path.canonicalize().map_err(|error| {
+    format!(
+      "Failed to resolve package entry '{}': {error}",
+      entry_path.display()
+    )
+  })?;
+  if !canonical_entry.starts_with(&canonical_scripts) {
+    return Err(format!(
+      "Package entry '{}' escapes scripts directory '{}'",
+      canonical_entry.display(),
+      canonical_scripts.display()
+    ));
+  }
+  if !extension_is(canonical_entry.to_string_lossy().as_ref(), &["lua"]) {
+    return Err(format!(
+      "Package entry '{}' is not a Lua source file",
+      canonical_entry.display()
+    ));
+  }
+  if !canonical_entry.is_file() {
+    return Err(format!(
+      "Package entry '{}' is not a file",
+      canonical_entry.display()
+    ));
+  }
+  Ok(canonical_entry)
 }
 
 fn insert(snapshot: &mut PackageSnapshot, info: PackageInfo) {
@@ -1342,9 +1492,12 @@ fn insert(snapshot: &mut PackageSnapshot, info: PackageInfo) {
   }
 }
 
-fn has_mod_id(snapshot: &PackageSnapshot, id: &str) -> bool {
-  snapshot.games.iter().any(|p| p.mod_id == id)
-    || snapshot.screensavers.iter().any(|p| p.mod_id == id)
+fn has_package_id(snapshot: &PackageSnapshot, id: &PackageId) -> bool {
+  snapshot.games.iter().any(|package| &package.id == id)
+    || snapshot
+      .screensavers
+      .iter()
+      .any(|package| &package.id == id)
 }
 
 #[derive(Deserialize)]
@@ -1889,6 +2042,158 @@ mod tests {
       .collect()
   }
 
+  #[test]
+  fn package_id_is_stable_validated_and_separates_source_and_type() {
+    let official_game =
+      PackageId::new(PackageSource::Official, PackageType::Game, "sample.game-1").unwrap();
+    let mod_game = PackageId::new(PackageSource::Mod, PackageType::Game, "sample.game-1").unwrap();
+    let official_screensaver = PackageId::new(
+      PackageSource::Official,
+      PackageType::Screensaver,
+      "sample.game-1",
+    )
+    .unwrap();
+
+    assert_eq!(official_game.storage_key(), "official/game/sample.game-1");
+    assert_ne!(official_game, mod_game);
+    assert_ne!(official_game, official_screensaver);
+    assert_eq!(
+      PackageId::from_storage_key(&official_game.storage_key()).unwrap(),
+      official_game
+    );
+    assert!(PackageId::new(PackageSource::Mod, PackageType::Game, "").is_err());
+    assert!(PackageId::new(PackageSource::Mod, PackageType::Game, "bad/id").is_err());
+    assert!(PackageId::new(PackageSource::Mod, PackageType::Game, "中").is_err());
+    assert!(PackageId::new(PackageSource::Mod, PackageType::Game, "a".repeat(129)).is_err());
+    assert!(
+      serde_json::from_str::<PackageId>(
+        r#"{"source":"mod","package_type":"game","mod_id":"../escape"}"#,
+      )
+      .is_err()
+    );
+  }
+
+  #[test]
+  fn scan_allows_the_same_mod_id_across_sources_and_package_types() {
+    let root = temp_root("package_id_scope");
+    write_game(&root, "scripts/game", "shared.id", "Official Game");
+    write_game(&root, "data/mod/game", "shared.id", "Mod Game");
+    write_screensaver(
+      &root,
+      "data/mod/screensaver",
+      "shared.id",
+      "Mod Screensaver",
+    );
+
+    let mut service = PackageService::new();
+    let mut log = LogService::new();
+    scan(&mut service, &root, &mut log, "en_us");
+
+    assert_eq!(service.games().len(), 2);
+    assert_eq!(service.screensavers().len(), 1);
+    assert!(
+      service
+        .find_by_id(
+          &PackageId::new(PackageSource::Official, PackageType::Game, "shared.id").unwrap()
+        )
+        .is_some()
+    );
+    assert!(
+      service
+        .find_by_id(
+          &PackageId::new(PackageSource::Mod, PackageType::Screensaver, "shared.id").unwrap()
+        )
+        .is_some()
+    );
+    let _ = std::fs::remove_dir_all(root);
+  }
+
+  #[test]
+  fn action_validation_allows_unbound_actions_and_rejects_corrupt_bindings() {
+    assert_eq!(
+      normalize_action_keys("idle", Vec::new()).unwrap(),
+      Vec::<Vec<String>>::new()
+    );
+    assert!(normalize_action_keys("move", vec![Vec::new()]).is_err());
+    assert!(normalize_action_keys("move", vec![vec!["arrow_right".into()]]).is_err());
+    assert!(
+      normalize_action_keys(
+        "move",
+        vec![vec!["a".into()], vec!["d".into()], vec!["right".into()]],
+      )
+      .is_err()
+    );
+    assert!(
+      normalize_action_keys(
+        "move",
+        vec![vec!["ctrl".into(), "shift".into(), "right".into()]],
+      )
+      .is_err()
+    );
+  }
+
+  #[test]
+  fn checked_in_lua_test_packages_have_valid_complete_manifests() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_package");
+    let request = ScanRequest {
+      root: root.clone(),
+      language_code: "en_us".to_string(),
+      missing_template: MISSING.to_string(),
+    };
+
+    for (relative, expected_type) in [
+      ("game", PackageType::Game),
+      ("screensaver", PackageType::Screensaver),
+    ] {
+      let category = root.join(relative);
+      let mut count = 0;
+      for entry in std::fs::read_dir(&category).unwrap() {
+        let entry = entry.unwrap();
+        if !entry.file_type().unwrap().is_dir() {
+          continue;
+        }
+        count += 1;
+        let dir_name = entry.file_name().to_string_lossy().into_owned();
+        let package = read_package(
+          &entry.path(),
+          &dir_name,
+          &expected_type,
+          &PackageSource::Mod,
+          &request,
+        )
+        .unwrap_or_else(|error| panic!("{relative}/{dir_name}: {error}"));
+        assert!(package.runtime.min_width > 0);
+        assert!(package.runtime.min_height > 0);
+        assert!(entry.path().join("scripts/main.lua").is_file());
+        match expected_type {
+          PackageType::Game => {
+            let game = package.game.expect("game configuration");
+            assert!(game.save);
+            assert!(game.score.is_some_and(|score| score.enabled));
+            assert!(!game.actions.is_empty());
+            let action_map = game
+              .actions
+              .iter()
+              .map(
+                |(action, config)| crate::host_engine::services::ActionMapEntry {
+                  action: action.clone(),
+                  description: config.description.clone(),
+                  keys: config.keys.clone(),
+                },
+              )
+              .collect::<Vec<_>>();
+            crate::host_engine::services::translate_action_map(&action_map)
+              .unwrap_or_else(|error| panic!("{relative}/{dir_name}: {error:?}"));
+          }
+          PackageType::Screensaver => {
+            assert!(package.screensaver.is_some());
+          }
+        }
+      }
+      assert_eq!(count, 3, "expected three {relative} test packages");
+    }
+  }
+
   fn write_game(root: &Path, relative: &str, id: &str, title: &str) {
     let dir = root.join(relative).join(id);
     std::fs::create_dir_all(dir.join("scripts")).unwrap();
@@ -1914,7 +2219,8 @@ mod tests {
 
   fn write_game_manifest_only(root: &Path, relative: &str, id: &str, title: &str) {
     let dir = root.join(relative).join(id);
-    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::create_dir_all(dir.join("scripts")).unwrap();
+    std::fs::write(dir.join("scripts/main.lua"), "-- test").unwrap();
     std::fs::write(
       dir.join("package.json"),
       format!(
@@ -2138,7 +2444,8 @@ mod tests {
   fn package_list_entry_carries_game_action_keys() {
     let root = temp_root("entry_action_keys");
     let dir = root.join("data/mod/game/action_keys");
-    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::create_dir_all(dir.join("scripts")).unwrap();
+    std::fs::write(dir.join("scripts/main.lua"), "-- test").unwrap();
     std::fs::write(
       dir.join("package.json"),
       r#"{
@@ -2153,7 +2460,7 @@ mod tests {
         "game":{
           "target_fps":60,
           "actions":{
-            "move_up":{"description":"Move up","keys":[["w"],["arrow_up"]],"lock":true}
+            "move_up":{"description":"Move up","keys":[["w"],["up"]],"lock":true}
           }
         }
       }"#,
@@ -2168,17 +2475,19 @@ mod tests {
     let entry = service.mod_games().remove(0);
     assert_eq!(
       entry.key_actions.get("move_up"),
-      Some(&vec![vec!["w".to_string()], vec!["arrow_up".to_string()]])
+      Some(&vec![vec!["w".to_string()], vec!["up".to_string()]])
     );
     service.set_user_game_key_actions(BTreeMap::from([(
-      "action_keys".into(),
+      PackageId::new(PackageSource::Mod, PackageType::Game, "action_keys")
+        .unwrap()
+        .storage_key(),
       BTreeMap::from([("move_up".into(), vec![vec!["k".into()]])]),
     )]));
     let entry = service.mod_games().remove(0);
     assert_eq!(entry.key_actions["move_up"], vec![vec!["k".to_string()]]);
     assert_eq!(
       entry.key_default_actions["move_up"],
-      vec![vec!["w".to_string()], vec!["arrow_up".to_string()]]
+      vec![vec!["w".to_string()], vec!["up".to_string()]]
     );
 
     let _ = std::fs::remove_dir_all(root);
@@ -2188,7 +2497,8 @@ mod tests {
   fn game_action_may_define_no_keys() {
     let root = temp_root("empty_action_keys");
     let dir = root.join("data/mod/game/empty_action_keys");
-    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::create_dir_all(dir.join("scripts")).unwrap();
+    std::fs::write(dir.join("scripts/main.lua"), "-- test").unwrap();
     std::fs::write(
       dir.join("package.json"),
       r#"{
@@ -2248,6 +2558,12 @@ mod tests {
           "actions":{"move_up":{"description":"@action/move.up","keys":[["w"]]}}
         }
       }"#,
+    )
+    .unwrap();
+    std::fs::create_dir_all(root.join("data/mod/game/i18n_game/scripts/ui")).unwrap();
+    std::fs::write(
+      root.join("data/mod/game/i18n_game/scripts/ui/init.lua"),
+      "-- test",
     )
     .unwrap();
     write_package_language(
@@ -2820,6 +3136,7 @@ mod tests {
     let outside = root.join("outside_scripts");
     std::fs::create_dir_all(&outside).unwrap();
     std::fs::write(outside.join("main.lua"), "-- outside").unwrap();
+    std::fs::remove_dir_all(package.join("scripts")).unwrap();
     if create_dir_link(&outside, &package.join("scripts")).is_err() {
       let _ = std::fs::remove_dir_all(root);
       return;
@@ -2828,8 +3145,7 @@ mod tests {
     let mut service = PackageService::new();
     let mut log = LogService::new();
     scan(&mut service, &root, &mut log, "en_us");
-    let package = service.games().remove(0);
-    assert!(service.resolve_entry_path(&package).is_err());
+    assert!(service.games().is_empty());
     let _ = std::fs::remove_dir_all(root);
   }
 

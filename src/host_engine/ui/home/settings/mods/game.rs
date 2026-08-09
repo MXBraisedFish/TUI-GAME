@@ -6,12 +6,12 @@ use crate::host_engine::services::text_layout::TextWrapMode;
 use crate::host_engine::services::{
   ActionMapEntry, BorderStyle, CanvasService, DrawTextParams, HitAreaEvent, HitAreaId,
   HitAreaOptions, HitAreaService, I18nService, ImageConvertParams, ImageService, KeyState,
-  LayoutService, LogService, MouseButton, Overflow, PackageAsset, PackageListEntry, PackageService,
-  Rect, RenderService, RichTextParams, RichTextService, RuntimeObjectPool, RuntimeObjectPoolOwner,
-  ScrollBoxId, ScrollBoxOptions, ScrollBoxService, ScrollbarPolicy, ScrollbarVisibility,
-  StorageService, TerminalColor, TextAlign, TextColor, TextInputCursorShape, TextInputEvent,
-  TextInputId, TextInputMode, TextInputOptions, TextInputRenderParams, TextInputService, TextStyle,
-  UiEvent, UiObjectPool, UiObjectPoolOwner,
+  LayoutService, LogService, MouseButton, Overflow, PackageAsset, PackageId, PackageListEntry,
+  PackageService, Rect, RenderService, RichTextParams, RichTextService, RuntimeObjectPool,
+  RuntimeObjectPoolOwner, ScrollBoxId, ScrollBoxOptions, ScrollBoxService, ScrollbarPolicy,
+  ScrollbarVisibility, StorageService, TerminalColor, TextAlign, TextColor, TextInputCursorShape,
+  TextInputEvent, TextInputId, TextInputMode, TextInputOptions, TextInputRenderParams,
+  TextInputService, TextStyle, UiEvent, UiObjectPool, UiObjectPoolOwner,
 };
 
 /// 游戏包详情页面的命令。
@@ -126,7 +126,7 @@ pub struct GamePackageUi {
   search_text: String,
   jump_text: String,
   simple_list: bool,
-  temporary_safe_mode_disabled: HashSet<String>,
+  temporary_safe_mode_disabled: HashSet<PackageId>,
   needs_rebuild_areas: bool,
 }
 
@@ -476,32 +476,41 @@ impl GamePackageUi {
       .map(|entry| entry.mod_id.clone())
   }
 
+  pub fn selected_package_id(&self) -> Option<crate::host_engine::services::PackageId> {
+    self
+      .page_entries()
+      .get(self.selected_index)
+      .map(|entry| entry.id.clone())
+  }
+
   pub fn toggle_selected_enabled(&mut self, storage: &StorageService, log: &mut LogService) {
-    let Some((mod_id, enabled)) =
-      self.selected_entry_state(|entry| (entry.mod_id.clone(), !entry.enabled))
+    let Some((mod_id, package_id, enabled)) =
+      self.selected_entry_state(|entry| (entry.mod_id.clone(), entry.id.clone(), !entry.enabled))
     else {
       return;
     };
     self.update_entry(&mod_id, |entry| entry.enabled = enabled);
-    let _ = storage.update_game_package_state(&mod_id, log, |state| state.enabled = enabled);
+    let _ = storage.update_game_package_state(&package_id, log, |state| state.enabled = enabled);
   }
 
   pub fn toggle_selected_debug(&mut self, storage: &StorageService, log: &mut LogService) {
-    let Some((mod_id, debug)) =
-      self.selected_entry_state(|entry| (entry.mod_id.clone(), !entry.debug))
+    let Some((mod_id, package_id, debug)) =
+      self.selected_entry_state(|entry| (entry.mod_id.clone(), entry.id.clone(), !entry.debug))
     else {
       return;
     };
     self.update_entry(&mod_id, |entry| entry.debug = debug);
-    let _ = storage.update_game_package_state(&mod_id, log, |state| state.debug = debug);
+    let _ = storage.update_game_package_state(&package_id, log, |state| state.debug = debug);
   }
 
   pub fn enable_selected_safe_mode(&mut self, storage: &StorageService, log: &mut LogService) {
-    let Some(mod_id) = self.selected_entry_state(|entry| entry.mod_id.clone()) else {
+    let Some((mod_id, package_id)) =
+      self.selected_entry_state(|entry| (entry.mod_id.clone(), entry.id.clone()))
+    else {
       return;
     };
     self.update_entry(&mod_id, |entry| entry.safe_mode = true);
-    let _ = storage.update_game_package_state(&mod_id, log, |state| state.safe_mode = true);
+    let _ = storage.update_game_package_state(&package_id, log, |state| state.safe_mode = true);
   }
 
   pub fn disable_selected_safe_mode_temporary(&mut self) {
@@ -521,11 +530,13 @@ impl GamePackageUi {
     storage: &StorageService,
     log: &mut LogService,
   ) {
-    let Some(mod_id) = self.selected_entry_state(|entry| entry.mod_id.clone()) else {
+    let Some((mod_id, package_id)) =
+      self.selected_entry_state(|entry| (entry.mod_id.clone(), entry.id.clone()))
+    else {
       return;
     };
     self.update_entry(&mod_id, |entry| entry.safe_mode = false);
-    let _ = storage.update_game_package_state(&mod_id, log, |state| state.safe_mode = false);
+    let _ = storage.update_game_package_state(&package_id, log, |state| state.safe_mode = false);
   }
 
   pub fn scroll_info(&mut self, scroll_box: &ScrollBoxService, layout: &LayoutService, lines: i32) {
@@ -550,7 +561,7 @@ impl GamePackageUi {
     package: &PackageService,
     storage: &StorageService,
     log: &mut LogService,
-    temporary_safe_mode_disabled: &HashSet<String>,
+    temporary_safe_mode_disabled: &HashSet<PackageId>,
     image: &mut ImageService,
     mouse_supported: bool,
     truecolor_supported: bool,
@@ -2191,7 +2202,7 @@ impl GamePackageUi {
   fn safe_mode_status(&self, entry: &PackageListEntry) -> SafeModeStatus {
     if entry.safe_mode {
       SafeModeStatus::On
-    } else if self.temporary_safe_mode_disabled.contains(&entry.mod_id) {
+    } else if self.temporary_safe_mode_disabled.contains(&entry.id) {
       SafeModeStatus::OffTemporary
     } else {
       SafeModeStatus::OffPermanent
@@ -2203,12 +2214,12 @@ impl GamePackageUi {
     mut entries: Vec<PackageListEntry>,
     storage: &StorageService,
     log: &mut LogService,
-    temporary_safe_mode_disabled: &HashSet<String>,
+    temporary_safe_mode_disabled: &HashSet<PackageId>,
   ) {
     self.temporary_safe_mode_disabled = temporary_safe_mode_disabled.clone();
     let profile = storage.read_package_state_or_default(log);
     for entry in &mut entries {
-      if let Some(state) = profile.games.get(&entry.mod_id) {
+      if let Some(state) = profile.game(&entry.id) {
         entry.enabled = state.enabled;
         entry.debug = state.debug;
         entry.safe_mode = state.safe_mode;
@@ -2220,7 +2231,7 @@ impl GamePackageUi {
           crate::host_engine::services::SafeModeDefault::On
         );
       }
-      if temporary_safe_mode_disabled.contains(&entry.mod_id) {
+      if temporary_safe_mode_disabled.contains(&entry.id) {
         entry.safe_mode = false;
       }
     }

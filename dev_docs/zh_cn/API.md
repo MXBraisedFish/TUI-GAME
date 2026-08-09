@@ -5,7 +5,7 @@
 | **API 版本** | 1                                                              |
 | **最后更新日期** | （待补充）                                                          |
 | **更新作者**   | MXFish                                                         |
-| **文档作用** | 面向最终上层脚本开发者，提供 TUI GAME 引擎注入到 Lua 沙箱中的全部 API（18 个库）的索引与查询手册入口。 |
+| **文档作用** | 面向最终上层脚本开发者，提供 TUI GAME 引擎注入到 Lua 沙箱中的全部 API（19 个库）的索引与查询手册入口。 |
 
 ## 文档目录
 
@@ -21,7 +21,7 @@
 
 ### 1.1 库表与只读
 
-- 引擎在 Lua 沙箱中注入 18 个库：`base`、`math`、`utf8`、`table`、`string`、`color`、`char`、`align`、`measurement`、`draw`、`debug`、`game`、`event`、`loader`、`file`、`serialization`、`encoding`、`random`。
+- 引擎在 Lua 沙箱中注入 19 个库：`base`、`math`、`utf8`、`table`、`string`、`color`、`char`、`align`、`measurement`、`draw`、`debug`、`game`、`event`、`loader`、`file`、`serialization`、`encoding`、`random`、`slice`。
 - 所有库表均为**只读**：直接赋值、修改或增删字段会抛出错误（可用 `debug.pcall` 捕获）。
 - 沙箱不注入任何同名全局函数（如 `type`、`pairs`、`print`、`require` 等），相关能力统一挂载在各库表下。
 - 只读库表可由 `base.pairs`、`base.ipairs`、`base.rawlen` 与 `#` 读取，但不能修改。
@@ -32,6 +32,7 @@
 - **多参数方法**：必须传一个**命名参数表** `lib.method{ param = value, ... }`。
 - **未知参数名**：命名参数表中出现未声明的字段会直接报错。
 - **类型严格**：参数类型不符、取值越界或缺少必填参数时抛出可捕获的运行时错误；不使用隐式转换。
+- **常量参数**：参数类型标注为 `const` 时，表示应填写对应库提供的常量（如 `align.LEFT`、`color.RED`、`string.AUTO`、`file.UTF_8`、`random.INT`、`slice.10P`），而非任意字符串。
 
 ### 1.3 通用限制
 
@@ -87,6 +88,7 @@
 | `serialization` | 多格式序列化：JSON/CSV/YAML/TOML/INI/XML 与二进制打包解包 | [serialization](api/serialization.md) |
 | `encoding` | 编码转换：Base64、URL 百分号编码、十六进制 | [encoding](api/encoding.md) |
 | `random` | 随机数：直接生成与生成器对象管理 | [random](api/random.md) |
+| `slice` | 图层切片：对象管理、尺寸/层级修改、绘制 | [slice](api/slice.md) |
 
 ---
 
@@ -192,6 +194,13 @@
 | `file.X_MAC_CYRILLIC` | 编码：x-mac-cyrillic | [file](api/file.md) |
 | `random.INT` | 整数类型随机数生成器 | [random](api/random.md) |
 | `random.FLOAT` | 浮点数类型随机数生成器 | [random](api/random.md) |
+| `slice.10P` | BASE 图层切片宽或高的 10% | [slice](api/slice.md) |
+| `slice.25P` | BASE 图层切片宽或高的 25% | [slice](api/slice.md) |
+| `slice.33P` | BASE 图层切片宽或高的 33% | [slice](api/slice.md) |
+| `slice.50P` | BASE 图层切片宽或高的 50% | [slice](api/slice.md) |
+| `slice.66P` | BASE 图层切片宽或高的 66% | [slice](api/slice.md) |
+| `slice.75P` | BASE 图层切片宽或高的 75% | [slice](api/slice.md) |
+| `slice.100P` | BASE 图层切片宽或高的 100% | [slice](api/slice.md) |
 
 ### 3.2 方法
 
@@ -345,3 +354,19 @@
 | `random.get_step(id)` | 无 | integer | 返回生成器当前的步进数 | [random](api/random.md) |
 | `random.get_info(id)` | 无 | table | 返回生成器的完整信息表 | [random](api/random.md) |
 | `random.exists(id)` | 无 | boolean | 检查生成器是否存在 | [random](api/random.md) |
+| `slice.create{width, height, layer}` | 无 | string | 创建图层切片对象，返回切片对象 ID | [slice](api/slice.md) |
+| `slice.delete(id)` | 无 | boolean | 删除指定切片对象 | [slice](api/slice.md) |
+| `slice.clear()` | 无 | — | 删除所有切片对象 | [slice](api/slice.md) |
+| `slice.exists(id)` | 无 | boolean | 检查切片对象是否存在 | [slice](api/slice.md) |
+| `slice.set_size{id, width, height}` | 无 | — | 修改切片对象的宽度和高度 | [slice](api/slice.md) |
+| `slice.set_width{id, width}` | 无 | — | 修改切片对象的宽度 | [slice](api/slice.md) |
+| `slice.set_height{id, height}` | 无 | — | 修改切片对象的高度 | [slice](api/slice.md) |
+| `slice.set_layer{id, layer}` | 无 | — | 修改切片对象的图层层级 | [slice](api/slice.md) |
+| `slice.get_width(id)` | 无 | integer | 返回切片对象的宽度 | [slice](api/slice.md) |
+| `slice.get_height(id)` | 无 | integer | 返回切片对象的高度 | [slice](api/slice.md) |
+| `slice.get_layer(id)` | 无 | integer | 返回切片对象的图层层级 | [slice](api/slice.md) |
+| `slice.get_info(id)` | 无 | table | 返回切片对象的完整信息表 | [slice](api/slice.md) |
+| `slice.list()` | 无 | table | 返回所有切片对象 ID 的数组 | [slice](api/slice.md) |
+| `slice.list_by_layer()` | 无 | table | 按图层层级从低到高返回全部信息表 | [slice](api/slice.md) |
+| `slice.count()` | 无 | integer | 返回当前切片对象的总数 | [slice](api/slice.md) |
+| `slice.draw{id, x, y}` | 无 | — | 将切片绘制在画布指定位置 | [slice](api/slice.md) |

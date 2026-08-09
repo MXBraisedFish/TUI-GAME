@@ -6,8 +6,8 @@ use crate::host_engine::services::text_layout::TextWrapMode;
 use crate::host_engine::services::{
   ActionMapEntry, BorderStyle, CanvasService, DisplaySourceMode, DrawTextParams, HitAreaEvent,
   HitAreaId, HitAreaOptions, HitAreaService, I18nService, ImageService, KeyState, LayoutService,
-  LogService, MouseButton, Overflow, PackageListEntry, PackageService, PackageSource, Rect,
-  RenderService, RichTextParams, RichTextService, RuntimeObjectPool, RuntimeObjectPoolOwner,
+  LogService, MouseButton, Overflow, PackageId, PackageListEntry, PackageService, PackageSource,
+  Rect, RenderService, RichTextParams, RichTextService, RuntimeObjectPool, RuntimeObjectPoolOwner,
   ScrollBoxId, ScrollBoxOptions, ScrollBoxService, ScrollbarPolicy, ScrollbarVisibility,
   StorageService, TerminalColor, TextAlign, TextColor, TextInputCursorShape, TextInputEvent,
   TextInputId, TextInputMode, TextInputOptions, TextInputRenderParams, TextInputService, TextStyle,
@@ -25,10 +25,7 @@ pub enum GameListCommand {
   ScrollInfoUp,
   ScrollInfoDown,
   SubmitJump(String),
-  Confirm {
-    source: PackageSource,
-    mod_id: String,
-  },
+  Confirm { package_id: PackageId },
 }
 
 /// 游戏列表页面布局信息。
@@ -110,7 +107,7 @@ pub struct GameListUi {
   simple_list: bool,
   source_mode: DisplaySourceMode,
   show_warnings: bool,
-  temporary_safe_mode_disabled: HashSet<String>,
+  temporary_safe_mode_disabled: HashSet<PackageId>,
   needs_rebuild_areas: bool,
 }
 
@@ -392,8 +389,7 @@ impl GameListUi {
           None
         }
         "game_list.confirm" => self.selected_entry().map(|entry| GameListCommand::Confirm {
-          source: entry.source,
-          mod_id: entry.mod_id,
+          package_id: entry.id,
         }),
         "game_list.list.back" => Some(GameListCommand::Back),
         _ => None,
@@ -455,7 +451,7 @@ impl GameListUi {
     package: &PackageService,
     storage: &StorageService,
     log: &mut LogService,
-    temporary_safe_mode_disabled: &HashSet<String>,
+    temporary_safe_mode_disabled: &HashSet<PackageId>,
     image: &mut ImageService,
     mouse_supported: bool,
     truecolor_supported: bool,
@@ -1255,23 +1251,20 @@ impl GameListUi {
     self.selected_index = index % self.per_page;
   }
 
-  fn selected_entry_key(&self) -> Option<(PackageSource, String)> {
+  fn selected_entry_key(&self) -> Option<PackageId> {
     self
       .page_entries()
       .get(self.selected_index)
-      .map(|entry| (entry.source.clone(), entry.mod_id.clone()))
+      .map(|entry| entry.id.clone())
   }
 
-  fn restore_selection(&mut self, key: Option<(PackageSource, String)>) {
-    let Some((source, mod_id)) = key else {
+  fn restore_selection(&mut self, key: Option<PackageId>) {
+    let Some(package_id) = key else {
       self.apply_global_selection(0);
       return;
     };
     let entries = self.filtered_entries();
-    let Some(index) = entries
-      .iter()
-      .position(|entry| entry.source == source && entry.mod_id == mod_id)
-    else {
+    let Some(index) = entries.iter().position(|entry| entry.id == package_id) else {
       self.apply_global_selection(0);
       return;
     };
@@ -1361,7 +1354,9 @@ impl GameListUi {
   }
 
   fn info_score_text(&self, i18n: &I18nService, entry: &PackageListEntry) -> String {
-    if entry.score_empty_text.trim().is_empty() {
+    if let Some(best) = entry.best_string.as_ref() {
+      best.clone()
+    } else if entry.score_empty_text.trim().is_empty() {
       i18n.get_runtime_text("game_list", "game_list.info.high_score.no")
     } else {
       entry.score_empty_text.clone()
@@ -1633,12 +1628,12 @@ impl GameListUi {
     mut entries: Vec<PackageListEntry>,
     storage: &StorageService,
     log: &mut LogService,
-    temporary_safe_mode_disabled: &HashSet<String>,
+    temporary_safe_mode_disabled: &HashSet<PackageId>,
   ) {
     self.temporary_safe_mode_disabled = temporary_safe_mode_disabled.clone();
     let profile = storage.read_package_state_or_default(log);
     for entry in &mut entries {
-      if let Some(state) = profile.games.get(&entry.mod_id) {
+      if let Some(state) = profile.game(&entry.id) {
         entry.enabled = state.enabled;
         entry.debug = state.debug;
         entry.safe_mode = state.safe_mode;
@@ -1650,16 +1645,19 @@ impl GameListUi {
           crate::host_engine::services::SafeModeDefault::On
         );
       }
-      if temporary_safe_mode_disabled.contains(&entry.mod_id) {
+      if temporary_safe_mode_disabled.contains(&entry.id) {
         entry.safe_mode = false;
       }
+      entry.best_string = storage
+        .best_game_save(&entry.id)
+        .map(|best| best.best_string);
     }
     let selected = self.selected_entry_key();
     if self
       .entries
       .iter()
-      .map(|entry| &entry.mod_id)
-      .eq(entries.iter().map(|entry| &entry.mod_id))
+      .map(|entry| &entry.id)
+      .eq(entries.iter().map(|entry| &entry.id))
     {
       self.entries = entries;
       self.restore_selection(selected);

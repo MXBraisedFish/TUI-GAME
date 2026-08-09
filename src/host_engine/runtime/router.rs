@@ -640,7 +640,7 @@ pub(super) fn route_update(
         &services.animation,
         &services.random,
       ) {
-        apply_home_command(command, world);
+        apply_home_command(command, services, world);
       }
     }
     Some(UiNodeKind::Settings) => {
@@ -1155,7 +1155,7 @@ fn route_input_event(
   match world.state.current_ui_kind() {
     Some(UiNodeKind::Home) => {
       if let Some(command) = home_ui.handle_event(event) {
-        apply_home_command(command, world);
+        apply_home_command(command, services, world);
       }
     }
     Some(UiNodeKind::Settings) => {

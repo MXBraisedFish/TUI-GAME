@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use crate::host_engine::services::{PackageSource, Size};
+use crate::host_engine::services::{LogSessionId, PackageId, Size};
 
 use super::{
   LuaDrawCommand, LuaEventDelivery, LuaHostCommand, LuaObjectPool, LuaSession,
@@ -13,39 +13,49 @@ const MAX_FIXED_UPDATES_PER_FRAME: usize = 8;
 /// 唯一屏保 Session 的宿主生命周期。全终端显示层仍由 Runtime Overlay 管理。
 pub struct ScreensaverService {
   session: Option<LuaSession>,
-  package_id: Option<String>,
-  package_source: Option<PackageSource>,
+  package: Option<PackageId>,
   accumulator: Duration,
   generation: u64,
+  log_session: Option<LogSessionId>,
 }
 
 impl ScreensaverService {
   pub fn new() -> Self {
     Self {
       session: None,
-      package_id: None,
-      package_source: None,
+      package: None,
       accumulator: Duration::ZERO,
       generation: 0,
+      log_session: None,
     }
   }
 
-  pub fn start(&mut self, session: LuaSession, source: PackageSource) {
-    self.stop();
+  pub fn start(
+    &mut self,
+    session: LuaSession,
+    package: PackageId,
+    log_session: Option<LogSessionId>,
+  ) -> Option<LogSessionId> {
+    let previous_log = self.stop();
     self.generation = self.generation.wrapping_add(1).max(1);
-    self.package_id = Some(session.package_id().to_string());
-    self.package_source = Some(source);
+    self.package = Some(package);
     self.accumulator = Duration::ZERO;
     self.session = Some(session);
+    self.log_session = log_session;
+    previous_log
   }
 
-  pub fn stop(&mut self) {
+  pub fn stop(&mut self) -> Option<LogSessionId> {
     if let Some(mut session) = self.session.take() {
       session.stop();
     }
-    self.package_id = None;
-    self.package_source = None;
+    self.package = None;
     self.accumulator = Duration::ZERO;
+    self.log_session.take()
+  }
+
+  pub fn log_session(&self) -> Option<LogSessionId> {
+    self.log_session
   }
 
   pub fn is_active(&self) -> bool {
@@ -60,15 +70,23 @@ impl ScreensaverService {
   }
 
   pub fn package_id(&self) -> Option<&str> {
-    self.package_id.as_deref()
+    self.package.as_ref().map(|package| package.mod_id.as_str())
   }
 
-  pub fn objects(&self) -> Option<&LuaObjectPool> {
-    self.session.as_ref().and_then(LuaSession::objects)
+  pub fn package(&self) -> Option<&PackageId> {
+    self.package.as_ref()
   }
 
-  pub fn objects_mut(&mut self) -> Option<&mut LuaObjectPool> {
-    self.session.as_mut().and_then(LuaSession::objects_mut)
+  pub fn has_objects(&self) -> bool {
+    self.session.as_ref().is_some_and(LuaSession::has_objects)
+  }
+
+  pub fn with_objects<R>(&self, operation: impl FnOnce(&LuaObjectPool) -> R) -> Option<R> {
+    self.session.as_ref()?.with_objects(operation)
+  }
+
+  pub fn with_objects_mut<R>(&self, operation: impl FnOnce(&mut LuaObjectPool) -> R) -> Option<R> {
+    self.session.as_ref()?.with_objects_mut(operation)
   }
 
   pub fn session_token(&self) -> Option<LuaSessionToken> {
@@ -148,5 +166,64 @@ impl ScreensaverService {
 impl Default for ScreensaverService {
   fn default() -> Self {
     Self::new()
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use std::path::PathBuf;
+
+  use super::*;
+  use crate::host_engine::services::{LuaPolicy, LuaSessionSpec, PackageSource, PackageType};
+
+  #[test]
+  fn checked_in_screensaver_runs_and_releases_its_object_pool() {
+    let entry_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+      .join("test_package/screensaver/layer_waves/scripts/main.lua");
+    let session = LuaSession::load(
+      LuaSessionSpec {
+        package_id: "test.layer_waves".to_string(),
+        session_kind: LuaSessionKind::Screensaver,
+        entry_path,
+        fixed_delta: Duration::from_secs_f64(1.0 / 60.0),
+        terminal_size: Size {
+          width: 100,
+          height: 30,
+        },
+        continue_data: None,
+        best_data: None,
+        save_game_enabled: false,
+        save_best_enabled: false,
+      },
+      LuaPolicy::default(),
+    )
+    .expect("test screensaver should load");
+
+    let mut service = ScreensaverService::new();
+    service.start(
+      session,
+      PackageId::new(
+        PackageSource::Official,
+        PackageType::Screensaver,
+        "test.layer_waves",
+      )
+      .unwrap(),
+      None,
+    );
+    assert!(service.is_active());
+    assert!(service.has_objects());
+    assert_eq!(service.advance(Duration::from_millis(20)).unwrap(), 1);
+    service
+      .render(Size {
+        width: 100,
+        height: 30,
+      })
+      .unwrap();
+    assert!(!service.take_draw_commands().is_empty());
+
+    service.stop();
+    assert!(!service.is_active());
+    assert!(!service.has_objects());
+    assert!(service.session_token().is_none());
   }
 }

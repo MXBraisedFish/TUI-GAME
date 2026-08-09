@@ -403,12 +403,14 @@ pub fn run(services: &mut EngineServices, world: &mut RuntimeWorld) -> ExitState
       crate::host_engine::services::AnimationClock::Game,
       frame_delta,
     );
-    if let Some(objects) = services.game.objects_mut() {
-      update_lua_object_pool(objects, &services.time, &services.animation, frame_delta);
-    }
-    if let Some(objects) = services.screensaver.objects_mut() {
-      update_lua_object_pool(objects, &services.time, &services.animation, frame_delta);
-    }
+    let time = &services.time;
+    let animation = &services.animation;
+    services
+      .game
+      .with_objects_mut(|objects| update_lua_object_pool(objects, time, animation, frame_delta));
+    services
+      .screensaver
+      .with_objects_mut(|objects| update_lua_object_pool(objects, time, animation, frame_delta));
     top_toolbar.update(frame_delta);
 
     services
@@ -1419,6 +1421,8 @@ fn route_frame_input(
   }
 
   if world.state.current_overlay_kind() == Some(OverlayKind::WindowSizeWarning) {
+    let screensaver_was_active = services.screensaver.is_active();
+    let game_was_active = services.game.is_active();
     load_window_size_action_map(services);
     services.input.dispatch_action_events(&mut services.log);
     route_input_events(
@@ -1450,6 +1454,41 @@ fn route_frame_input(
       language_loading,
       _export_loading,
     );
+    if screensaver_was_active
+      && world
+        .state
+        .runtime()
+        .is_none_or(|runtime| runtime.overlays().get(OverlayKind::Screensaver).is_none())
+    {
+      if let Some(id) = services.screensaver.stop() {
+        services.log.close_session(id);
+      }
+      synchronize_lua_event_sessions(services, lua_events);
+      if let Err(error) = lua_events.push_system(frame, LuaEventData::ScreensaverStopped) {
+        log_lua_enqueue_error(services, error);
+      }
+    }
+    if game_was_active && world.state.is_host_mode() {
+      let result = services.game.stop(true);
+      persist_game_stop_data(services, &result);
+      for error in &result.save_errors {
+        if let Some(id) = result.log_session {
+          services
+            .log
+            .error_session(id, LogSource::Lua, error.to_string());
+        } else if let Some(package) = &result.package {
+          services
+            .log
+            .error_package(package, LogSource::Lua, error.to_string());
+        } else {
+          services.log.error(LogSource::Lua, error.to_string());
+        }
+      }
+      if let Some(id) = result.log_session {
+        services.log.close_session(id);
+      }
+      synchronize_lua_event_sessions(services, lua_events);
+    }
   } else if world.state.current_overlay_kind() == Some(OverlayKind::SafeModeWarning) {
     load_safe_mode_warning_action_map(services);
     services.input.dispatch_action_events(&mut services.log);
@@ -1885,15 +1924,15 @@ fn apply_lua_host_commands(
   let mut flow = LuaEventFlow::Continue;
   for command in commands {
     match command {
-      LuaHostCommand::Log { level, message } => match level.as_str() {
-        "error" => services.log.error(LogSource::Lua, message),
-        "warn" => services.log.warn(LogSource::Lua, message),
-        "debug" => services.log.debug(LogSource::Lua, message),
-        _ => services.log.info(LogSource::Lua, message),
-      },
-      LuaHostCommand::Ignored { method, reason } => services
-        .log
-        .debug(LogSource::Lua, format!("{method} ignored: {reason}")),
+      LuaHostCommand::Log { level, message } => {
+        log_lua_session_message(services, kind, &level, message)
+      }
+      LuaHostCommand::Ignored { method, reason } => log_lua_session_message(
+        services,
+        kind,
+        "debug",
+        format!("{method} ignored: {reason}"),
+      ),
       LuaHostCommand::RequestRender => {
         services.canvas.request_render();
         services.presenter.request_render();
@@ -1925,16 +1964,32 @@ fn apply_lua_host_commands(
           LuaEventRoute::HandleEvent,
         ) {
           services.async_runtime.cancel_task(task_id);
-          services.log.warn(
-            LogSource::Lua,
+          log_lua_session_message(
+            services,
+            kind,
+            "warn",
             format!("Lua file request rejected: {error:?}"),
           );
         }
       }
       LuaHostCommand::ExitGame if kind == LuaSessionKind::Game => {
         let result = services.game.stop(true);
-        for error in result.save_errors {
-          services.log.error(LogSource::Lua, error.to_string());
+        persist_game_stop_data(services, &result);
+        for error in &result.save_errors {
+          if let Some(id) = result.log_session {
+            services
+              .log
+              .error_session(id, LogSource::Lua, error.to_string());
+          } else if let Some(package) = &result.package {
+            services
+              .log
+              .error_package(package, LogSource::Lua, error.to_string());
+          } else {
+            services.log.error(LogSource::Lua, error.to_string());
+          }
+        }
+        if let Some(id) = result.log_session {
+          services.log.close_session(id);
         }
         let return_host = world
           .state
@@ -1948,13 +2003,42 @@ fn apply_lua_host_commands(
         services.presenter.request_render();
       }
       LuaHostCommand::SaveGame if kind == LuaSessionKind::Game => {
-        if let Err(error) = services.game.save_game() {
-          services.log.error(LogSource::Lua, error.to_string());
+        let identity = services.game.package().cloned();
+        match services.game.save_game() {
+          Ok(Some(value)) => {
+            if let Some(package) = identity {
+              let _ =
+                services
+                  .storage
+                  .write_game_results(&package, Some(value), None, &mut services.log);
+            }
+          }
+          Ok(None) => {}
+          Err(error) => {
+            log_lua_session_message(services, LuaSessionKind::Game, "error", error.to_string())
+          }
         }
       }
       LuaHostCommand::SaveBest if kind == LuaSessionKind::Game => {
-        if let Err(error) = services.game.save_best() {
-          services.log.error(LogSource::Lua, error.to_string());
+        let identity = services.game.package().cloned();
+        match services.game.save_best() {
+          Ok(Some(value)) => match crate::host_engine::services::BestGameSave::try_from(value) {
+            Ok(best) => {
+              if let Some(package) = identity {
+                let _ = services.storage.write_game_results(
+                  &package,
+                  None,
+                  Some(best),
+                  &mut services.log,
+                );
+              }
+            }
+            Err(error) => log_lua_session_message(services, LuaSessionKind::Game, "error", error),
+          },
+          Ok(None) => {}
+          Err(error) => {
+            log_lua_session_message(services, LuaSessionKind::Game, "error", error.to_string())
+          }
         }
       }
       LuaHostCommand::SkipActions if kind == LuaSessionKind::Game => flow = LuaEventFlow::Skip,
@@ -1970,11 +2054,39 @@ fn apply_lua_host_commands(
   flow
 }
 
+fn persist_game_stop_data(
+  services: &mut EngineServices,
+  result: &crate::host_engine::services::GameStopData,
+) {
+  let Some(package) = result.package.as_ref() else {
+    return;
+  };
+  let best = match result.best.clone() {
+    Some(value) => match crate::host_engine::services::BestGameSave::try_from(value) {
+      Ok(best) => Some(best),
+      Err(error) => {
+        services.log.error_package(package, LogSource::Lua, error);
+        None
+      }
+    },
+    None => None,
+  };
+  let _ =
+    services
+      .storage
+      .write_game_results(package, result.game.clone(), best, &mut services.log);
+}
+
 fn handle_lua_fault(
   services: &mut EngineServices,
   world: &mut RuntimeWorld,
   error: LuaSessionError,
 ) {
+  let package = match error.session_kind {
+    LuaSessionKind::Game => services.game.package(),
+    LuaSessionKind::Screensaver => services.screensaver.package(),
+  }
+  .cloned();
   let diagnostics = match error.session_kind {
     LuaSessionKind::Game => services.game.diagnostics(),
     LuaSessionKind::Screensaver => services.screensaver.diagnostics(),
@@ -1991,10 +2103,23 @@ fn handle_lua_fault(
       )
     },
   );
-  services.log.error(LogSource::Lua, message);
+  log_lua_session_message(services, error.session_kind, "error", message);
+  if let Some(package) = &package {
+    let log_location = services
+      .log
+      .package_log_path(package)
+      .map(|path| path.display().to_string())
+      .unwrap_or_else(|_| "the package log".to_string());
+    services.log.error(
+      LogSource::Runtime,
+      format!("Package '{package}' stopped after a runtime fault; see '{log_location}'"),
+    );
+  }
   match error.session_kind {
     LuaSessionKind::Game => {
-      let _ = services.game.stop(false);
+      if let Some(id) = services.game.stop(false).log_session {
+        services.log.close_session(id);
+      }
       let return_host = world
         .state
         .runtime()
@@ -2005,7 +2130,9 @@ fn handle_lua_fault(
       }
     }
     LuaSessionKind::Screensaver => {
-      services.screensaver.stop();
+      if let Some(id) = services.screensaver.stop() {
+        services.log.close_session(id);
+      }
       let _ = world
         .state
         .remove_overlay_kind(OverlayKind::WindowSizeWarning);
@@ -2014,6 +2141,50 @@ fn handle_lua_fault(
   }
   services.canvas.request_render();
   services.presenter.request_render();
+}
+
+fn log_lua_session_message(
+  services: &mut EngineServices,
+  kind: LuaSessionKind,
+  level: &str,
+  message: impl Into<String>,
+) {
+  let message = message.into();
+  let id = match kind {
+    LuaSessionKind::Game => services.game.log_session(),
+    LuaSessionKind::Screensaver => services.screensaver.log_session(),
+  };
+  if let Some(id) = id {
+    match level {
+      "error" => services.log.error_session(id, LogSource::Lua, message),
+      "warn" => services.log.warn_session(id, LogSource::Lua, message),
+      "debug" => services.log.debug_session(id, LogSource::Lua, message),
+      _ => services.log.info_session(id, LogSource::Lua, message),
+    }
+  } else if let Some(package) = match kind {
+    LuaSessionKind::Game => services.game.package(),
+    LuaSessionKind::Screensaver => services.screensaver.package(),
+  }
+  .cloned()
+  {
+    match level {
+      "error" => services
+        .log
+        .error_package(&package, LogSource::Lua, message),
+      "warn" => services.log.warn_package(&package, LogSource::Lua, message),
+      "debug" => services
+        .log
+        .debug_package(&package, LogSource::Lua, message),
+      _ => services.log.info_package(&package, LogSource::Lua, message),
+    }
+  } else {
+    match level {
+      "error" => services.log.error(LogSource::Lua, message),
+      "warn" => services.log.warn(LogSource::Lua, message),
+      "debug" => services.log.debug(LogSource::Lua, message),
+      _ => services.log.info(LogSource::Lua, message),
+    }
+  }
 }
 
 fn route_exit_warning_runtime_events(
@@ -2138,7 +2309,9 @@ fn toggle_screensaver(
     .runtime()
     .is_some_and(|runtime| runtime.overlays().get(OverlayKind::Screensaver).is_some());
   if screensaver_active {
-    services.screensaver.stop();
+    if let Some(id) = services.screensaver.stop() {
+      services.log.close_session(id);
+    }
     synchronize_lua_event_sessions(services, lua_events);
     let _ = world
       .state
@@ -2159,26 +2332,22 @@ fn toggle_screensaver(
     services.input.clear();
     return;
   };
-  let Some(package) = services
-    .package
-    .find_screensaver(&entry.source, &entry.mod_id)
-  else {
-    services.log.error(
-      LogSource::Lua,
-      format!("Screensaver package not found: {}", entry.mod_id),
+  let Some(package) = services.package.find_by_id(&entry.id) else {
+    commands::log_package_start_error(
+      services,
+      &entry.id,
+      "screensaver package was not found".to_string(),
     );
     services.input.clear();
     return;
   };
-  let entry_path = match services.package.resolve_entry_path(&package) {
+  let entry_path = match services.package.validate_for_launch(&package) {
     Ok(path) => path,
     Err(error) => {
-      services.log.error(
-        LogSource::Lua,
-        format!(
-          "Screensaver '{}' entry resolution failed: {error}",
-          package.mod_id
-        ),
+      commands::log_package_start_error(
+        services,
+        &package.id,
+        format!("screensaver launch validation failed: {error}"),
       );
       services.input.clear();
       return;
@@ -2192,6 +2361,9 @@ fn toggle_screensaver(
     fixed_delta: Duration::from_secs_f64(1.0 / 60.0),
     terminal_size: services.layout.physical_size(),
     continue_data: None,
+    best_data: None,
+    save_game_enabled: false,
+    save_best_enabled: false,
   };
   let api = crate::host_engine::services::LuaApiConfig {
     debug_enabled: entry.debug,
@@ -2199,18 +2371,33 @@ fn toggle_screensaver(
     key_actions: entry.key_actions.clone(),
     key_default_actions: entry.key_default_actions.clone(),
   };
+  let session_log = services
+    .log
+    .open_session(
+      crate::host_engine::services::LogSessionKind::Screensaver,
+      &package.id,
+    )
+    .ok();
   let session = match services.lua.create_session_with_api(spec, api) {
     Ok(session) => session,
     Err(error) => {
-      services.log.error(
-        LogSource::Lua,
-        format!("{error}; entry={}", log_entry_path.display()),
-      );
+      let message = format!("{error}; entry={}", log_entry_path.display());
+      if let Some(id) = session_log {
+        services.log.error_session(id, LogSource::Lua, message);
+        services.log.close_session(id);
+      } else {
+        commands::log_package_start_error(services, &package.id, message);
+      }
       services.input.clear();
       return;
     }
   };
-  services.screensaver.start(session, package.source.clone());
+  if let Some(previous) = services
+    .screensaver
+    .start(session, package.id.clone(), session_log)
+  {
+    services.log.close_session(previous);
+  }
   synchronize_lua_event_sessions(services, lua_events);
   let _ = world
     .state
@@ -2567,8 +2754,7 @@ fn select_screensaver(
     .into_iter()
     .filter(|entry| {
       package_state
-        .screensavers
-        .get(&entry.mod_id)
+        .screensaver(&entry.id)
         .map_or(defaults.enabled, |state| state.enabled)
     })
     .collect::<Vec<_>>();
@@ -2577,13 +2763,11 @@ fn select_screensaver(
   }
   entries.sort_by(|left, right| {
     let left_order = package_state
-      .screensavers
-      .get(&left.mod_id)
+      .screensaver(&left.id)
       .and_then(|state| state.order)
       .unwrap_or(u32::MAX);
     let right_order = package_state
-      .screensavers
-      .get(&right.mod_id)
+      .screensaver(&right.id)
       .and_then(|state| state.order)
       .unwrap_or(u32::MAX);
     left_order

@@ -5,11 +5,11 @@ use unicode_width::UnicodeWidthStr;
 use crate::host_engine::services::{
   ActionMapEntry, BorderStyle, CanvasService, DisplaySourceMode, DrawTextParams, HitAreaEvent,
   HitAreaId, HitAreaOptions, HitAreaService, I18nService, KeyState, LayoutService, LogService,
-  MouseButton, Overflow, PackageListEntry, PackageService, PackageSource, Rect, RenderService,
-  RichTextParams, RichTextService, RuntimeObjectPool, RuntimeObjectPoolOwner, ScrollBoxId,
-  ScrollBoxOptions, ScrollBoxService, ScrollbarLayout, ScrollbarPolicy, ScrollbarVisibility,
-  StorageService, TerminalColor, TextColor, TextInputEvent, TextInputId, TextInputMode,
-  TextInputOptions, TextInputRenderParams, TextInputService, UiEvent, UiObjectPool,
+  MouseButton, Overflow, PackageId, PackageListEntry, PackageService, PackageSource, Rect,
+  RenderService, RichTextParams, RichTextService, RuntimeObjectPool, RuntimeObjectPoolOwner,
+  ScrollBoxId, ScrollBoxOptions, ScrollBoxService, ScrollbarLayout, ScrollbarPolicy,
+  ScrollbarVisibility, StorageService, TerminalColor, TextColor, TextInputEvent, TextInputId,
+  TextInputMode, TextInputOptions, TextInputRenderParams, TextInputService, UiEvent, UiObjectPool,
   UiObjectPoolOwner,
 };
 
@@ -52,8 +52,11 @@ pub enum ScreensaverListCommand {
   Back,
   FocusSearch,
   BlurSearch,
-  SetEnabled { id: String, enabled: bool },
-  SaveOrder(Vec<String>),
+  SetEnabled {
+    package_id: PackageId,
+    enabled: bool,
+  },
+  SaveOrder(Vec<PackageId>),
   Scroll(i32),
 }
 
@@ -85,7 +88,7 @@ pub struct ScreensaverListUi {
   left_areas: Vec<HitAreaId>,
   right_areas: Vec<HitAreaId>,
   entries: Vec<PackageListEntry>,
-  enabled_order: Vec<String>,
+  enabled_order: Vec<PackageId>,
   active: ActiveList,
   left_selected: usize,
   right_selected: usize,
@@ -423,23 +426,22 @@ impl ScreensaverListUi {
     let old_left = self
       .disabled_entries()
       .get(self.left_selected)
-      .map(|entry| entry.mod_id.clone());
+      .map(|entry| entry.id.clone());
     let old_right = self
       .enabled_entries()
       .get(self.right_selected)
-      .map(|entry| entry.mod_id.clone());
+      .map(|entry| entry.id.clone());
     let profile = storage.read_package_state_or_default(log);
     self.source_mode = storage.display_settings_profile().screensaver_source;
     self.entries = package.screensaver_list();
     self.entries.retain(|entry| {
       entry.source != PackageSource::Mod
         || profile
-          .screensavers
-          .get(&entry.mod_id)
+          .screensaver(&entry.id)
           .map_or(profile.defaults.enabled, |state| state.enabled)
     });
     for entry in &mut self.entries {
-      let state = profile.screensavers.get(&entry.mod_id);
+      let state = profile.screensaver(&entry.id);
       // 此页面中的 enabled 表示局内屏保列表状态，不是包管理器总开关。
       entry.enabled = state.map_or(true, |state| {
         state.playlist_enabled || state.order.is_some()
@@ -449,7 +451,7 @@ impl ScreensaverListUi {
     let left_ids: Vec<_> = self
       .disabled_entries()
       .into_iter()
-      .map(|entry| entry.mod_id.clone())
+      .map(|entry| entry.id.clone())
       .collect();
     self.left_selected = old_left
       .and_then(|id| left_ids.iter().position(|entry_id| entry_id == &id))
@@ -457,7 +459,7 @@ impl ScreensaverListUi {
     let right_ids: Vec<_> = self
       .enabled_entries_with_profile(&profile)
       .into_iter()
-      .map(|entry| entry.mod_id.clone())
+      .map(|entry| entry.id.clone())
       .collect();
     self.right_selected = old_right
       .and_then(|id| right_ids.iter().position(|entry_id| entry_id == &id))
@@ -495,14 +497,8 @@ impl ScreensaverListUi {
   ) -> Vec<&'a PackageListEntry> {
     let mut entries: Vec<_> = self.entries.iter().filter(|entry| entry.enabled).collect();
     entries.sort_by(|a, b| {
-      let a_order = profile
-        .screensavers
-        .get(&a.mod_id)
-        .and_then(|state| state.order);
-      let b_order = profile
-        .screensavers
-        .get(&b.mod_id)
-        .and_then(|state| state.order);
+      let a_order = profile.screensaver(&a.id).and_then(|state| state.order);
+      let b_order = profile.screensaver(&b.id).and_then(|state| state.order);
       a_order
         .cmp(&b_order)
         .then_with(|| Self::visible_name(a).cmp(&Self::visible_name(b)))
@@ -516,7 +512,7 @@ impl ScreensaverListUi {
       self
         .enabled_order
         .iter()
-        .position(|id| id == &entry.mod_id)
+        .position(|id| id == &entry.id)
         .unwrap_or(usize::MAX)
     });
     entries
@@ -554,36 +550,36 @@ impl ScreensaverListUi {
   fn toggle_enabled(&mut self) -> Option<ScreensaverListCommand> {
     match self.active {
       ActiveList::Disabled => {
-        let id = self
-          .disabled_entries()
-          .get(self.left_selected)?
-          .mod_id
-          .clone();
-        if let Some(entry) = self.entries.iter_mut().find(|entry| entry.mod_id == id) {
+        let package_id = self.disabled_entries().get(self.left_selected)?.id.clone();
+        if let Some(entry) = self.entries.iter_mut().find(|entry| entry.id == package_id) {
           entry.enabled = true;
         }
-        self.enabled_order.push(id.clone());
+        self.enabled_order.push(package_id.clone());
         self.left_selected = self
           .left_selected
           .min(self.disabled_entries().len().saturating_sub(1));
-        Some(ScreensaverListCommand::SetEnabled { id, enabled: true })
+        Some(ScreensaverListCommand::SetEnabled {
+          package_id,
+          enabled: true,
+        })
       }
       ActiveList::Enabled => {
-        let id = self
-          .enabled_entries()
-          .get(self.right_selected)?
-          .mod_id
-          .clone();
-        if let Some(entry) = self.entries.iter_mut().find(|entry| entry.mod_id == id) {
+        let package_id = self.enabled_entries().get(self.right_selected)?.id.clone();
+        if let Some(entry) = self.entries.iter_mut().find(|entry| entry.id == package_id) {
           entry.enabled = false;
         }
-        self.enabled_order.retain(|entry_id| entry_id != &id);
+        self
+          .enabled_order
+          .retain(|entry_id| entry_id != &package_id);
         self.right_locked = false;
         self.right_selected = self
           .right_selected
           .saturating_sub(1)
           .min(self.enabled_entries().len().saturating_sub(1));
-        Some(ScreensaverListCommand::SetEnabled { id, enabled: false })
+        Some(ScreensaverListCommand::SetEnabled {
+          package_id,
+          enabled: false,
+        })
       }
     }
   }
@@ -595,10 +591,10 @@ impl ScreensaverListUi {
         false
       }
       ActiveList::Enabled if self.right_locked => {
-        let mut ids: Vec<String> = self
+        let mut ids: Vec<PackageId> = self
           .enabled_entries()
           .into_iter()
-          .map(|entry| entry.mod_id.clone())
+          .map(|entry| entry.id.clone())
           .collect();
         if ids.is_empty() {
           return false;
@@ -624,7 +620,7 @@ impl ScreensaverListUi {
       self
         .enabled_entries()
         .into_iter()
-        .map(|entry| entry.mod_id.clone())
+        .map(|entry| entry.id.clone())
         .collect(),
     )
   }
@@ -641,7 +637,7 @@ impl ScreensaverListUi {
     let selected = self
       .disabled_entries()
       .get(self.left_selected)
-      .map(|entry| entry.mod_id.clone());
+      .map(|entry| entry.id.clone());
     self.ascending = !self.ascending;
     self.restore_left_selection(selected);
   }
@@ -650,18 +646,18 @@ impl ScreensaverListUi {
     let selected = self
       .disabled_entries()
       .get(self.left_selected)
-      .map(|entry| entry.mod_id.clone());
+      .map(|entry| entry.id.clone());
     self.sort_field = self.sort_field.next();
     self.restore_left_selection(selected);
   }
 
-  fn restore_left_selection(&mut self, selected: Option<String>) {
+  fn restore_left_selection(&mut self, selected: Option<PackageId>) {
     self.left_selected = selected
       .and_then(|id| {
         self
           .disabled_entries()
           .iter()
-          .position(|entry| entry.mod_id == id)
+          .position(|entry| entry.id == id)
       })
       .unwrap_or(0);
   }
@@ -1320,10 +1316,11 @@ mod tests {
   use std::{collections::HashMap, path::PathBuf};
 
   use super::*;
-  use crate::host_engine::services::{PackageAsset, PackageType};
+  use crate::host_engine::services::{PackageAsset, PackageId, PackageType};
 
   fn entry(id: &str, enabled: bool) -> PackageListEntry {
     PackageListEntry {
+      id: PackageId::new(PackageSource::Mod, PackageType::Screensaver, id).unwrap(),
       mod_id: id.to_string(),
       source: PackageSource::Mod,
       package_type: PackageType::Screensaver,
@@ -1348,6 +1345,7 @@ mod tests {
       high_privilege_required: false,
       score_enabled: false,
       score_empty_text: String::new(),
+      best_string: None,
       min_width: 0,
       min_height: 0,
       screensaver_command: String::new(),
@@ -1377,14 +1375,18 @@ mod tests {
   fn disabling_enabled_item_moves_focus_up() {
     let mut ui = ui();
     ui.entries = vec![entry("a", true), entry("b", true), entry("c", true)];
-    ui.enabled_order = vec!["a".into(), "b".into(), "c".into()];
+    ui.enabled_order = vec![
+      entry("a", true).id,
+      entry("b", true).id,
+      entry("c", true).id,
+    ];
     ui.active = ActiveList::Enabled;
     ui.right_selected = 2;
 
     assert_eq!(
       ui.toggle_enabled(),
       Some(ScreensaverListCommand::SetEnabled {
-        id: "c".into(),
+        package_id: entry("c", true).id,
         enabled: false,
       })
     );
@@ -1396,7 +1398,7 @@ mod tests {
   fn disabling_last_enabled_item_stays_on_empty_right_list() {
     let mut ui = ui();
     ui.entries = vec![entry("only", true)];
-    ui.enabled_order = vec!["only".into()];
+    ui.enabled_order = vec![entry("only", true).id];
     ui.active = ActiveList::Enabled;
 
     assert!(ui.toggle_enabled().is_some());
