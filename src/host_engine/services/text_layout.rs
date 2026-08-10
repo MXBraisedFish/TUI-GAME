@@ -29,6 +29,21 @@ pub enum TextWrapMode {
   Normal,
 }
 
+/// 文本解析模式。宿主旧调用默认使用 Legacy；Lua API 显式使用其三种公开模式。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TextMode {
+  Legacy,
+  Auto,
+  Plain,
+  Rich,
+}
+
+impl Default for TextMode {
+  fn default() -> Self {
+    Self::Legacy
+  }
+}
+
 impl Default for TextWrapMode {
   fn default() -> Self {
     Self::Normal
@@ -41,6 +56,7 @@ pub struct DrawTextParams {
   pub x: u16,
   pub y: u16,
   pub text: String,
+  pub text_mode: TextMode,
 
   pub params: Option<RichTextParams>,
   pub fg: Option<TextColor>,
@@ -67,6 +83,7 @@ impl Default for DrawTextParams {
       x: 0,
       y: 0,
       text: String::new(),
+      text_mode: TextMode::default(),
       params: None,
       fg: None,
       bg: None,
@@ -188,7 +205,8 @@ fn measure_lines(lines: &[LayoutLine]) -> (u16, u16) {
 
 // 将富文本解析为字素 token 流，每个 token 携带样式信息
 fn build_text_tokens(params: &DrawTextParams, style: &TextStyle) -> Vec<TextToken> {
-  let rich_text = RichTextService::new().parse(&params.text, params.params.as_ref());
+  let rich_text =
+    RichTextService::new().parse_mode(&params.text, params.params.as_ref(), params.text_mode);
   build_segment_tokens(&rich_text.segments, style)
 }
 

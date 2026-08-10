@@ -165,10 +165,12 @@ impl LogService {
       .ok_or_else(|| io::Error::other("main log output path is not configured"))?;
     Ok(
       directory
-        .join("package")
-        .join(package_id.source.as_str())
         .join(package_id.package_type.as_str())
-        .join(format!("{}.log", package_id.mod_id)),
+        .join(format!(
+          "{}_{}.log",
+          package_id.source.as_str(),
+          package_id.mod_id
+        )),
     )
   }
 
@@ -461,6 +463,12 @@ mod tests {
       "sample.screensaver",
     )
     .unwrap();
+    let official_game_id = PackageId::new(
+      crate::host_engine::services::PackageSource::Official,
+      crate::host_engine::services::PackageType::Game,
+      "sample.game",
+    )
+    .unwrap();
     let game = log.open_session(LogSessionKind::Game, &game_id).unwrap();
     let game_again = log.open_session(LogSessionKind::Game, &game_id).unwrap();
     let screensaver = log
@@ -474,7 +482,9 @@ mod tests {
     log.close_session(screensaver);
 
     let game_file = log.package_log_path(&game_id).unwrap();
+    let official_game_file = log.package_log_path(&official_game_id).unwrap();
     let screensaver_file = log.package_log_path(&screensaver_id).unwrap();
+    assert_ne!(game_file, official_game_file);
     assert!(
       fs::read_to_string(&game_file)
         .unwrap()
@@ -492,6 +502,11 @@ mod tests {
     );
     let game_dir = game_file.parent().unwrap();
     assert_eq!(fs::read_dir(game_dir).unwrap().count(), 1);
+    assert_eq!(game_dir, directory.join("game"));
+    assert_eq!(
+      screensaver_file.parent().unwrap(),
+      directory.join("screensaver")
+    );
 
     let _ = fs::remove_dir_all(directory);
   }

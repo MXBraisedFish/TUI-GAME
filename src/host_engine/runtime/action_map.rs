@@ -383,6 +383,10 @@ pub(super) fn load_window_size_action_map(services: &mut EngineServices) {
   load_action_map(services, &WindowSizeWarningUi::action_map(), "window_size");
 }
 
+pub(super) fn load_game_warning_action_map(services: &mut EngineServices) {
+  load_action_map(services, &GameWarningUi::action_map(), "game_warning");
+}
+
 pub(super) fn load_safe_mode_warning_action_map(services: &mut EngineServices) {
   load_action_map(
     services,

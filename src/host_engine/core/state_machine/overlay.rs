@@ -19,6 +19,7 @@ pub enum OverlayKind {
   ClearWarning,
   ExportLoading,
   ExportSettings,
+  GameWarning,
   LanguageLoading,
   SafeModeWarning,
   ScreenshotCapture,
@@ -114,6 +115,7 @@ impl OverlayKind {
       OverlayKind::LanguageLoading => 20,
       OverlayKind::SafeModeWarning => 20,
       OverlayKind::Screensaver => 25,
+      OverlayKind::GameWarning => 27,
       OverlayKind::WindowSizeWarning => 30,
       OverlayKind::ScreenshotCapture => 40,
     }
@@ -169,6 +171,16 @@ mod tests {
     assert_eq!(stack.current_kind(), Some(OverlayKind::WindowSizeWarning));
     stack.remove_kind(OverlayKind::WindowSizeWarning);
     assert_eq!(stack.current_kind(), Some(OverlayKind::Screensaver));
+  }
+
+  #[test]
+  fn game_warning_is_between_screensaver_and_window_size_warning() {
+    let mut stack = OverlayStackState::new();
+    stack.push(overlay(OverlayKind::Screensaver));
+    stack.push(overlay(OverlayKind::GameWarning));
+    assert_eq!(stack.current_kind(), Some(OverlayKind::GameWarning));
+    stack.push(overlay(OverlayKind::WindowSizeWarning));
+    assert_eq!(stack.current_kind(), Some(OverlayKind::WindowSizeWarning));
   }
 
   #[test]

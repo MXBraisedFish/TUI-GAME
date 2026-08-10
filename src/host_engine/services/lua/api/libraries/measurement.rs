@@ -71,22 +71,14 @@ pub(super) fn parse_draw_text_params(
   context: &super::LuaApiContext,
   include_position: bool,
 ) -> mlua::Result<DrawTextParams> {
-  let mut text = text_parameter(table, method)?;
+  let text = text_parameter(table, method)?;
   let mode = args::optional_string(table, method, "text_mode", Some("auto"))?.unwrap();
-  match mode.as_str() {
-    "auto" => {}
-    "plain_text" => {
-      if text.starts_with("f%") {
-        text.insert(0, ' ');
-      }
-    }
-    "rich_text" => {
-      if !text.starts_with("f%") {
-        text.insert_str(0, "f%");
-      }
-    }
+  let text_mode = match mode.as_str() {
+    "auto" => TextMode::Auto,
+    "plain_text" => TextMode::Plain,
+    "rich_text" => TextMode::Rich,
     _ => return Err(args::message(method, "invalid text_mode constant")),
-  }
+  };
   let horizontal = args::optional_string(table, method, "horizontal_align", Some("left"))?.unwrap();
   let line_align = match horizontal.as_str() {
     "left" | "auto" => TextAlign::Left,
@@ -126,6 +118,7 @@ pub(super) fn parse_draw_text_params(
     x: x.clamp(0, u16::MAX as i64) as u16,
     y: y.clamp(0, u16::MAX as i64) as u16,
     text,
+    text_mode,
     params: rich_params,
     fg: parse_color(table.get::<Value>("fg")?, method, "fg", false)?,
     bg: parse_color(table.get::<Value>("bg")?, method, "bg", true)?,

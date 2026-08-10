@@ -16,7 +16,7 @@ use super::{
 use crate::host_engine::services::lua::LuaSessionKind;
 use crate::host_engine::services::{
   BorderCharacter, BorderStyle, CustomBorder, DrawTextParams, FileTask, LuaFileOperation,
-  TextAlign, TextColor, TextWrapMode, parse_text_color,
+  TextAlign, TextColor, TextMode, TextWrapMode, parse_text_color,
 };
 
 mod align;
@@ -50,7 +50,13 @@ use utf8::resolve_index;
 const MAX_HOST_COMMANDS_PER_CALLBACK: usize = 4096;
 
 pub fn install(lua: &Lua, environment: &Table, state: SharedApiState) -> mlua::Result<()> {
-  environment.set("base", base::base(lua)?)?;
+  let base = base::base(lua)?;
+  environment.set("base", base.clone())?;
+  for name in [
+    "ipairs", "pairs", "next", "select", "rawequal", "rawlen", "tonumber", "tostring", "type",
+  ] {
+    environment.set(name, base.get::<Value>(name)?)?;
+  }
   environment.set("math", math::math(lua)?)?;
   environment.set("utf8", utf8::utf8(lua)?)?;
   environment.set("table", table::table_lib(lua)?)?;

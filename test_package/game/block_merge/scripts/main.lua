@@ -28,8 +28,8 @@ function HandleEvent(event)
     refresh_preview()
   elseif event.data.action == "merge" then
     local total = 0
-    for _, value in base.ipairs(blocks) do
-      total = total + value
+    for item in ipairs(blocks) do
+      total = total + item.value
     end
     blocks = { total }
     score = score + total

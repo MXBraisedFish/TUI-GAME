@@ -1,0 +1,6 @@
+{
+  "game_warning.title": "游戏崩溃警告",
+  "game_warning.tip": "游戏发生异常，脚本已终止运行。\n可查看日志了解详细信息。\n如需提交 Bug，请附上相关日志。",
+  "game_warning.countdown": "{value:second} 秒后返回游戏列表",
+  "game_warning.back": "{key:game_warning.back} 立即返回"
+}

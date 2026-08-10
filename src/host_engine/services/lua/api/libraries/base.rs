@@ -6,16 +6,16 @@ pub(super) fn base(lua: &Lua) -> mlua::Result<Table> {
     let Value::Table(table) = value else {
       return Err(args::invalid("base.ipairs", "table", "table", &value));
     };
-    readonly::iterator(lua, readonly::backing(&table)?, true)
+    record_iterator(lua, readonly::backing(&table)?, true)
   })?;
   let pairs = lua.create_function(|lua, args: MultiValue| {
     let value = args::one("base.pairs", "table", args)?;
     let Value::Table(table) = value else {
       return Err(args::invalid("base.pairs", "table", "table", &value));
     };
-    readonly::iterator(lua, readonly::backing(&table)?, false)
+    record_iterator(lua, readonly::backing(&table)?, false)
   })?;
-  let next = lua.create_function(|_, args: MultiValue| {
+  let next = lua.create_function(|lua, args: MultiValue| {
     let table = args::named("base.next", args, &["table", "index"])?;
     let value = args::required(&table, "base.next", "table")?;
     let Value::Table(source) = value else {
@@ -27,13 +27,13 @@ pub(super) fn base(lua: &Lua) -> mlua::Result<Table> {
     for pair in source.pairs::<Value, Value>() {
       let (key, value) = pair?;
       if found {
-        return Ok((key, value));
+        return iteration_record(lua, key, value).map(Value::Table);
       }
       if raw_equal(&key, &index) {
         found = true;
       }
     }
-    Ok((Value::Nil, Value::Nil))
+    Ok(Value::Nil)
   })?;
   let select = lua.create_function(|_, args: MultiValue| {
     let table = args::named("base.select", args, &["index", "values"])?;
@@ -141,6 +141,42 @@ pub(super) fn base(lua: &Lua) -> mlua::Result<Table> {
       ("type", function_value(type_fn)),
     ],
   )
+}
+
+fn record_iterator(lua: &Lua, table: Table, array_only: bool) -> mlua::Result<Function> {
+  if array_only {
+    let index = std::rc::Rc::new(std::cell::Cell::new(0_i64));
+    lua.create_function(move |lua, _: MultiValue| {
+      let next = index.get().saturating_add(1);
+      let value = table.raw_get::<Value>(next)?;
+      if matches!(value, Value::Nil) {
+        Ok(Value::Nil)
+      } else {
+        index.set(next);
+        iteration_record(lua, Value::Integer(next), value).map(Value::Table)
+      }
+    })
+  } else {
+    let values = table
+      .pairs::<Value, Value>()
+      .collect::<mlua::Result<Vec<_>>>()?;
+    let index = std::rc::Rc::new(std::cell::Cell::new(0_usize));
+    lua.create_function(move |lua, _: MultiValue| {
+      let current = index.get();
+      let Some((key, value)) = values.get(current).cloned() else {
+        return Ok(Value::Nil);
+      };
+      index.set(current + 1);
+      iteration_record(lua, key, value).map(Value::Table)
+    })
+  }
+}
+
+fn iteration_record(lua: &Lua, index: Value, value: Value) -> mlua::Result<Table> {
+  let result = lua.create_table()?;
+  result.set("index", index)?;
+  result.set("value", value)?;
+  Ok(result)
 }
 
 fn raw_equal(left: &Value, right: &Value) -> bool {

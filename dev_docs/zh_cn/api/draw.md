@@ -12,13 +12,13 @@
 
 ### 方法
 
-| 方法名 | 说明 |
-| ------ | ---- |
-| `draw.text{...}` | 绘制文本 |
-| `draw.fill_rect{...}` | 填充矩形 |
-| `draw.stroke_rect{...}` | 描边矩形 |
-| `draw.erase_rect{...}` | 擦除矩形区域 |
-| `draw.render()` | 请求本帧渲染输出 |
+| 方法名                     | 说明       |
+| ----------------------- | -------- |
+| `draw.text{...}`        | 绘制文本     |
+| `draw.fill_rect{...}`   | 填充矩形     |
+| `draw.stroke_rect{...}` | 描边矩形     |
+| `draw.erase_rect{...}`  | 擦除矩形区域   |
+| `draw.render()`         | 请求本帧渲染输出 |
 
 ## 方法
 
@@ -33,9 +33,9 @@
 | `x`                | integer | 是   | —        | 左上角 x 坐标 | 坐标原点为左上角                                                      |
 | `y`                | integer | 是   | —        | 左上角 y 坐标 | —                                                             |
 | `text`             | string  | 是   | —        | 要绘制的文本   | —                                                             |
-| `fg`               | const  | 否   | `nil`    | 前景色      | 使用 `color.*` 常量或 `color.rgb/hex`                              |
-| `bg`               | const  | 否   | `nil`    | 背景色      | 可为 `color.TRANSPARENT`                                        |
-| `horizontal_align` | const  | 否   | `"left"` | 行内对齐     | 支持 `left` / `horizontal_center` / `center` / `right` / `auto` |
+| `fg`               | const   | 否   | `nil`    | 前景色      | 使用 `color.*` 常量或 `color.rgb/hex`                              |
+| `bg`               | const   | 否   | `nil`    | 背景色      | 可为 `color.TRANSPARENT`                                        |
+| `horizontal_align` | const   | 否   | `"left"` | 多行文本相对第一行的水平对齐 | 支持 `left` / `horizontal_center` / `center` / `right` / `auto` |
 | `auto_wrap`        | boolean | 否   | 自动       | 是否启用自动换行 | `nil`/`true` 为自动换行，`false` 为普通换行                              |
 | `word_wrap`        | boolean | 否   | `true`   | 是否整词换行   | 关闭后按字符任意断行                                                    |
 | `max_width`        | integer | 否   | `nil`    | 最大宽度约束   | 必须满足 `1..65535`                                               |
@@ -50,7 +50,7 @@
 | `reverse`          | boolean | 否   | `false`  | 反显       | —                                                             |
 | `hidden`           | boolean | 否   | `false`  | 隐藏       | —                                                             |
 | `dim`              | boolean | 否   | `false`  | 暗淡       | —                                                             |
-| `text_mode`        | const  | 否   | `"auto"` | 文本模式     | 使用 `string.AUTO/PLAIN_TEXT/RICH_TEXT`                         |
+| `text_mode`        | const   | 否   | `"auto"` | 文本模式     | `AUTO` 识别并移除 `f%`；`PLAIN_TEXT`/`RICH_TEXT` 均不移除前缀 |
 | `slice_layer`      | string  | 否   | `"base"` | 图层       | 当前仅支持 `"base"`                                                |
 
 - **方法返回**：无返回值。

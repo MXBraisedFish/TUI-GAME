@@ -27,6 +27,21 @@ pub fn parse(text: &str, params: Option<&RichTextParams>) -> RichText {
   parse_formatted_text(body, params)
 }
 
+pub(super) fn parse_auto(text: &str, params: Option<&RichTextParams>) -> RichText {
+  text.strip_prefix(RICH_TEXT_PREFIX).map_or_else(
+    || plain_text(text),
+    |body| parse_formatted_text(body, params),
+  )
+}
+
+pub(super) fn parse_plain(text: &str) -> RichText {
+  plain_text(text)
+}
+
+pub(super) fn parse_rich(text: &str, params: Option<&RichTextParams>) -> RichText {
+  parse_formatted_text(text, params)
+}
+
 fn plain_text(text: &str) -> RichText {
   RichText {
     segments: vec![RichTextSegment {

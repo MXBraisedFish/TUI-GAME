@@ -1,0 +1,6 @@
+{
+  "game_warning.title": "Game crashed",
+  "game_warning.tip": "The current game stopped because an error occurred.",
+  "game_warning.countdown": "Returning to the game list in {value:second} seconds",
+  "game_warning.back": "{key:game_warning.back} Return now"
+}

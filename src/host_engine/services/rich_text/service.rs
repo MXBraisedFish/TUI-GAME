@@ -1,4 +1,5 @@
 use super::{RichText, RichTextParams, parser};
+use crate::host_engine::services::text_layout::TextMode;
 
 /// 富文本服务：提供解析和纯文本提取功能。
 pub struct RichTextService;
@@ -11,6 +12,20 @@ impl RichTextService {
   /// 解析富文本字符串，返回包含样式信息的分段列表。
   pub fn parse(&self, text: &str, params: Option<&RichTextParams>) -> RichText {
     parser::parse(text, params)
+  }
+
+  pub(crate) fn parse_mode(
+    &self,
+    text: &str,
+    params: Option<&RichTextParams>,
+    mode: TextMode,
+  ) -> RichText {
+    match mode {
+      TextMode::Legacy => parser::parse(text, params),
+      TextMode::Auto => parser::parse_auto(text, params),
+      TextMode::Plain => parser::parse_plain(text),
+      TextMode::Rich => parser::parse_rich(text, params),
+    }
   }
 
   /// 解析富文本后仅提取可见文本内容（去除所有样式标签）。

@@ -1,6 +1,7 @@
 mod clear_warning;
 mod export_loading;
 mod export_settings;
+mod game_warning;
 mod language_loading;
 mod safe_mode_warning;
 mod screensaver;
@@ -10,6 +11,7 @@ pub(crate) mod window_size_warning;
 pub use clear_warning::{ClearWarningCommand, ClearWarningTarget, ClearWarningUi};
 pub use export_loading::ExportLoadingUi;
 pub use export_settings::{ExportFormat, ExportSettingsCommand, ExportSettingsUi, ExportType};
+pub use game_warning::{GameWarningCommand, GameWarningUi};
 pub use language_loading::LanguageLoadingUi;
 pub use safe_mode_warning::{SafeModeWarningCommand, SafeModeWarningUi};
 pub use screensaver::ScreensaverOverlayUi;

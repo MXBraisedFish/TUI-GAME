@@ -1,10 +1,12 @@
 {
   "alwaysUpdateLinks": true,
-  "readableLineLength": true,
+  "readableLineLength": false,
   "showInlineTitle": true,
   "strictLineBreaks": false,
-  "showLineNumber": true,
+  "showLineNumber": false,
   "rightToLeft": false,
   "tabSize": 2,
-  "vimMode": false
+  "vimMode": false,
+  "foldHeading": true,
+  "showIndentGuide": true
 }

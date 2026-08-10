@@ -9,7 +9,68 @@ use crate::host_engine::services::{LogService, LogSource};
 pub fn ensure_storage_layout(storage: &StorageService, log: &mut LogService) {
   ensure_required_directories(storage, log);
   migrate_legacy_log(storage, log);
+  migrate_legacy_package_logs(storage, log);
   ensure_default_files(storage, log);
+}
+
+fn migrate_legacy_package_logs(storage: &StorageService, log: &mut LogService) {
+  for source in ["official", "mod"] {
+    for kind in ["game", "screensaver"] {
+      let legacy = storage.path(&format!("data/log/package/{source}/{kind}"));
+      if !legacy.is_dir() {
+        continue;
+      }
+      let target = storage.path(&format!("data/log/{kind}"));
+      let Ok(entries) = fs::read_dir(&legacy) else {
+        log.warn(
+          LogSource::Storage,
+          format!(
+            "Failed to read legacy package log directory {}",
+            legacy.display()
+          ),
+        );
+        continue;
+      };
+      for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() || path.extension().and_then(|value| value.to_str()) != Some("log") {
+          continue;
+        }
+        let Some(name) = path.file_name().and_then(|value| value.to_str()) else {
+          continue;
+        };
+        let destination = target.join(format!("{source}_{name}"));
+        let result = if destination.exists() {
+          fs::read(&path).and_then(|bytes| {
+            use std::io::Write;
+            let mut file = fs::OpenOptions::new().append(true).open(&destination)?;
+            if !bytes.is_empty() {
+              file.write_all(&bytes)?;
+              file.flush()?;
+            }
+            fs::remove_file(&path)
+          })
+        } else {
+          fs::rename(&path, &destination)
+        };
+        if let Err(error) = result {
+          log.warn(
+            LogSource::Storage,
+            format!(
+              "Failed to migrate legacy package log {}: {error}",
+              path.display()
+            ),
+          );
+        }
+      }
+      let _ = fs::remove_dir(&legacy);
+    }
+  }
+  let package_root = storage.path("data/log/package");
+  for source in ["official", "mod"] {
+    let _ = fs::remove_dir(package_root.join(source));
+  }
+  let _ = fs::remove_dir(package_root);
 }
 
 fn migrate_legacy_log(storage: &StorageService, log: &mut LogService) {

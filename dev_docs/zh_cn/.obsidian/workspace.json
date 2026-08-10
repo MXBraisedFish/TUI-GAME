@@ -8,59 +8,185 @@
         "type": "tabs",
         "children": [
           {
-            "id": "c8aa9b2e93e171b3",
+            "id": "e6e8abab2f2fbea0",
             "type": "leaf",
             "state": {
               "type": "markdown",
               "state": {
-                "file": "LANGUAGE.md",
+                "file": "api/base.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "LANGUAGE"
+              "title": "base"
             }
           },
           {
-            "id": "409d12d7eff610b3",
+            "id": "93a8f88703c2affd",
             "type": "leaf",
             "state": {
               "type": "markdown",
               "state": {
-                "file": "RICH_TEXT.md",
+                "file": "api/draw.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "RICH_TEXT"
+              "title": "draw"
             }
           },
           {
-            "id": "8417832f79390008",
+            "id": "5634e03378e7bc4f",
             "type": "leaf",
             "state": {
               "type": "markdown",
               "state": {
-                "file": "api/i18n.md",
+                "file": "api/string.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "i18n"
+              "title": "string"
             }
           },
           {
-            "id": "ce366b45f5f687f4",
+            "id": "58461309dd946675",
             "type": "leaf",
             "state": {
               "type": "markdown",
               "state": {
-                "file": "package字段.md",
+                "file": "api/align.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "package字段"
+              "title": "align"
+            }
+          },
+          {
+            "id": "00925d35a58a475e",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "LUA_RUNTIME.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "LUA_RUNTIME"
+            }
+          },
+          {
+            "id": "bc5051b2fbf02893",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "api/base.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "base"
+            }
+          },
+          {
+            "id": "d4c70680629c4893",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "api/serialization.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "serialization"
+            }
+          },
+          {
+            "id": "68fae96f8ba58d45",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "API.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "API"
+            }
+          },
+          {
+            "id": "19db523d095e5299",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "api/base.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "base"
+            }
+          },
+          {
+            "id": "9bfd33ac394db111",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "api/utf8.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "utf8"
+            }
+          },
+          {
+            "id": "37d9b2466f453743",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "api/string.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "string"
+            }
+          },
+          {
+            "id": "e7cdc2872546140b",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "api/slice.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "slice"
+            }
+          },
+          {
+            "id": "819e1f5873244d2f",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "api/random.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "random"
             }
           }
         ],
@@ -228,34 +354,34 @@
       "bases:新建数据库": false
     }
   },
-  "active": "8417832f79390008",
+  "active": "5634e03378e7bc4f",
   "lastOpenFiles": [
-    "api/align.md",
-    "LANGUAGE.md",
-    "LUA_RUNTIME.md",
-    "api/file.md",
-    "api/i18n.md",
-    "GAME.md",
-    "package字段.md",
-    "api/slice.md",
-    "BOSS.md",
-    "API.md",
-    "项目开发感言.md",
-    "SCREENSAVER.md",
-    "RICH_TEXT_zh_cn.md",
-    "api/random.md",
-    "api/serialization.md",
-    "api/measurement.md",
-    "api/game.md",
-    "api/loader.md",
-    "api/string.md",
-    "api/encoding.md",
-    "api/table.md",
-    "api/utf8.md",
-    "api/math.md",
-    "api/event.md",
     "api/draw.md",
+    "api/string.md",
+    "api/base.md",
     "api/debug.md",
+    "api/align.md",
+    "api/game.md",
+    "LUA_RUNTIME.md",
+    "api/serialization.md",
+    "API.md",
+    "BOSS.md",
+    "GAME.md",
+    "LANGUAGE.md",
+    "package字段.md",
+    "api/utf8.md",
+    "api/table.md",
+    "api/slice.md",
+    "api/random.md",
+    "api/measurement.md",
+    "api/math.md",
+    "api/loader.md",
+    "api/i18n.md",
+    "api/file.md",
+    "api/event.md",
+    "api/encoding.md",
+    "api/color.md",
+    "api/char.md",
     "api",
     "库",
     "Pasted image 20260730140527.png",

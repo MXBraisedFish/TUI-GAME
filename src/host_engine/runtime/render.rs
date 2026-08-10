@@ -22,10 +22,12 @@ pub(super) fn route_render(
   screensaver_package_ui: &mut ScreensaverPackageUi,
   input_demo_ui: &mut InputDemoUi,
   window_size_ui: &mut WindowSizeWarningUi,
+  game_warning_ui: &mut GameWarningUi,
   safe_mode_warning_ui: &mut SafeModeWarningUi,
   clear_warning_ui: &mut ClearWarningUi,
   export_settings_ui: &mut ExportSettingsUi,
   screenshot_capture_ui: &mut ScreenshotCaptureUi,
+  game_warning_seconds_left: u8,
   exit_warning_ui: &mut ExitWarningUi,
   screensaver_overlay_ui: &mut ScreensaverOverlayUi,
   export_loading_ui: &mut ExportLoadingUi,
@@ -69,6 +71,22 @@ pub(super) fn route_render(
       &mut services.canvas,
       &services.layout,
       &services.i18n,
+    );
+    return None;
+  }
+
+  if world.state.current_overlay_kind() == Some(OverlayKind::GameWarning) {
+    apply_host_viewport(services, false);
+    game_warning_ui.objects_mut().begin_render();
+    services
+      .canvas
+      .prepare(game_warning_ui.objects(), &services.layout);
+    game_warning_ui.render(
+      &mut services.render,
+      &mut services.canvas,
+      &services.layout,
+      &services.i18n,
+      game_warning_seconds_left,
     );
     return None;
   }

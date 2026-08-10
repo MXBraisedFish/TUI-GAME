@@ -22,7 +22,8 @@ function HandleEvent(event)
 end
 
 function Update(dt)
-  for _, star in base.ipairs(stars) do
+  for item in ipairs(stars) do
+    local star = item.value
     star.x = star.x - star.speed
     if star.x < 0 then
       star.x = width - 1
@@ -36,7 +37,8 @@ end
 
 function Render(surface)
   draw.fill_rect{ x = 0, y = 0, width = surface.width, height = surface.height, char = " ", bg = "black" }
-  for _, star in base.ipairs(stars) do
+  for item in ipairs(stars) do
+    local star = item.value
     if star.x < surface.width and star.y < surface.height then
       draw.text{ x = star.x, y = star.y, text = star.speed == 3 and "*" or ".", fg = star.speed == 3 and "white" or "gray" }
     end

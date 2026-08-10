@@ -187,6 +187,19 @@ impl HostMachineState {
     }
   }
 
+  pub fn push_game_warning_overlay(&mut self) {
+    if let Some(runtime) = self.runtime_mut() {
+      runtime.overlays_mut().push(OverlayState {
+        kind: OverlayKind::GameWarning,
+        logic: super::OverlayLogicState,
+        render: super::OverlayRenderState {
+          required_width: 0,
+          required_height: 0,
+        },
+      });
+    }
+  }
+
   pub fn push_language_loading_overlay(&mut self) {
     if let Some(runtime) = self.runtime_mut() {
       runtime.overlays_mut().push(OverlayState {

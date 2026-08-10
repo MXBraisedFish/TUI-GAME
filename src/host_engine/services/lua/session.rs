@@ -1490,6 +1490,15 @@ mod tests {
       "slice",
       "serialization",
       "encoding",
+      "ipairs",
+      "pairs",
+      "next",
+      "select",
+      "rawequal",
+      "rawlen",
+      "tonumber",
+      "tostring",
+      "type",
     ] {
       assert_ne!(session.environment_value(name), Value::Nil, "{name}");
     }
@@ -1500,10 +1509,6 @@ mod tests {
       "error",
       "pcall",
       "xpcall",
-      "type",
-      "pairs",
-      "ipairs",
-      "next",
       "load",
       "loadfile",
       "loadstring",
@@ -1527,9 +1532,46 @@ mod tests {
         function Init(ctx)
           local ok = debug.pcall{ func = function() math.PI = 0 end }
           debug.assert{ value = not ok, message = "math must be read-only" }
-          local iterator, state = base.pairs(math)
-          state.PI = 0
+          local iterator = pairs(math)
+          local item = iterator()
+          debug.assert{ value = type{ value = item } == "table" }
+          debug.assert{ value = item.index ~= nil and item.value ~= nil }
+          local count = 0
+          for pair in pairs(math) do
+            debug.assert{ value = pair.index ~= nil and pair.value ~= nil }
+            count = count + 1
+          end
+          debug.assert{ value = count > 0 }
+          local first = next{ table = math, index = nil }
+          debug.assert{ value = first.index ~= nil and first.value ~= nil }
           debug.assert{ value = math.PI > 3, message = "iterator leaked backing table" }
+        end
+      "#,
+    );
+    LuaSession::load(spec(&source, LuaSessionKind::Game), LuaPolicy::default()).unwrap();
+  }
+
+  #[test]
+  fn lua_text_modes_share_the_expected_measurement_semantics() {
+    let source = valid_script(
+      r#"
+        function Init(ctx)
+          local text = "f%<fg:green>Test"
+          local plain = measurement.get_text_width{
+            text = text,
+            text_mode = string.PLAIN_TEXT,
+          }
+          local rich = measurement.get_text_width{
+            text = text,
+            text_mode = string.RICH_TEXT,
+          }
+          local auto = measurement.get_text_width{
+            text = text,
+            text_mode = string.AUTO,
+          }
+          debug.assert{ value = plain == 16, message = "plain mode must preserve all syntax" }
+          debug.assert{ value = rich == 6, message = "rich mode must preserve the f% prefix" }
+          debug.assert{ value = auto == 4, message = "auto mode must consume the f% prefix" }
         end
       "#,
     );

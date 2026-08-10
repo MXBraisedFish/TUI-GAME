@@ -125,7 +125,7 @@ pub use storage::{
   ScreensaverPackageState, ScreenshotDoubleAction, ScreenshotProfile, StorageService,
 };
 pub use terminal::TerminalService;
-pub use text_layout::{DrawTextParams, TextAlign, TextWrapMode};
+pub use text_layout::{DrawTextParams, TextAlign, TextMode, TextWrapMode};
 pub use time::TimeService;
 pub use ui::{UiEvent, UiObjectPool, UiObjectPoolOwner, UiService};
 pub use unicode::UnicodeService;

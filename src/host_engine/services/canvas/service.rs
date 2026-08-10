@@ -793,12 +793,13 @@ impl CanvasService {
     let base_width = lines.first().map(|line| line.width).unwrap_or(0);
 
     for (line_index, line) in lines.iter().enumerate() {
+      let base_width = i32::try_from(base_width).unwrap_or(i32::MAX);
+      let line_width = i32::try_from(line.width).unwrap_or(i32::MAX);
       let offset = match align {
         TextAlign::Left => 0,
-        TextAlign::Center => base_width.saturating_sub(line.width) / 2,
-        TextAlign::Right => base_width.saturating_sub(line.width),
+        TextAlign::Center => base_width.saturating_sub(line_width) / 2,
+        TextAlign::Right => base_width.saturating_sub(line_width),
       };
-      let offset = i32::try_from(offset).unwrap_or(i32::MAX);
       let mut cursor_x = x.saturating_add(offset);
       let cursor_y = y.saturating_add(i32::try_from(line_index).unwrap_or(i32::MAX));
       let mut run_text = String::new();
@@ -880,7 +881,7 @@ fn resolve_background(mut style: TextStyle, buffer: &CanvasBuffer, x: u16, y: u1
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::host_engine::services::text_layout::TextWrapMode;
+  use crate::host_engine::services::text_layout::{TextMode, TextWrapMode};
   use crate::host_engine::services::{
     Overflow, RenderService, RichTextParams, ScrollBoxOptions, ScrollBoxService, ScrollbarPolicy,
     ScrollbarVisibility, SliceLength, SliceOptions, SliceRect, SliceService, TerminalColor,
@@ -1162,6 +1163,61 @@ mod tests {
 
     assert_eq!(raw_row_prefix(&canvas, 0, 4), "abcd");
     assert_eq!(raw_row_prefix(&canvas, 1, 4), "  ef");
+  }
+
+  #[test]
+  fn multiline_alignment_allows_lines_wider_than_the_first_line() {
+    for (align, expected_x) in [
+      (TextAlign::Left, 5),
+      (TextAlign::Center, 4),
+      (TextAlign::Right, 2),
+    ] {
+      let mut canvas = CanvasService::new();
+      canvas.text(&DrawTextParams {
+        x: 5,
+        y: 0,
+        text: "Test\nabcdefg".to_string(),
+        line_align: align,
+        ..Default::default()
+      });
+
+      assert_eq!(canvas.base.get(expected_x, 1).unwrap().text, "a");
+      assert_eq!(canvas.base.get(5, 0).unwrap().text, "T");
+    }
+  }
+
+  #[test]
+  fn explicit_text_modes_control_prefix_and_rich_text_parsing() {
+    let mut canvas = CanvasService::new();
+    let params = Some(RichTextParams::default());
+    let text = "f%<fg:green>Test";
+    for (y, text_mode) in [
+      (0, TextMode::Plain),
+      (1, TextMode::Rich),
+      (2, TextMode::Auto),
+    ] {
+      canvas.text(&DrawTextParams {
+        x: 0,
+        y,
+        text: text.to_string(),
+        text_mode,
+        params: params.clone(),
+        ..Default::default()
+      });
+    }
+
+    assert_eq!(raw_row_prefix(&canvas, 0, 16), "f%<fg:green>Test");
+    assert_eq!(raw_row_prefix(&canvas, 1, 6), "f%Test");
+    assert_eq!(raw_row_prefix(&canvas, 2, 4), "Test");
+    assert_eq!(canvas.base.get(0, 0).unwrap().style.foreground, None);
+    assert_eq!(
+      canvas.base.get(2, 1).unwrap().style.foreground,
+      Some(TextColor::Terminal(TerminalColor::Green))
+    );
+    assert_eq!(
+      canvas.base.get(0, 2).unwrap().style.foreground,
+      Some(TextColor::Terminal(TerminalColor::Green))
+    );
   }
 
   #[test]

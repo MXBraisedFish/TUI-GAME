@@ -34,19 +34,20 @@ use crate::host_engine::ui::{
   DisplaySettingsUi, ExitWarningCommand, ExitWarningMode, ExitWarningUi, ExportFormat,
   ExportLoadingUi, ExportSettingsCommand, ExportSettingsUi, ExportType, GameKeyBindingsCommand,
   GameKeyBindingsUi, GameListCommand, GameListUi, GamePackageCommand, GamePackageUi,
-  GlobalKeyBindingsCommand, GlobalKeyBindingsUi, HomeUi, HomeUiCommand, InputDemoCommand,
-  InputDemoUi, KeyBindingsCommand, KeyBindingsUi, LanguageLoadingUi, LanguageSelectCommand,
-  LanguageSelectUi, MediaListNotice, MediaRenameError, ModsCommand, ModsUi, RecordingListCommand,
-  RecordingListUi, RecordingSettingsCommand, RecordingSettingsUi, SafeModeWarningCommand,
-  SafeModeWarningUi, ScreensaverListCommand, ScreensaverListUi, ScreensaverOverlayUi,
-  ScreensaverPackageCommand, ScreensaverPackageUi, ScreenshotCaptureCommand, ScreenshotCaptureUi,
-  ScreenshotListCommand, ScreenshotListUi, ScreenshotRecordingCommand, ScreenshotRecordingUi,
-  ScreenshotSettingsCommand, ScreenshotSettingsUi, SecurityDetailsCommand, SecurityDetailsUi,
-  SecuritySettingsCommand, SecuritySettingsUi, SettingsUi, SettingsUiCommand,
-  StorageManagementClearCommand, StorageManagementClearUi, StorageManagementCommand,
-  StorageManagementExportCommand, StorageManagementExportUi, StorageManagementUi,
-  StorageManagementViewCommand, StorageManagementViewUi, TerminalCheckCommand, TerminalCheckLayout,
-  TerminalCheckUi, ToolbarCustomCommand, WindowSizeWarningCommand, WindowSizeWarningUi,
+  GameWarningCommand, GameWarningUi, GlobalKeyBindingsCommand, GlobalKeyBindingsUi, HomeUi,
+  HomeUiCommand, InputDemoCommand, InputDemoUi, KeyBindingsCommand, KeyBindingsUi,
+  LanguageLoadingUi, LanguageSelectCommand, LanguageSelectUi, MediaListNotice, MediaRenameError,
+  ModsCommand, ModsUi, RecordingListCommand, RecordingListUi, RecordingSettingsCommand,
+  RecordingSettingsUi, SafeModeWarningCommand, SafeModeWarningUi, ScreensaverListCommand,
+  ScreensaverListUi, ScreensaverOverlayUi, ScreensaverPackageCommand, ScreensaverPackageUi,
+  ScreenshotCaptureCommand, ScreenshotCaptureUi, ScreenshotListCommand, ScreenshotListUi,
+  ScreenshotRecordingCommand, ScreenshotRecordingUi, ScreenshotSettingsCommand,
+  ScreenshotSettingsUi, SecurityDetailsCommand, SecurityDetailsUi, SecuritySettingsCommand,
+  SecuritySettingsUi, SettingsUi, SettingsUiCommand, StorageManagementClearCommand,
+  StorageManagementClearUi, StorageManagementCommand, StorageManagementExportCommand,
+  StorageManagementExportUi, StorageManagementUi, StorageManagementViewCommand,
+  StorageManagementViewUi, TerminalCheckCommand, TerminalCheckLayout, TerminalCheckUi,
+  ToolbarCustomCommand, WindowSizeWarningCommand, WindowSizeWarningUi,
 };
 use std::{
   collections::HashMap,
@@ -335,6 +336,7 @@ pub fn run(services: &mut EngineServices, world: &mut RuntimeWorld) -> ExitState
   );
   let mut input_demo_ui = InputDemoUi::init(&services.hit_area, &services.progress_bar);
   let mut window_size_ui = WindowSizeWarningUi::init(&services.hit_area);
+  let mut game_warning_ui = GameWarningUi::init();
   let mut language_loading_ui = LanguageLoadingUi::init(&services.progress_bar, &services.time);
   let mut export_loading_ui = ExportLoadingUi::init(&services.progress_bar, &services.time);
   let mut safe_mode_warning_ui = SafeModeWarningUi::init(&services.hit_area);
@@ -369,6 +371,7 @@ pub fn run(services: &mut EngineServices, world: &mut RuntimeWorld) -> ExitState
   let mut input_mode_scope = None;
   let mut lua_event_router = LuaEventBroker::new();
   let mut exception_countdown_elapsed = Duration::ZERO;
+  let mut game_warning_elapsed = Duration::ZERO;
 
   if services
     .storage
@@ -448,6 +451,11 @@ pub fn run(services: &mut EngineServices, world: &mut RuntimeWorld) -> ExitState
       frame_delta,
       &mut exception_countdown_elapsed,
     );
+    update_game_warning(world, frame_delta, &mut game_warning_elapsed);
+    if game_warning_elapsed >= Duration::from_secs(5) {
+      return_from_game_warning(services, world, &mut lua_event_router);
+      game_warning_elapsed = Duration::ZERO;
+    }
     if world.state.is_shutdown() || world.is_stopped() {
       break;
     }
@@ -533,6 +541,7 @@ pub fn run(services: &mut EngineServices, world: &mut RuntimeWorld) -> ExitState
         &mut screensaver_package_ui,
         &mut input_demo_ui,
         &mut window_size_ui,
+        &mut game_warning_ui,
         &mut safe_mode_warning_ui,
         &mut clear_warning_ui,
         &mut export_settings_ui,
@@ -678,10 +687,12 @@ pub fn run(services: &mut EngineServices, world: &mut RuntimeWorld) -> ExitState
           &mut screensaver_package_ui,
           &mut input_demo_ui,
           &mut window_size_ui,
+          &mut game_warning_ui,
           &mut safe_mode_warning_ui,
           &mut clear_warning_ui,
           &mut export_settings_ui,
           &mut screenshot_capture_ui,
+          game_warning_seconds_left(game_warning_elapsed),
           &mut exit_warning_ui,
           &mut screensaver_overlay_ui,
           &mut export_loading_ui,
@@ -1322,6 +1333,7 @@ fn route_frame_input(
   screensaver_package_ui: &mut ScreensaverPackageUi,
   input_demo_ui: &mut InputDemoUi,
   window_size_ui: &mut WindowSizeWarningUi,
+  game_warning_ui: &mut GameWarningUi,
   safe_mode_warning_ui: &mut SafeModeWarningUi,
   clear_warning_ui: &mut ClearWarningUi,
   export_settings_ui: &mut ExportSettingsUi,
@@ -1489,6 +1501,18 @@ fn route_frame_input(
       }
       synchronize_lua_event_sessions(services, lua_events);
     }
+  } else if world.state.current_overlay_kind() == Some(OverlayKind::GameWarning) {
+    load_game_warning_action_map(services);
+    services.input.dispatch_action_events(&mut services.log);
+    while let Some(event) = services.input.next_action_event() {
+      if let Some(GameWarningCommand::Back) = game_warning_ui.handle_event(&UiEvent::Action(event))
+      {
+        return_from_game_warning(services, world, lua_events);
+        break;
+      }
+    }
+    services.input.clear();
+    let _ = services.input.drain_system_events();
   } else if world.state.current_overlay_kind() == Some(OverlayKind::SafeModeWarning) {
     load_safe_mode_warning_action_map(services);
     services.input.dispatch_action_events(&mut services.log);
@@ -2120,14 +2144,7 @@ fn handle_lua_fault(
       if let Some(id) = services.game.stop(false).log_session {
         services.log.close_session(id);
       }
-      let return_host = world
-        .state
-        .runtime()
-        .and_then(|runtime| runtime.main_host().game())
-        .map(|game| (*game.return_host).clone());
-      if let (Some(runtime), Some(host)) = (world.state.runtime_mut(), return_host) {
-        runtime.set_main_host(MainHostState::Host(host));
-      }
+      world.state.push_game_warning_overlay();
     }
     LuaSessionKind::Screensaver => {
       if let Some(id) = services.screensaver.stop() {
@@ -2139,6 +2156,49 @@ fn handle_lua_fault(
       let _ = world.state.remove_overlay_kind(OverlayKind::Screensaver);
     }
   }
+  services.canvas.request_render();
+  services.presenter.request_render();
+}
+
+fn update_game_warning(world: &RuntimeWorld, delta: Duration, elapsed: &mut Duration) {
+  let visible = world
+    .state
+    .runtime()
+    .is_some_and(|runtime| runtime.overlays().get(OverlayKind::GameWarning).is_some());
+  if visible {
+    *elapsed = elapsed.saturating_add(delta);
+  } else {
+    *elapsed = Duration::ZERO;
+  }
+}
+
+fn game_warning_seconds_left(elapsed: Duration) -> u8 {
+  5_u8.saturating_sub(elapsed.as_secs().min(5) as u8)
+}
+
+fn return_from_game_warning(
+  services: &mut EngineServices,
+  world: &mut RuntimeWorld,
+  lua_events: &mut LuaEventBroker,
+) {
+  let return_host = world
+    .state
+    .runtime()
+    .and_then(|runtime| runtime.main_host().game())
+    .map(|game| (*game.return_host).clone());
+  if let Some(id) = services.screensaver.stop() {
+    services.log.close_session(id);
+  }
+  let _ = world.state.remove_overlay_kind(OverlayKind::GameWarning);
+  let _ = world
+    .state
+    .remove_overlay_kind(OverlayKind::WindowSizeWarning);
+  let _ = world.state.remove_overlay_kind(OverlayKind::Screensaver);
+  if let (Some(runtime), Some(host)) = (world.state.runtime_mut(), return_host) {
+    runtime.set_main_host(MainHostState::Host(host));
+  }
+  synchronize_lua_event_sessions(services, lua_events);
+  services.input.clear();
   services.canvas.request_render();
   services.presenter.request_render();
 }
