@@ -54,13 +54,13 @@ pub fn one(method: &str, parameter: &str, args: MultiValue) -> mlua::Result<Valu
     ));
   }
   let value = args.into_iter().next().unwrap_or(Value::Nil);
-  validate_value_limits(method, &value)?;
   if let Value::Table(table) = &value
     && table.contains_key(parameter)?
   {
-    validate_keys(method, table, &[parameter])?;
+    validate_named_table(method, table, &[parameter])?;
     return table.get(parameter);
   }
+  validate_value_limits(method, &value)?;
   Ok(value)
 }
 
@@ -72,52 +72,23 @@ pub fn named(method: &str, args: MultiValue, allowed: &[&str]) -> mlua::Result<T
   let Value::Table(table) = value else {
     return Err(invalid(method, "parameters", "table", &value));
   };
-  validate_value_limits(method, &Value::Table(table.clone()))?;
-  validate_keys(method, &table, allowed)?;
+  validate_named_table(method, &table, allowed)?;
   Ok(table)
 }
 
 fn validate_value_limits(method: &str, value: &Value) -> mlua::Result<()> {
-  fn visit(
-    method: &str,
-    value: &Value,
-    depth: usize,
-    count: &mut usize,
-    seen: &mut HashSet<usize>,
-  ) -> mlua::Result<()> {
-    let Value::Table(table) = value else {
-      return Ok(());
-    };
-    if depth >= 32 {
-      return Err(message(method, "parameter table exceeds 32 levels"));
-    }
-    let pointer = table.to_pointer() as usize;
-    if !seen.insert(pointer) {
-      return Ok(());
-    }
-    for pair in table.clone().pairs::<Value, Value>() {
-      let (key, value) = pair?;
-      *count = count.saturating_add(1);
-      if *count > MAX_API_TABLE_ENTRIES {
-        return Err(message(method, "parameter table exceeds 16384 entries"));
-      }
-      visit(method, &key, depth + 1, count, seen)?;
-      visit(method, &value, depth + 1, count, seen)?;
-    }
-    Ok(())
-  }
-
-  let mut count = 0;
+  let mut count = 0_usize;
   let mut seen = HashSet::new();
-  visit(method, value, 0, &mut count, &mut seen)
+  visit_value_limits(method, value, 0, &mut count, &mut seen)
 }
 
-pub fn validate_keys(method: &str, table: &Table, allowed: &[&str]) -> mlua::Result<()> {
-  let allowed = allowed.iter().copied().collect::<HashSet<_>>();
+fn validate_named_table(method: &str, table: &Table, allowed: &[&str]) -> mlua::Result<()> {
   let mut count = 0_usize;
+  let mut seen = HashSet::new();
+  seen.insert(table.to_pointer() as usize);
   for pair in table.clone().pairs::<Value, Value>() {
-    let (key, _) = pair?;
-    count += 1;
+    let (key, value) = pair?;
+    count = count.saturating_add(1);
     if count > MAX_API_TABLE_ENTRIES {
       return Err(message(method, "parameter table exceeds 16384 entries"));
     }
@@ -125,10 +96,41 @@ pub fn validate_keys(method: &str, table: &Table, allowed: &[&str]) -> mlua::Res
       return Err(message(method, "named parameter keys must be strings"));
     };
     let key = key.to_str()?;
-    if !allowed.contains(key.as_ref()) {
+    if !allowed.iter().any(|allowed| *allowed == key.as_ref()) {
       return Err(message(method, format!("unknown parameter '{}'", key)));
     }
+    visit_value_limits(method, &value, 1, &mut count, &mut seen)?;
   }
+  Ok(())
+}
+
+fn visit_value_limits(
+  method: &str,
+  value: &Value,
+  depth: usize,
+  count: &mut usize,
+  seen: &mut HashSet<usize>,
+) -> mlua::Result<()> {
+  let Value::Table(table) = value else {
+    return Ok(());
+  };
+  if depth >= 32 {
+    return Err(message(method, "parameter table exceeds 32 levels"));
+  }
+  let pointer = table.to_pointer() as usize;
+  if !seen.insert(pointer) {
+    return Err(message(method, "parameter table contains a cycle"));
+  }
+  for pair in table.clone().pairs::<Value, Value>() {
+    let (key, value) = pair?;
+    *count = count.saturating_add(1);
+    if *count > MAX_API_TABLE_ENTRIES {
+      return Err(message(method, "parameter table exceeds 16384 entries"));
+    }
+    visit_value_limits(method, &key, depth + 1, count, seen)?;
+    visit_value_limits(method, &value, depth + 1, count, seen)?;
+  }
+  seen.remove(&pointer);
   Ok(())
 }
 

@@ -95,16 +95,24 @@ pub(super) fn parse_draw_text_params(
   let max_width = optional_positive_u16(table, method, "max_width")?;
   let max_height = optional_positive_u16(table, method, "max_height")?;
   let mut rich_params = rich_text_params(table.get::<Value>("rich_params")?, method)?;
-  if let Some(params) = rich_params.as_mut() {
-    params.key_actions = context.key_actions.clone();
-    params.key_default_actions = context.key_default_actions.clone();
-  } else if !context.key_actions.is_empty() || !context.key_default_actions.is_empty() {
-    rich_params = Some(
-      crate::host_engine::services::RichTextParams::from_key_action_maps(
-        &context.key_actions,
-        &context.key_default_actions,
-      ),
-    );
+  let parses_rich_text = match text_mode {
+    TextMode::Rich => true,
+    TextMode::Auto => text.starts_with("f%"),
+    TextMode::Legacy => text.starts_with("f%") || rich_params.is_some(),
+    TextMode::Plain => false,
+  };
+  let needs_user_keys = parses_rich_text && text.contains("{key:");
+  let needs_default_keys = parses_rich_text && text.contains("{key_default:");
+  if needs_user_keys || needs_default_keys {
+    let params = rich_params.get_or_insert_with(Default::default);
+    if needs_user_keys {
+      params.key_actions.clone_from(&context.key_actions);
+    }
+    if needs_default_keys {
+      params
+        .key_default_actions
+        .clone_from(&context.key_default_actions);
+    }
   }
   let (x, y) = if include_position {
     (

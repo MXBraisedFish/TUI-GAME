@@ -117,6 +117,27 @@ pub struct LuaExecutionStats {
   pub memory_bytes: usize,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LuaExecutionLimitKind {
+  Time,
+  Instructions,
+}
+
+impl LuaExecutionLimitKind {
+  fn as_str(self) -> &'static str {
+    match self {
+      Self::Time => "time",
+      Self::Instructions => "instructions",
+    }
+  }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct SlowCallbackWarning {
+  last_logged: Instant,
+  suppressed: u64,
+}
+
 struct LuaCallbacks {
   init: RegistryKey,
   handle_event: RegistryKey,
@@ -154,6 +175,7 @@ pub struct LuaSession {
   event_callbacks: HashMap<LuaEventCallbackId, LuaRegisteredCallback>,
   next_event_callback_id: u64,
   api_state: SharedApiState,
+  slow_callback_warnings: HashMap<&'static str, SlowCallbackWarning>,
 }
 
 impl LuaSession {
@@ -217,7 +239,7 @@ impl LuaSession {
       .set_environment(environment.clone())
       .into_function()
       .map_err(|error| session_error(&spec, LuaErrorStage::ExecuteEntry, None, error))?;
-    run_with_budget(
+    let (_, load_stats) = run_with_budget(
       &lua,
       entry_function,
       (),
@@ -248,7 +270,10 @@ impl LuaSession {
       event_callbacks: HashMap::new(),
       next_event_callback_id: 1,
       api_state,
+      slow_callback_warnings: HashMap::new(),
     };
+    let load_budget = session.policy.budget(LuaBudgetKind::Load);
+    session.record_slow_callback("Load", load_budget, load_stats);
     let context = session.context_table(spec.continue_data.as_ref(), spec.best_data.as_ref())?;
     session.invoke_required(
       Callback::Init,
@@ -558,11 +583,12 @@ impl LuaSession {
         return Err(error);
       }
     };
+    let budget = self.policy.budget(LuaBudgetKind::HandleEvent);
     let outcome = run_with_budget(
       &self.lua,
       function,
       event_table,
-      self.policy.budget(LuaBudgetKind::HandleEvent),
+      budget,
       self.policy.hook_interval,
       &self.api_state,
     );
@@ -575,6 +601,7 @@ impl LuaSession {
           memory_bytes: self.lua.used_memory(),
           ..stats
         };
+        self.record_slow_callback("EventCallback", budget, stats);
         if let Err(error) = self.lua.gc_step() {
           self.mark_faulted();
           return Err(self.error(LuaErrorStage::EventCallback, Some("EventCallback"), error));
@@ -634,11 +661,12 @@ impl LuaSession {
       let mut api = self.api_state.borrow_mut();
       api.phase = callback.phase();
     }
+    let budget = self.policy.budget(budget_kind);
     let outcome = run_with_budget(
       &self.lua,
       function,
       args,
-      self.policy.budget(budget_kind),
+      budget,
       self.policy.hook_interval,
       &self.api_state,
     );
@@ -649,6 +677,7 @@ impl LuaSession {
           memory_bytes: self.lua.used_memory(),
           ..stats
         };
+        self.record_slow_callback(callback.name(), budget, stats);
         self
           .lua
           .gc_step()
@@ -671,11 +700,12 @@ impl LuaSession {
       .registry_value::<Function>(key)
       .map_err(|error| self.error(LuaErrorStage::Callback, Some(callback.name()), error))?;
     self.api_state.borrow_mut().phase = callback.phase();
+    let budget = self.policy.budget(LuaBudgetKind::Save);
     let outcome = run_with_budget(
       &self.lua,
       function,
       (),
-      self.policy.budget(LuaBudgetKind::Save),
+      budget,
       self.policy.hook_interval,
       &self.api_state,
     );
@@ -686,6 +716,7 @@ impl LuaSession {
       memory_bytes: self.lua.used_memory(),
       ..stats
     };
+    self.record_slow_callback(callback.name(), budget, stats);
     self
       .lua
       .gc_step()
@@ -764,17 +795,76 @@ impl LuaSession {
         (error_stage, error.to_string())
       }
       LuaExecutionFailure::Limit {
+        kind,
         instructions,
+        instruction_limit,
         elapsed,
+        duration_limit,
       } => (
         LuaErrorStage::ExecutionLimit,
-        format!(
-          "execution budget exceeded after {instructions} instructions and {} ms",
-          elapsed.as_millis()
+        format_execution_limit(
+          kind,
+          instructions,
+          instruction_limit,
+          elapsed,
+          duration_limit,
         ),
       ),
     };
     self.error(actual_stage, Some(callback), message)
+  }
+
+  fn record_slow_callback(
+    &mut self,
+    callback: &'static str,
+    budget: LuaExecutionBudget,
+    stats: LuaExecutionStats,
+  ) {
+    self.record_slow_callback_at(callback, budget, stats, Instant::now());
+  }
+
+  fn record_slow_callback_at(
+    &mut self,
+    callback: &'static str,
+    budget: LuaExecutionBudget,
+    stats: LuaExecutionStats,
+    now: Instant,
+  ) {
+    const LOG_INTERVAL: Duration = Duration::from_secs(5);
+
+    if stats.elapsed <= budget.warn_duration || !self.api_state.borrow().context.debug_enabled {
+      return;
+    }
+    let warning = self
+      .slow_callback_warnings
+      .entry(callback)
+      .or_insert(SlowCallbackWarning {
+        last_logged: now.checked_sub(LOG_INTERVAL).unwrap_or(now),
+        suppressed: 0,
+      });
+    if now.duration_since(warning.last_logged) < LOG_INTERVAL {
+      warning.suppressed = warning.suppressed.saturating_add(1);
+      return;
+    }
+    let suppressed = warning.suppressed;
+    warning.last_logged = now;
+    warning.suppressed = 0;
+    let message = format!(
+      "slow Lua callback: callback={callback}; elapsed_ms={:.3}; warn_ms={:.3}; hard_ms={:.3}; instructions={}; instruction_limit={}; suppressed={suppressed}",
+      duration_millis(stats.elapsed),
+      duration_millis(budget.warn_duration),
+      duration_millis(budget.hard_duration),
+      stats.instructions,
+      budget.max_instructions,
+    );
+    self
+      .api_state
+      .borrow_mut()
+      .commands
+      .push(LuaHostCommand::Log {
+        level: "warn".to_string(),
+        message,
+      });
   }
 
   fn error(
@@ -1079,8 +1169,11 @@ fn discover_callbacks(
 enum LuaExecutionFailure {
   Lua(mlua::Error),
   Limit {
+    kind: LuaExecutionLimitKind,
     instructions: u64,
+    instruction_limit: u64,
     elapsed: Duration,
+    duration_limit: Duration,
   },
 }
 
@@ -1105,7 +1198,7 @@ where
     .map_err(LuaExecutionFailure::Lua)?;
   let started = Instant::now();
   let instructions = Rc::new(Cell::new(0_u64));
-  let exceeded = Rc::new(Cell::new(false));
+  let exceeded = Rc::new(Cell::new(None));
   let hook_instructions = Rc::clone(&instructions);
   let hook_exceeded = Rc::clone(&exceeded);
   let hook_api_state = api_state.clone();
@@ -1117,12 +1210,20 @@ where
           .get()
           .saturating_add(u64::from(hook_interval));
         hook_instructions.set(current);
-        if current > budget.max_instructions || started.elapsed() > budget.max_duration {
-          hook_exceeded.set(true);
+        let limit = if current > budget.max_instructions {
+          Some(LuaExecutionLimitKind::Instructions)
+        } else if started.elapsed() > budget.hard_duration {
+          Some(LuaExecutionLimitKind::Time)
+        } else {
+          None
+        };
+        if let Some(limit) = limit {
+          hook_exceeded.set(Some(limit));
           hook_api_state.borrow_mut().fatal_budget_exceeded = true;
-          Err(mlua::Error::RuntimeError(
-            "Lua execution budget exceeded".to_string(),
-          ))
+          Err(mlua::Error::RuntimeError(format!(
+            "Lua {} execution limit exceeded",
+            limit.as_str()
+          )))
         } else {
           Ok(VmState::Continue)
         }
@@ -1135,31 +1236,65 @@ where
   let elapsed = started.elapsed();
   let values = match result {
     Err(error) if is_memory_error(&error) => return Err(LuaExecutionFailure::Lua(error)),
-    Err(_) if exceeded.get() || api_state.borrow().fatal_budget_exceeded => {
+    Err(_) if exceeded.get().is_some() || api_state.borrow().fatal_budget_exceeded => {
       return Err(LuaExecutionFailure::Limit {
+        kind: exceeded
+          .get()
+          .unwrap_or(LuaExecutionLimitKind::Instructions),
         instructions: instructions.get(),
+        instruction_limit: budget.max_instructions,
         elapsed,
+        duration_limit: budget.hard_duration,
+      });
+    }
+    Err(_) if elapsed > budget.hard_duration => {
+      return Err(LuaExecutionFailure::Limit {
+        kind: LuaExecutionLimitKind::Time,
+        instructions: instructions.get(),
+        instruction_limit: budget.max_instructions,
+        elapsed,
+        duration_limit: budget.hard_duration,
       });
     }
     Err(error) => return Err(LuaExecutionFailure::Lua(error)),
     Ok(values) => values,
   };
-  if exceeded.get() || !thread.is_finished() || instructions.get() > budget.max_instructions {
+  if let Some(kind) = exceeded.get() {
     return Err(LuaExecutionFailure::Limit {
+      kind,
       instructions: instructions.get(),
+      instruction_limit: budget.max_instructions,
       elapsed,
+      duration_limit: budget.hard_duration,
     });
+  }
+  if instructions.get() > budget.max_instructions {
+    return Err(LuaExecutionFailure::Limit {
+      kind: LuaExecutionLimitKind::Instructions,
+      instructions: instructions.get(),
+      instruction_limit: budget.max_instructions,
+      elapsed,
+      duration_limit: budget.hard_duration,
+    });
+  }
+  if elapsed > budget.hard_duration {
+    return Err(LuaExecutionFailure::Limit {
+      kind: LuaExecutionLimitKind::Time,
+      instructions: instructions.get(),
+      instruction_limit: budget.max_instructions,
+      elapsed,
+      duration_limit: budget.hard_duration,
+    });
+  }
+  if !thread.is_finished() {
+    return Err(LuaExecutionFailure::Lua(mlua::Error::RuntimeError(
+      "Lua callback yielded before completion".to_string(),
+    )));
   }
   if api_state.borrow().fatal_api_error {
     return Err(LuaExecutionFailure::Lua(mlua::Error::RuntimeError(
       "fatal Lua API resource limit exceeded".to_string(),
     )));
-  }
-  if elapsed > budget.max_duration {
-    return Err(LuaExecutionFailure::Limit {
-      instructions: instructions.get(),
-      elapsed,
-    });
   }
   Ok((
     values,
@@ -1212,18 +1347,43 @@ fn execution_error(
       session_error(spec, stage, callback, error)
     }
     LuaExecutionFailure::Limit {
+      kind,
       instructions,
+      instruction_limit,
       elapsed,
+      duration_limit,
     } => session_error(
       spec,
       LuaErrorStage::ExecutionLimit,
       callback,
-      format!(
-        "execution budget exceeded after {instructions} instructions and {} ms",
-        elapsed.as_millis()
+      format_execution_limit(
+        kind,
+        instructions,
+        instruction_limit,
+        elapsed,
+        duration_limit,
       ),
     ),
   }
+}
+
+fn duration_millis(duration: Duration) -> f64 {
+  duration.as_secs_f64() * 1_000.0
+}
+
+fn format_execution_limit(
+  kind: LuaExecutionLimitKind,
+  instructions: u64,
+  instruction_limit: u64,
+  elapsed: Duration,
+  duration_limit: Duration,
+) -> String {
+  format!(
+    "{} execution limit exceeded: elapsed_ms={:.3}; time_limit_ms={:.3}; instructions={instructions}; instruction_limit={instruction_limit}",
+    kind.as_str(),
+    duration_millis(elapsed),
+    duration_millis(duration_limit),
+  )
 }
 
 fn json_to_lua(lua: &Lua, value: &JsonValue) -> mlua::Result<Value> {
@@ -1574,6 +1734,69 @@ mod tests {
   }
 
   #[test]
+  fn text_parsing_only_attaches_the_key_map_requested_by_rich_text() {
+    let source = valid_script(
+      r#"
+        function Init(ctx)
+          debug.assert{
+            value = measurement.get_text_width{ text = "f%{key:jump}" } == 3,
+          }
+          debug.assert{
+            value = measurement.get_text_width{ text = "f%{key_default:jump}" } == 4,
+          }
+        end
+        function Render(draw_context)
+          draw.text{ x = 1, y = 1, text = "ordinary" }
+          draw.text{ x = 1, y = 2, text = "f%{key:jump}" }
+          draw.text{ x = 1, y = 3, text = "f%{key_default:jump}" }
+          draw.text{
+            x = 1,
+            y = 4,
+            text = "f%{value:name}",
+            rich_params = { name = "TUI" },
+          }
+        end
+      "#,
+    );
+    let mut session = LuaSession::load_with_api(
+      spec(&source, LuaSessionKind::Game),
+      LuaPolicy::default(),
+      LuaApiConfig {
+        key_actions: HashMap::from([("jump".to_string(), vec![vec!["1".to_string()]])]),
+        key_default_actions: HashMap::from([("jump".to_string(), vec![vec!["f1".to_string()]])]),
+        ..LuaApiConfig::default()
+      },
+    )
+    .unwrap();
+    session
+      .render(Size {
+        width: 120,
+        height: 40,
+      })
+      .unwrap();
+    let commands = session.take_draw_commands();
+    let params = commands
+      .iter()
+      .filter_map(|command| match command {
+        LuaDrawCommand::Text { params, .. } => Some(params),
+        _ => None,
+      })
+      .collect::<Vec<_>>();
+    assert_eq!(params.len(), 4);
+    assert!(params[0].params.is_none());
+    let user = params[1].params.as_ref().unwrap();
+    assert!(user.key_actions.contains_key("jump"));
+    assert!(user.key_default_actions.is_empty());
+    let default = params[2].params.as_ref().unwrap();
+    assert!(default.key_actions.is_empty());
+    assert!(default.key_default_actions.contains_key("jump"));
+    let values = params[3].params.as_ref().unwrap();
+    assert_eq!(values.values.get("name").map(String::as_str), Some("TUI"));
+    assert!(values.key_actions.is_empty());
+    assert!(values.key_default_actions.is_empty());
+  }
+
+  #[test]
   fn random_slice_serialization_and_encoding_libraries_work_together() {
     let source = valid_script(
       r##"
@@ -1812,9 +2035,17 @@ mod tests {
             cursor = cursor.child
           end
           local depth_ok = debug.pcall{ func = function() base.type(value) end }
+          local cyclic = {}
+          cyclic.self = cyclic
+          local cycle_ok = debug.pcall{ func = function() base.type(cyclic) end }
+          local unknown_ok = debug.pcall{
+            func = function()
+              measurement.get_text_width{ text = "value", unknown = true }
+            end,
+          }
           local packed = table.pack{ values = { [1] = "first", n = 3 } }
           debug.assert{
-            value = not sqrt_ok and not pow_ok and not depth_ok
+            value = not sqrt_ok and not pow_ok and not depth_ok and not cycle_ok and not unknown_ok
               and packed.n == 3 and packed[1] == "first" and packed[3] == nil,
           }
         end
@@ -2124,6 +2355,13 @@ mod tests {
       LuaSession::load(spec(&source, LuaSessionKind::Game), LuaPolicy::default()).unwrap();
     let error = session.update().unwrap_err();
     assert_eq!(error.stage, LuaErrorStage::ExecutionLimit);
+    assert!(
+      error
+        .message
+        .contains("instructions execution limit exceeded")
+    );
+    assert!(error.message.contains("instruction_limit=200000"));
+    assert!(error.message.contains("time_limit_ms=75.000"));
     assert_eq!(session.state(), LuaSessionState::Faulted);
     assert!(!session.has_objects());
   }
@@ -2138,6 +2376,149 @@ mod tests {
     let error = session.update().unwrap_err();
     assert_eq!(error.stage, LuaErrorStage::ExecutionLimit);
     assert_eq!(session.state(), LuaSessionState::Faulted);
+  }
+
+  fn install_test_sleep(session: &LuaSession, duration: Duration) {
+    let sleep = session
+      .lua
+      .create_function(move |_, ()| {
+        std::thread::sleep(duration);
+        Ok(())
+      })
+      .unwrap();
+    let environment: Table = session.lua.registry_value(&session.environment).unwrap();
+    environment.set("sleep_for_test", sleep).unwrap();
+  }
+
+  #[test]
+  fn rust_api_time_is_included_in_the_hard_callback_budget() {
+    let source = valid_script("function Update(dt) sleep_for_test() end");
+    let mut session =
+      LuaSession::load(spec(&source, LuaSessionKind::Game), LuaPolicy::default()).unwrap();
+    install_test_sleep(&session, Duration::from_millis(90));
+
+    let error = session.update().unwrap_err();
+    assert_eq!(error.stage, LuaErrorStage::ExecutionLimit);
+    assert!(error.message.contains("time execution limit exceeded"));
+    assert!(error.message.contains("time_limit_ms=75.000"));
+    assert!(error.message.contains("instruction_limit=200000"));
+  }
+
+  #[test]
+  fn slow_callback_warnings_require_debug_mode() {
+    let source = valid_script("function Update(dt) sleep_for_test() end");
+    let mut debug_session = LuaSession::load_with_api(
+      spec(&source, LuaSessionKind::Game),
+      LuaPolicy::default(),
+      LuaApiConfig {
+        debug_enabled: true,
+        ..LuaApiConfig::default()
+      },
+    )
+    .unwrap();
+    install_test_sleep(&debug_session, Duration::from_millis(25));
+    debug_session.update().unwrap();
+    assert!(
+      debug_session
+        .take_host_commands()
+        .iter()
+        .any(|command| matches!(
+          command,
+          LuaHostCommand::Log { level, message }
+            if level == "warn" && message.contains("callback=Update")
+              && message.contains("warn_ms=20.000") && message.contains("hard_ms=75.000")
+        ))
+    );
+
+    let mut release_session =
+      LuaSession::load(spec(&source, LuaSessionKind::Game), LuaPolicy::default()).unwrap();
+    install_test_sleep(&release_session, Duration::from_millis(25));
+    release_session.update().unwrap();
+    assert!(
+      !release_session
+        .take_host_commands()
+        .iter()
+        .any(|command| matches!(
+          command,
+          LuaHostCommand::Log { message, .. } if message.contains("slow Lua callback")
+        ))
+    );
+  }
+
+  #[test]
+  fn slow_callback_warnings_are_rate_limited_per_callback() {
+    let source = valid_script("");
+    let mut session = LuaSession::load_with_api(
+      spec(&source, LuaSessionKind::Game),
+      LuaPolicy::default(),
+      LuaApiConfig {
+        debug_enabled: true,
+        ..LuaApiConfig::default()
+      },
+    )
+    .unwrap();
+    let _ = session.take_host_commands();
+    let budget = session.policy.budget(LuaBudgetKind::Render);
+    let stats = LuaExecutionStats {
+      instructions: 4_000,
+      elapsed: Duration::from_millis(21),
+      memory_bytes: session.memory_used(),
+    };
+    let now = Instant::now();
+    session.record_slow_callback_at(
+      "Update",
+      budget,
+      LuaExecutionStats {
+        elapsed: Duration::from_millis(19),
+        ..stats
+      },
+      now,
+    );
+    session.record_slow_callback_at("Render", budget, stats, now);
+    session.record_slow_callback_at("Render", budget, stats, now + Duration::from_secs(1));
+    session.record_slow_callback_at("Render", budget, stats, now + Duration::from_secs(5));
+
+    let warnings = session
+      .take_host_commands()
+      .into_iter()
+      .filter_map(|command| match command {
+        LuaHostCommand::Log { message, .. } if message.contains("slow Lua callback") => {
+          Some(message)
+        }
+        _ => None,
+      })
+      .collect::<Vec<_>>();
+    assert_eq!(warnings.len(), 2);
+    assert!(warnings[1].contains("suppressed=1"));
+  }
+
+  #[test]
+  fn ascii_text_rendering_stays_within_the_callback_budget() {
+    let source = valid_script(
+      r#"
+        function Render(draw_context)
+          local x = 0
+          local y = 0
+          for item in ipairs(char.ASCII) do
+            x = x + 1
+            if x > 20 then
+              x = 1
+              y = y + 1
+            end
+            draw.text{ x = x, y = y, text = item.value }
+          end
+        end
+      "#,
+    );
+    let mut session =
+      LuaSession::load(spec(&source, LuaSessionKind::Game), LuaPolicy::default()).unwrap();
+    session
+      .render(Size {
+        width: 120,
+        height: 40,
+      })
+      .unwrap();
+    assert!(session.take_draw_commands().len() >= 90);
   }
 
   #[test]

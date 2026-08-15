@@ -9,8 +9,10 @@ pub(super) fn draw(lua: &Lua, state: SharedApiState) -> mlua::Result<Table> {
       let method = "draw.text";
       let table = text_parameters(method, values)?;
       let target = parse_draw_target(&table, method, &text_state)?;
-      let context = text_state.borrow().context.clone();
-      let params = parse_draw_text_params(&table, method, &context, true)?;
+      let params = {
+        let state = text_state.borrow();
+        parse_draw_text_params(&table, method, &state.context, true)?
+      };
       let x = args::integer(args::required(&table, method, "x")?, method, "x")?;
       let y = args::integer(args::required(&table, method, "y")?, method, "y")?;
       enqueue_draw(

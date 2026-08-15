@@ -3263,7 +3263,7 @@ mod tests {
       session_kind: LuaSessionKind::Game,
       stage: LuaErrorStage::ExecutionLimit,
       callback: Some("Render"),
-      message: "execution budget exceeded after 1000 instructions and 15 ms".to_string(),
+      message: "instructions execution limit exceeded: elapsed_ms=15.000; time_limit_ms=75.000; instructions=201000; instruction_limit=200000".to_string(),
     };
     let diagnostics = LuaSessionDiagnostics {
       entry_path: PathBuf::from("scripts/main.lua"),
@@ -3276,7 +3276,7 @@ mod tests {
     };
 
     let message = format_lua_fault_message(&error, Some(&diagnostics));
-    assert!(message.contains("after 1000 instructions and 15 ms"));
+    assert!(message.contains("instructions=201000; instruction_limit=200000"));
     assert!(message.contains("memory_bytes=97617"));
     assert!(!message.contains("instructions=0"));
     assert!(!message.contains("elapsed_ms=0"));

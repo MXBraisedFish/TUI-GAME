@@ -14,7 +14,8 @@ pub enum LuaBudgetKind {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LuaExecutionBudget {
-  pub max_duration: Duration,
+  pub warn_duration: Duration,
+  pub hard_duration: Duration,
   pub max_instructions: u64,
 }
 
@@ -39,11 +40,13 @@ impl LuaPolicy {
       save_max_depth: 32,
       hook_interval: 1_000,
       load_budget: LuaExecutionBudget {
-        max_duration: Duration::from_millis(100),
+        warn_duration: Duration::from_millis(50),
+        hard_duration: Duration::from_millis(100),
         max_instructions: 1_000_000,
       },
       callback_budget: LuaExecutionBudget {
-        max_duration: Duration::from_millis(15),
+        warn_duration: Duration::from_millis(20),
+        hard_duration: Duration::from_millis(75),
         max_instructions: 200_000,
       },
     }
@@ -79,8 +82,16 @@ impl LuaPolicy {
       ("load", self.load_budget),
       ("callback", self.callback_budget),
     ] {
-      if budget.max_duration.is_zero() {
-        return Err(format!("{name} duration budget must be greater than zero"));
+      if budget.warn_duration.is_zero() {
+        return Err(format!("{name} warning duration must be greater than zero"));
+      }
+      if budget.hard_duration.is_zero() {
+        return Err(format!("{name} hard duration must be greater than zero"));
+      }
+      if budget.warn_duration >= budget.hard_duration {
+        return Err(format!(
+          "{name} warning duration must be lower than its hard duration"
+        ));
       }
       if budget.max_instructions == 0 {
         return Err(format!(
@@ -110,14 +121,16 @@ mod tests {
     assert_eq!(
       policy.budget(LuaBudgetKind::Render),
       LuaExecutionBudget {
-        max_duration: Duration::from_millis(15),
+        warn_duration: Duration::from_millis(20),
+        hard_duration: Duration::from_millis(75),
         max_instructions: 200_000,
       }
     );
     assert_eq!(
       policy.budget(LuaBudgetKind::Save),
       LuaExecutionBudget {
-        max_duration: Duration::from_millis(100),
+        warn_duration: Duration::from_millis(50),
+        hard_duration: Duration::from_millis(100),
         max_instructions: 1_000_000,
       }
     );
@@ -131,6 +144,10 @@ mod tests {
 
     let mut policy = LuaPolicy::balanced();
     policy.memory_limit_bytes = 0;
+    assert!(policy.validate().is_err());
+
+    let mut policy = LuaPolicy::balanced();
+    policy.callback_budget.warn_duration = policy.callback_budget.hard_duration;
     assert!(policy.validate().is_err());
   }
 }

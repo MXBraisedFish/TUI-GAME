@@ -27,8 +27,8 @@ pub use object_pool::LuaObjectPool;
 pub use policy::{LuaBudgetKind, LuaExecutionBudget, LuaPolicy};
 pub use screensaver::ScreensaverService;
 pub use session::{
-  LuaCallbackLifetime, LuaErrorStage, LuaExecutionStats, LuaSession, LuaSessionError,
-  LuaSessionKind, LuaSessionSpec, LuaSessionState,
+  LuaCallbackLifetime, LuaErrorStage, LuaExecutionLimitKind, LuaExecutionStats, LuaSession,
+  LuaSessionError, LuaSessionKind, LuaSessionSpec, LuaSessionState,
 };
 
 /// 无状态 Lua Session 工厂。每次调用都会创建完全独立的 Lua VM。
