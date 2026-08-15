@@ -13,6 +13,20 @@
             "state": {
               "type": "markdown",
               "state": {
+                "file": "API.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "API"
+            }
+          },
+          {
+            "id": "49c26b1d30ee3af5",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
                 "file": "api/base.md",
                 "mode": "source",
                 "source": false
@@ -36,21 +50,21 @@
             }
           },
           {
-            "id": "5634e03378e7bc4f",
+            "id": "9d210f1c7205b699",
             "type": "leaf",
             "state": {
               "type": "markdown",
               "state": {
-                "file": "api/string.md",
+                "file": "api/char.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "string"
+              "title": "char"
             }
           },
           {
-            "id": "58461309dd946675",
+            "id": "5d8818bdd0f97395",
             "type": "leaf",
             "state": {
               "type": "markdown",
@@ -64,21 +78,7 @@
             }
           },
           {
-            "id": "00925d35a58a475e",
-            "type": "leaf",
-            "state": {
-              "type": "markdown",
-              "state": {
-                "file": "LUA_RUNTIME.md",
-                "mode": "source",
-                "source": false
-              },
-              "icon": "lucide-file",
-              "title": "LUA_RUNTIME"
-            }
-          },
-          {
-            "id": "bc5051b2fbf02893",
+            "id": "2ab02da958db9679",
             "type": "leaf",
             "state": {
               "type": "markdown",
@@ -89,108 +89,10 @@
               },
               "icon": "lucide-file",
               "title": "base"
-            }
-          },
-          {
-            "id": "d4c70680629c4893",
-            "type": "leaf",
-            "state": {
-              "type": "markdown",
-              "state": {
-                "file": "api/serialization.md",
-                "mode": "source",
-                "source": false
-              },
-              "icon": "lucide-file",
-              "title": "serialization"
-            }
-          },
-          {
-            "id": "68fae96f8ba58d45",
-            "type": "leaf",
-            "state": {
-              "type": "markdown",
-              "state": {
-                "file": "API.md",
-                "mode": "source",
-                "source": false
-              },
-              "icon": "lucide-file",
-              "title": "API"
-            }
-          },
-          {
-            "id": "19db523d095e5299",
-            "type": "leaf",
-            "state": {
-              "type": "markdown",
-              "state": {
-                "file": "api/base.md",
-                "mode": "source",
-                "source": false
-              },
-              "icon": "lucide-file",
-              "title": "base"
-            }
-          },
-          {
-            "id": "9bfd33ac394db111",
-            "type": "leaf",
-            "state": {
-              "type": "markdown",
-              "state": {
-                "file": "api/utf8.md",
-                "mode": "source",
-                "source": false
-              },
-              "icon": "lucide-file",
-              "title": "utf8"
-            }
-          },
-          {
-            "id": "37d9b2466f453743",
-            "type": "leaf",
-            "state": {
-              "type": "markdown",
-              "state": {
-                "file": "api/string.md",
-                "mode": "source",
-                "source": false
-              },
-              "icon": "lucide-file",
-              "title": "string"
-            }
-          },
-          {
-            "id": "e7cdc2872546140b",
-            "type": "leaf",
-            "state": {
-              "type": "markdown",
-              "state": {
-                "file": "api/slice.md",
-                "mode": "source",
-                "source": false
-              },
-              "icon": "lucide-file",
-              "title": "slice"
-            }
-          },
-          {
-            "id": "819e1f5873244d2f",
-            "type": "leaf",
-            "state": {
-              "type": "markdown",
-              "state": {
-                "file": "api/random.md",
-                "mode": "source",
-                "source": false
-              },
-              "icon": "lucide-file",
-              "title": "random"
             }
           }
         ],
-        "currentTab": 2
+        "currentTab": 4
       }
     ],
     "direction": "vertical"
@@ -354,17 +256,29 @@
       "bases:新建数据库": false
     }
   },
-  "active": "5634e03378e7bc4f",
+  "active": "5d8818bdd0f97395",
   "lastOpenFiles": [
+    "api/char.md",
     "api/draw.md",
-    "api/string.md",
     "api/base.md",
-    "api/debug.md",
     "api/align.md",
+    "image/char_ASCII_example.png",
+    "image/char_ASCII__example.png",
+    "image/char_ASCII_CHARACTER_example.png",
+    "EVENT.md",
+    "image/char_ASCII_LETTER_example.png",
+    "image/char_ASCII_UPPERCASE_example.png",
+    "image/char_ASCII_LOWERCASE_example.png",
+    "image/ASCII_UPPERCASE.png",
+    "image/ASCII_LOWERCASE.png",
+    "image/ASCII_LETTER.png",
+    "API.md",
+    "image/char_ASCII_NUMBER_example.png",
+    "api/debug.md",
+    "api/string.md",
     "api/game.md",
     "LUA_RUNTIME.md",
     "api/serialization.md",
-    "API.md",
     "BOSS.md",
     "GAME.md",
     "LANGUAGE.md",
@@ -379,21 +293,8 @@
     "api/i18n.md",
     "api/file.md",
     "api/event.md",
-    "api/encoding.md",
-    "api/color.md",
-    "api/char.md",
     "api",
     "库",
-    "Pasted image 20260730140527.png",
-    "image/boss_screensaver_program_flowchart.png",
-    "image/screensaver_banner.png",
-    "image/game_banner.png",
-    "image/boss_screensaver_program_flowchart.png",
-    "image/boss_screen_program_flowchart.png",
-    "image/boss_screen_program_flowchart_zh_cn.png",
-    "image/screensaver_banner.png",
-    "image/screen_banner.png",
-    "image/boss_banner.png",
     "API.md.tmp.31024.45c5566c4009",
     "API.md.tmp.31024.8f7ff4ad28b5",
     "API.md.tmp.31024.2d50d3e4a1b4"

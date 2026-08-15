@@ -19,9 +19,12 @@ impl LogLabels {
   }
 
   pub fn refresh_from_i18n(&mut self, i18n: &I18nService) {
+    self.insert_defaults();
+    let missing_template = i18n.get_runtime_text("language_warning", "language_warning.missing");
     for key in log_label_keys() {
       let value = i18n.get_runtime_text("log", key);
-      if value != format!("log.{}", key) {
+      let missing = missing_template.replace("{value:missing_key}", key);
+      if value != missing {
         self.values.insert(key, value);
       }
     }
@@ -60,7 +63,7 @@ impl LogLabels {
       LogSource::Boot,
       LogSource::Runtime,
       LogSource::Shutdown,
-      LogSource::Termianl,
+      LogSource::Terminal,
       LogSource::Render,
       LogSource::Input,
       LogSource::Storage,
@@ -96,6 +99,28 @@ impl LogLabels {
 impl Default for LogLabels {
   fn default() -> Self {
     Self::new()
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use std::collections::HashMap;
+
+  use super::*;
+
+  #[test]
+  fn refresh_resets_missing_labels_to_defaults() {
+    let mut labels = LogLabels::new();
+    let mut translated = I18nService::new();
+    translated.insert_runtime_namespace(
+      "log",
+      HashMap::from([("log.service.lua".to_string(), "脚本".to_string())]),
+    );
+    labels.refresh_from_i18n(&translated);
+    assert_eq!(labels.source(LogSource::Lua), "脚本");
+
+    labels.refresh_from_i18n(&I18nService::new());
+    assert_eq!(labels.source(LogSource::Lua), "Lua");
   }
 }
 

@@ -110,6 +110,12 @@ pub enum LuaHostCommand {
     level: String,
     message: String,
   },
+  Print {
+    message: String,
+    time: bool,
+    level: Option<String>,
+    type_head: bool,
+  },
   Ignored {
     method: &'static str,
     reason: &'static str,

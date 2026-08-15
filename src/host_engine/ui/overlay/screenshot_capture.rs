@@ -40,6 +40,7 @@ pub struct ScreenshotCaptureUi {
   user_touched: bool,
   mode_toast_dismiss_requested: bool,
   operation_toast_dismiss_requested: bool,
+  auto_exit: bool,
   host_key_params: RichTextParams,
 }
 
@@ -57,6 +58,7 @@ impl ScreenshotCaptureUi {
       user_touched: false,
       mode_toast_dismiss_requested: false,
       operation_toast_dismiss_requested: false,
+      auto_exit: false,
       host_key_params: RichTextParams::default(),
     }
   }
@@ -78,7 +80,7 @@ impl ScreenshotCaptureUi {
     ]
   }
 
-  pub fn start(&mut self, frame: ComposedFrame, show_guide: bool) {
+  pub fn start(&mut self, frame: ComposedFrame, show_guide: bool, auto_exit: bool) {
     self.frame = Some(frame);
     self.selection = None;
     self.drag_anchor = None;
@@ -90,6 +92,22 @@ impl ScreenshotCaptureUi {
     self.user_touched = false;
     self.mode_toast_dismiss_requested = false;
     self.operation_toast_dismiss_requested = false;
+    self.auto_exit = auto_exit;
+  }
+
+  pub fn finish(&mut self) {
+    self.frame = None;
+    self.selection = None;
+    self.drag_anchor = None;
+    self.drag_cursor = None;
+    self.last_left_press = None;
+    self.menu = None;
+    self.guide_visible = false;
+    self.user_touched = false;
+  }
+
+  pub fn auto_exit(&self) -> bool {
+    self.auto_exit
   }
 
   pub fn update(&mut self, dt: Duration) {
@@ -558,7 +576,7 @@ mod tests {
   #[test]
   fn double_left_press_selects_the_whole_frozen_frame() {
     let mut ui = ScreenshotCaptureUi::init();
-    ui.start(ComposedFrame::new(12, 7), false);
+    ui.start(ComposedFrame::new(12, 7), false, false);
     ui.opened_elapsed = Duration::from_millis(100);
     assert!(!ui.register_left_press((4, 3)));
     ui.opened_elapsed = Duration::from_millis(350);
@@ -586,6 +604,23 @@ mod tests {
       action_command(&events),
       Some(ScreenshotCaptureCommand::CopyRichText)
     );
+  }
+
+  #[test]
+  fn screenshot_session_caches_auto_exit_and_finish_releases_the_frozen_frame() {
+    let mut ui = ScreenshotCaptureUi::init();
+    ui.start(ComposedFrame::new(12, 7), false, true);
+    ui.select_all();
+
+    assert!(ui.auto_exit());
+    assert!(ui.current_selection().is_some());
+
+    ui.finish();
+
+    assert!(ui.current_selection().is_none());
+    assert!(ui.frame.is_none());
+    assert!(ui.selection.is_none());
+    assert!(ui.menu.is_none());
   }
 
   #[test]

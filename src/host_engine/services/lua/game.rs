@@ -16,6 +16,7 @@ const MAX_FIXED_UPDATES_PER_FRAME: usize = 8;
 pub struct LuaSessionDiagnostics {
   pub entry_path: std::path::PathBuf,
   pub stats: LuaExecutionStats,
+  pub memory_bytes: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -149,6 +150,7 @@ impl GameService {
     self.session.as_ref().map(|session| LuaSessionDiagnostics {
       entry_path: session.entry_path().to_path_buf(),
       stats: session.last_stats(),
+      memory_bytes: session.memory_used(),
     })
   }
 

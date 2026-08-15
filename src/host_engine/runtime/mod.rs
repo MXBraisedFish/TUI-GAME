@@ -16,18 +16,20 @@ use router::*;
 use toolbar::TopToolbarRuntime;
 
 use crate::host_engine::core::state_machine::{
-  HostState, MainHostState, OverlayKind, RuntimeClosingState, UiNodeKind, UiNodeState,
+  HostState, MainHostState, OverlayKind, OverlayStackTransition, RuntimeClosingState, UiNodeKind,
+  UiNodeState,
 };
 use crate::host_engine::core::{ExitState, FrameScheduler, RuntimeWorld, set_crash_phase};
 use crate::host_engine::services::{
   ActionKeyMap, ActionMapEntry, AutoRecordingMode, BorderStyle, DisplayLogoMode, DisplayOrderMode,
   DrawTextParams, EngineServices, EngineTask, HostAreaKind, ImPolicy, InputActionEvent,
-  KeyBindingsProfile, KeyState, LogSource, LuaActionState, LuaEnqueueError, LuaErrorStage,
-  LuaEventBroker, LuaEventData, LuaEventRoute, LuaHostCommand, LuaSessionError, LuaSessionKind,
-  LuaSessionToken, LuaTaskOperation, PackageEvent, PackageListEntry, PopupDismissEvent,
-  PopupRequest, RandomGeneratorId, RandomSeed, RecordingState, Rect, ScreenshotAsyncEvent,
-  ScreenshotDoubleAction, ScreenshotService, ScreenshotTask, SystemEvent, TaskId, TextColor,
-  UiEvent, UiObjectPoolOwner, VideoAsyncEvent, VideoExportStage, translate_action_map,
+  KeyBindingsProfile, KeyState, LogLevel, LogPrintOptions, LogSource, LuaActionState,
+  LuaEnqueueError, LuaErrorStage, LuaEventBroker, LuaEventData, LuaEventRoute, LuaHostCommand,
+  LuaSessionDiagnostics, LuaSessionError, LuaSessionKind, LuaSessionToken, LuaTaskOperation,
+  PackageEvent, PackageListEntry, PopupDismissEvent, PopupRequest, RandomGeneratorId, RandomSeed,
+  RecordingState, Rect, ScreenshotAsyncEvent, ScreenshotDoubleAction, ScreenshotService,
+  ScreenshotTask, SystemEvent, TaskId, TextColor, UiEvent, UiObjectPoolOwner, VideoAsyncEvent,
+  VideoExportStage, translate_action_map,
 };
 use crate::host_engine::ui::{
   ClearWarningCommand, ClearWarningTarget, ClearWarningUi, DisplaySettingsCommand,
@@ -577,16 +579,16 @@ pub fn run(services: &mut EngineServices, world: &mut RuntimeWorld) -> ExitState
       &mut pending_screensaver_hotkey,
       &mut pending_toolbar_hotkey,
       &mut lua_event_router,
-      frame,
       world.clock.delta_time(),
     );
-    dispatch_lua_events(services, world, &mut lua_event_router);
     update_pending_screenshot_hotkey(
       services,
       world,
       &mut screenshot_capture_ui,
       &mut pending_screenshot_hotkey,
     );
+    queue_lua_overlay_transitions(services, world, &mut lua_event_router, frame);
+    dispatch_lua_events(services, world, &mut lua_event_router);
     let dismiss_screenshot_toast = screenshot_capture_ui.take_mode_toast_dismiss_requested();
     let dismiss_screenshot_operation_toast =
       screenshot_capture_ui.take_operation_toast_dismiss_requested();
@@ -1352,13 +1354,18 @@ fn route_frame_input(
   frame: u64,
 ) {
   for event in services.input.drain_system_event_observations(128) {
-    if let SystemEvent::Focus(event) = event
-      && let Err(error) = lua_events.push_system(
-        frame,
-        LuaEventData::Focus {
-          gained: event.gained,
-        },
-      )
+    let data = match event {
+      SystemEvent::Focus(event) => Some(LuaEventData::Focus {
+        gained: event.gained,
+      }),
+      SystemEvent::Resize(event) => Some(LuaEventData::Resize {
+        width: event.width,
+        height: event.height,
+      }),
+      SystemEvent::Mouse(_) | SystemEvent::TerminalKey(_) => None,
+    };
+    if let Some(data) = data
+      && let Err(error) = lua_events.push_system(frame, data)
     {
       log_lua_enqueue_error(services, error);
     }
@@ -1476,9 +1483,6 @@ fn route_frame_input(
         services.log.close_session(id);
       }
       synchronize_lua_event_sessions(services, lua_events);
-      if let Err(error) = lua_events.push_system(frame, LuaEventData::ScreensaverStopped) {
-        log_lua_enqueue_error(services, error);
-      }
     }
     if game_was_active && world.state.is_host_mode() {
       let result = services.game.stop(true);
@@ -1742,10 +1746,6 @@ fn queue_lua_system_event(
   base_rect: Rect,
 ) {
   let data = match event {
-    SystemEvent::Resize(event) => Some(LuaEventData::Resize {
-      width: event.width,
-      height: event.height,
-    }),
     SystemEvent::Mouse(mut event)
       if allow_mouse
         && event.x >= base_rect.x
@@ -1757,7 +1757,10 @@ fn queue_lua_system_event(
       event.y = event.y.saturating_sub(base_rect.y);
       Some(LuaEventData::mouse(event))
     }
-    SystemEvent::Focus(_) | SystemEvent::Mouse(_) | SystemEvent::TerminalKey(_) => None,
+    SystemEvent::Resize(_)
+    | SystemEvent::Focus(_)
+    | SystemEvent::Mouse(_)
+    | SystemEvent::TerminalKey(_) => None,
   };
   if let Some(data) = data
     && let Err(error) = router.push_system(frame, data)
@@ -1891,6 +1894,27 @@ fn log_lua_enqueue_error(services: &mut EngineServices, error: LuaEnqueueError) 
   }
 }
 
+fn queue_lua_overlay_transitions(
+  services: &mut EngineServices,
+  world: &mut RuntimeWorld,
+  router: &mut LuaEventBroker,
+  frame: u64,
+) {
+  for transition in world.state.take_overlay_transitions() {
+    let data = match transition {
+      OverlayStackTransition::Started => {
+        // 覆盖屏接管交互时，不允许此前尚未派发的输入越过边界进入脚本。
+        router.clear_pending_interactive(LuaSessionKind::Game);
+        LuaEventData::OverlayStarted
+      }
+      OverlayStackTransition::Stopped => LuaEventData::OverlayStopped,
+    };
+    if let Err(error) = router.push_system(frame, data) {
+      log_lua_enqueue_error(services, error);
+    }
+  }
+}
+
 fn update_lua_sessions(
   services: &mut EngineServices,
   world: &mut RuntimeWorld,
@@ -1910,22 +1934,38 @@ fn update_lua_sessions(
   }
   let _ = apply_lua_host_commands(LuaSessionKind::Screensaver, services, world, router);
 
-  let size = services.layout.physical_size();
-  if services.screensaver.is_active() {
-    if let Err(error) = services.screensaver.render(size) {
-      handle_lua_fault(services, world, error);
+  let visible_session = match world.state.current_overlay_kind() {
+    Some(OverlayKind::Screensaver) if services.screensaver.is_active() => {
+      Some(LuaSessionKind::Screensaver)
     }
-  } else if services.game.is_active()
-    && let Err(error) = services.game.render(size)
-  {
-    handle_lua_fault(services, world, error);
-  }
-  let kind = if services.screensaver.is_active() {
-    LuaSessionKind::Screensaver
-  } else {
-    LuaSessionKind::Game
+    None if services.game.is_active() => Some(LuaSessionKind::Game),
+    _ => None,
   };
-  let _ = apply_lua_host_commands(kind, services, world, router);
+  let size = services.layout.physical_size();
+  match visible_session {
+    Some(LuaSessionKind::Game) => {
+      if let Err(error) = services.game.render(size) {
+        handle_lua_fault(services, world, error);
+      }
+      let _ = apply_lua_host_commands(LuaSessionKind::Game, services, world, router);
+    }
+    Some(LuaSessionKind::Screensaver) => {
+      if let Err(error) = services.screensaver.render(size) {
+        handle_lua_fault(services, world, error);
+      }
+      let _ = apply_lua_host_commands(LuaSessionKind::Screensaver, services, world, router);
+    }
+    None => {}
+  }
+
+  // 非当前画面的脚本仍可 Update，但其绘制结果在本帧不可见。帧末必须主动
+  // 回收这些命令和计数，避免宿主覆盖屏让脚本误触单帧绘制上限。
+  if visible_session != Some(LuaSessionKind::Game) {
+    let _ = services.game.take_draw_commands();
+  }
+  if visible_session != Some(LuaSessionKind::Screensaver) {
+    let _ = services.screensaver.take_draw_commands();
+  }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1951,6 +1991,21 @@ fn apply_lua_host_commands(
       LuaHostCommand::Log { level, message } => {
         log_lua_session_message(services, kind, &level, message)
       }
+      LuaHostCommand::Print {
+        message,
+        time,
+        level,
+        type_head,
+      } => print_lua_session_message(
+        services,
+        kind,
+        message,
+        LogPrintOptions {
+          time,
+          level: level.as_deref().and_then(lua_log_level),
+          type_head,
+        },
+      ),
       LuaHostCommand::Ignored { method, reason } => log_lua_session_message(
         services,
         kind,
@@ -2115,18 +2170,7 @@ fn handle_lua_fault(
     LuaSessionKind::Game => services.game.diagnostics(),
     LuaSessionKind::Screensaver => services.screensaver.diagnostics(),
   };
-  let message = diagnostics.map_or_else(
-    || error.to_string(),
-    |diagnostics| {
-      format!(
-        "{error}; entry={}; instructions={}; elapsed_ms={}; memory_bytes={}",
-        diagnostics.entry_path.display(),
-        diagnostics.stats.instructions,
-        diagnostics.stats.elapsed.as_millis(),
-        diagnostics.stats.memory_bytes,
-      )
-    },
-  );
+  let message = format_lua_fault_message(&error, diagnostics.as_ref());
   log_lua_session_message(services, error.session_kind, "error", message);
   if let Some(package) = &package {
     let log_location = services
@@ -2158,6 +2202,22 @@ fn handle_lua_fault(
   }
   services.canvas.request_render();
   services.presenter.request_render();
+}
+
+fn format_lua_fault_message(
+  error: &LuaSessionError,
+  diagnostics: Option<&LuaSessionDiagnostics>,
+) -> String {
+  diagnostics.map_or_else(
+    || error.to_string(),
+    |diagnostics| {
+      format!(
+        "{error}; entry={}; memory_bytes={}",
+        diagnostics.entry_path.display(),
+        diagnostics.memory_bytes,
+      )
+    },
+  )
 }
 
 fn update_game_warning(world: &RuntimeWorld, delta: Duration, elapsed: &mut Duration) {
@@ -2244,6 +2304,48 @@ fn log_lua_session_message(
       "debug" => services.log.debug(LogSource::Lua, message),
       _ => services.log.info(LogSource::Lua, message),
     }
+  }
+}
+
+fn print_lua_session_message(
+  services: &mut EngineServices,
+  kind: LuaSessionKind,
+  message: String,
+  options: LogPrintOptions,
+) {
+  let id = match kind {
+    LuaSessionKind::Game => services.game.log_session(),
+    LuaSessionKind::Screensaver => services.screensaver.log_session(),
+  };
+  if let Some(id) = id {
+    services
+      .log
+      .print_session(id, LogSource::Lua, message, options);
+    return;
+  }
+  if let Some(package) = match kind {
+    LuaSessionKind::Game => services.game.package(),
+    LuaSessionKind::Screensaver => services.screensaver.package(),
+  }
+  .cloned()
+  {
+    services
+      .log
+      .print_package(&package, LogSource::Lua, message, options);
+  } else {
+    services.log.info(LogSource::Lua, message);
+  }
+}
+
+fn lua_log_level(level: &str) -> Option<LogLevel> {
+  match level {
+    "trace" => Some(LogLevel::Trace),
+    "debug" => Some(LogLevel::Debug),
+    "info" => Some(LogLevel::Info),
+    "warn" => Some(LogLevel::Warn),
+    "error" => Some(LogLevel::Error),
+    "fatal" => Some(LogLevel::Fatal),
+    _ => None,
   }
 }
 
@@ -2362,7 +2464,6 @@ fn toggle_screensaver(
   screensaver_ui: &mut ScreensaverOverlayUi,
   random_id: RandomGeneratorId,
   lua_events: &mut LuaEventBroker,
-  frame: u64,
 ) {
   let screensaver_active = world
     .state
@@ -2377,9 +2478,6 @@ fn toggle_screensaver(
       .state
       .remove_overlay_kind(OverlayKind::WindowSizeWarning);
     let _ = world.state.remove_overlay_kind(OverlayKind::Screensaver);
-    if let Err(error) = lua_events.push_system(frame, LuaEventData::ScreensaverStopped) {
-      log_lua_enqueue_error(services, error);
-    }
     services.input.clear();
     return;
   }
@@ -2466,9 +2564,6 @@ fn toggle_screensaver(
   world
     .state
     .push_screensaver_overlay(entry.min_width, entry.min_height);
-  if let Err(error) = lua_events.push_system(frame, LuaEventData::ScreensaverStarted) {
-    log_lua_enqueue_error(services, error);
-  }
   services.input.clear();
 }
 
@@ -2575,7 +2670,6 @@ fn update_pending_host_hotkeys(
   pending_screensaver: &mut Option<PendingHostHotkey>,
   pending_toolbar: &mut Option<PendingHostHotkey>,
   lua_events: &mut LuaEventBroker,
-  frame: u64,
   dt: Duration,
 ) {
   if pending_recording
@@ -2590,14 +2684,7 @@ fn update_pending_host_hotkeys(
     .is_some_and(|pending| !pending.update(dt))
   {
     *pending_screensaver = None;
-    toggle_screensaver(
-      services,
-      world,
-      screensaver_ui,
-      random_id,
-      lua_events,
-      frame,
-    );
+    toggle_screensaver(services, world, screensaver_ui, random_id, lua_events);
   }
   if pending_toolbar
     .as_mut()
@@ -2888,13 +2975,13 @@ fn start_screenshot_capture(
     services.input.clear();
     return;
   };
-  let show_guide = !services
+  let screenshot_profile = services
     .storage
-    .read_screenshot_profile_or_default(&mut services.log)
-    .guide_seen;
+    .read_screenshot_profile_or_default(&mut services.log);
+  let show_guide = !screenshot_profile.guide_seen;
   let profile = synchronize_key_bindings_profile(services);
   screenshot_ui.set_host_key_params(host_key_rich_text_params(&profile));
-  screenshot_ui.start(frame, show_guide);
+  screenshot_ui.start(frame, show_guide, screenshot_profile.auto_exit);
   world.state.push_screenshot_capture_overlay();
   show_popup(services, ScreenshotModeToastKind::Enter);
   services.input.clear();
@@ -2959,9 +3046,7 @@ fn apply_screenshot_capture_command(
   let mut completed_operation = false;
   match command {
     ScreenshotCaptureCommand::Exit => {
-      let _ = world
-        .state
-        .remove_overlay_kind(OverlayKind::ScreenshotCapture);
+      finish_screenshot_capture(services, world, screenshot_ui);
     }
     ScreenshotCaptureCommand::Copy => {
       if let Some((frame, rect)) = screenshot_ui.current_selection() {
@@ -3031,16 +3116,24 @@ fn apply_screenshot_capture_command(
       }
     }
   }
-  if completed_operation
-    && services
-      .storage
-      .read_screenshot_profile_or_default(&mut services.log)
-      .auto_exit
-  {
-    let _ = world
-      .state
-      .remove_overlay_kind(OverlayKind::ScreenshotCapture);
+  if completed_operation && screenshot_ui.auto_exit() {
+    finish_screenshot_capture(services, world, screenshot_ui);
   }
+}
+
+fn finish_screenshot_capture(
+  services: &mut EngineServices,
+  world: &mut RuntimeWorld,
+  screenshot_ui: &mut ScreenshotCaptureUi,
+) {
+  let _ = world
+    .state
+    .remove_overlay_kind(OverlayKind::ScreenshotCapture);
+  screenshot_ui.finish();
+  // 截屏覆盖屏拥有期间产生的按键状态不得在恢复游戏 action map 后继续传播。
+  services.input.clear();
+  let _ = services.input.take_raw_key_events();
+  while services.input.next_action_event().is_some() {}
 }
 
 pub(super) fn copy_screenshot_text(
@@ -3149,14 +3242,45 @@ fn submit_font_preview_png(
 
 #[cfg(test)]
 mod tests {
+  use std::path::PathBuf;
+  use std::time::Duration;
+
   use super::{
-    AutoRecordingRuntime, has_pressed_action, queue_lua_system_event, sequential_screensaver_index,
+    AutoRecordingRuntime, format_lua_fault_message, has_pressed_action, queue_lua_system_event,
+    sequential_screensaver_index,
   };
   use crate::host_engine::services::{
-    AutoRecordingMode, InputActionEvent, InputEventType, KeyState, LuaEventBroker, LuaEventData,
-    LuaSessionKind, LuaSessionToken, MouseEvent, MouseEventKind, RecordingProfile, RecordingState,
-    Rect, SystemEvent,
+    AutoRecordingMode, InputActionEvent, InputEventType, KeyState, LuaErrorStage, LuaEventBroker,
+    LuaEventData, LuaExecutionStats, LuaSessionDiagnostics, LuaSessionError, LuaSessionKind,
+    LuaSessionToken, MouseEvent, MouseEventKind, RecordingProfile, RecordingState, Rect,
+    SystemEvent,
   };
+
+  #[test]
+  fn lua_fault_log_does_not_append_stale_successful_callback_stats() {
+    let error = LuaSessionError {
+      package_id: "test.package".to_string(),
+      session_kind: LuaSessionKind::Game,
+      stage: LuaErrorStage::ExecutionLimit,
+      callback: Some("Render"),
+      message: "execution budget exceeded after 1000 instructions and 15 ms".to_string(),
+    };
+    let diagnostics = LuaSessionDiagnostics {
+      entry_path: PathBuf::from("scripts/main.lua"),
+      stats: LuaExecutionStats {
+        instructions: 0,
+        elapsed: Duration::ZERO,
+        memory_bytes: 1,
+      },
+      memory_bytes: 97_617,
+    };
+
+    let message = format_lua_fault_message(&error, Some(&diagnostics));
+    assert!(message.contains("after 1000 instructions and 15 ms"));
+    assert!(message.contains("memory_bytes=97617"));
+    assert!(!message.contains("instructions=0"));
+    assert!(!message.contains("elapsed_ms=0"));
+  }
 
   #[test]
   fn screensaver_sequence_handles_empty_and_changed_enabled_lists() {

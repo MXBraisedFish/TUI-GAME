@@ -117,8 +117,8 @@ impl TerminalService {
       }
       Err(error) => {
         services.error(
-          LogSource::Termianl,
-          format!("[Terminal] Failed to enter terminal mode: {}", error),
+          LogSource::Terminal,
+          format!("Failed to enter terminal mode: {}", error),
         );
       }
     }

@@ -226,6 +226,20 @@ impl CanvasService {
     self.base.clear();
   }
 
+  /// 擦除基础层的矩形区域，使下层内容可以重新透出。
+  pub fn erase_rect(&mut self, x: i32, y: i32, width: u16, height: u16) {
+    Self::erase_rect_from(&mut self.base, x, y, width, height);
+  }
+
+  /// 擦除指定切片中的矩形区域。
+  pub fn erase_rect_on(&mut self, id: SliceId, x: i32, y: i32, width: u16, height: u16) -> bool {
+    let Some(slice) = self.slices.get_mut(&id).filter(|slice| slice.visible) else {
+      return false;
+    };
+    Self::erase_rect_from(&mut slice.buffer, x, y, width, height);
+    true
+  }
+
   /// 在基础层上绘制富文本（支持样式标签和排版参数）。
   pub fn text(&mut self, params: &DrawTextParams) {
     self.text_at(i32::from(params.x), i32::from(params.y), params);
@@ -827,6 +841,24 @@ impl CanvasService {
       }
     }
   }
+
+  fn erase_rect_from(buffer: &mut CanvasBuffer, x: i32, y: i32, width: u16, height: u16) {
+    let left = x.max(0).min(i32::from(buffer.width()));
+    let top = y.max(0).min(i32::from(buffer.height()));
+    let right = x
+      .saturating_add(i32::from(width))
+      .max(0)
+      .min(i32::from(buffer.width()));
+    let bottom = y
+      .saturating_add(i32::from(height))
+      .max(0)
+      .min(i32::from(buffer.height()));
+    for row in top..bottom {
+      for column in left..right {
+        buffer.erase(column as u16, row as u16);
+      }
+    }
+  }
 }
 
 // 计算矩形在指定表面上的裁剪命中区域。
@@ -1007,6 +1039,31 @@ mod tests {
     assert_eq!(raw_row_prefix(&canvas, 0, 4), "##  ");
     assert_eq!(raw_row_prefix(&canvas, 1, 4), "##  ");
     assert_eq!(raw_row_prefix(&canvas, 2, 4), "    ");
+  }
+
+  #[test]
+  fn erase_rect_removes_previous_character_and_style_writes() {
+    let mut canvas = CanvasService::new();
+    canvas.base.resize(12, 6);
+    let mut render = crate::host_engine::services::RenderService::new();
+    render.draw_filled_rect(
+      &mut canvas,
+      2,
+      1,
+      10,
+      4,
+      None,
+      None,
+      Some(TextColor::Terminal(TerminalColor::Blue)),
+    );
+
+    canvas.erase_rect(3, 2, 8, 2);
+
+    assert!(canvas.base.is_written(2, 2));
+    assert!(!canvas.base.is_written(3, 2));
+    assert!(!canvas.base.is_written(10, 3));
+    assert!(canvas.base.is_written(11, 3));
+    assert_eq!(canvas.base.get(3, 2), Some(&CanvasCell::blank()));
   }
 
   #[test]

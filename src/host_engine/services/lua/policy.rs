@@ -43,7 +43,7 @@ impl LuaPolicy {
         max_instructions: 1_000_000,
       },
       callback_budget: LuaExecutionBudget {
-        max_duration: Duration::from_millis(8),
+        max_duration: Duration::from_millis(15),
         max_instructions: 200_000,
       },
     }
@@ -110,7 +110,7 @@ mod tests {
     assert_eq!(
       policy.budget(LuaBudgetKind::Render),
       LuaExecutionBudget {
-        max_duration: Duration::from_millis(8),
+        max_duration: Duration::from_millis(15),
         max_instructions: 200_000,
       }
     );

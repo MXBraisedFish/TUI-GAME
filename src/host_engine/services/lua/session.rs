@@ -437,6 +437,8 @@ impl LuaSession {
         true
       }
     });
+    state.draw_command_count = 0;
+    state.draw_text_bytes = 0;
     draw
   }
 
@@ -631,13 +633,6 @@ impl LuaSession {
     {
       let mut api = self.api_state.borrow_mut();
       api.phase = callback.phase();
-      if callback == Callback::Render {
-        api
-          .commands
-          .retain(|command| !matches!(command, LuaHostCommand::Draw(_)));
-        api.draw_command_count = 0;
-        api.draw_text_bytes = 0;
-      }
     }
     let outcome = run_with_budget(
       &self.lua,
@@ -1701,6 +1696,106 @@ mod tests {
       "#,
     );
     LuaSession::load(spec(&source, LuaSessionKind::Game), LuaPolicy::default()).unwrap();
+  }
+
+  #[test]
+  fn drawing_is_allowed_in_all_callbacks_but_render_requests_are_not_reentrant() {
+    let source = valid_script(
+      r#"
+        function Init(ctx)
+          draw.fill_rect{ x = 2, y = 1, width = 10, height = 4, bg = color.BLUE }
+          draw.render()
+        end
+        function Update(dt)
+          draw.erase_rect{ x = 3, y = 2, width = 8, height = 2 }
+        end
+        function Render(draw_context)
+          local ok = debug.pcall{ func = function() draw.render() end }
+          debug.assert{ value = not ok }
+          draw.text{ x = 1, y = 1, text = "render" }
+        end
+      "#,
+    );
+    let mut session = LuaSession::load(spec(&source, LuaSessionKind::Game), LuaPolicy::default())
+      .expect("drawing during Init must be accepted");
+    session
+      .update()
+      .expect("drawing during Update must be accepted");
+    session
+      .render(Size {
+        width: 120,
+        height: 40,
+      })
+      .expect("ordinary drawing during Render must remain valid");
+
+    let commands = session.take_draw_commands();
+    assert!(matches!(
+      commands.first(),
+      Some(LuaDrawCommand::FillRect { .. })
+    ));
+    assert!(matches!(
+      commands.get(1),
+      Some(LuaDrawCommand::EraseRect { .. })
+    ));
+    assert!(matches!(commands.get(2), Some(LuaDrawCommand::Text { .. })));
+  }
+
+  #[test]
+  fn draw_limit_is_reset_when_the_host_finishes_each_frame() {
+    let source = valid_script(
+      r#"
+        function Update(dt)
+          local x = 0
+          local y = 0
+          for item in ipairs(char.ASCII_LETTER) do
+            x = x + 2
+            if x % 20 == 0 then
+              x = 2
+              y = y + 1
+            end
+            draw.text{ x = x, y = y, text = item.value }
+          end
+        end
+      "#,
+    );
+    let mut session = LuaSession::load(spec(&source, LuaSessionKind::Game), LuaPolicy::default())
+      .expect("the drawing fixture must load");
+
+    for _ in 0..100 {
+      session
+        .update()
+        .expect("one frame must stay below the limit");
+      assert_eq!(session.take_draw_commands().len(), 52);
+    }
+  }
+
+  #[test]
+  fn debug_print_uses_header_free_defaults() {
+    let source = valid_script(
+      r#"
+        function Init(ctx)
+          debug.print{ message = "plain" }
+        end
+      "#,
+    );
+    let mut session = LuaSession::load_with_api(
+      spec(&source, LuaSessionKind::Game),
+      LuaPolicy::default(),
+      LuaApiConfig {
+        debug_enabled: true,
+        ..LuaApiConfig::default()
+      },
+    )
+    .unwrap();
+    assert!(session.take_host_commands().iter().any(|command| matches!(
+      command,
+      LuaHostCommand::Print {
+        message,
+        time: false,
+        level: None,
+        type_head: false,
+      } if message == "plain"
+    )));
   }
 
   #[test]

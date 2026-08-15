@@ -2,6 +2,14 @@
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OverlayStackState {
   pub stack: Vec<OverlayState>,
+  transitions: Vec<OverlayStackTransition>,
+}
+
+/// 覆盖屏栈从空到非空、或从非空回到空时产生的生命周期变化。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OverlayStackTransition {
+  Started,
+  Stopped,
 }
 
 /// 覆盖层状态，包含类型及其逻辑与渲染状态
@@ -40,7 +48,10 @@ pub struct OverlayRenderState {
 
 impl OverlayStackState {
   pub fn new() -> Self {
-    Self { stack: Vec::new() }
+    Self {
+      stack: Vec::new(),
+      transitions: Vec::new(),
+    }
   }
 
   pub fn is_empty(&self) -> bool {
@@ -76,14 +87,22 @@ impl OverlayStackState {
 
   /// 压入一个覆盖层到栈顶
   pub fn push(&mut self, overlay: OverlayState) {
+    let was_empty = self.stack.is_empty();
     self.stack.retain(|item| item.kind != overlay.kind);
     self.stack.push(overlay);
     self.stack.sort_by_key(|item| item.kind.priority());
+    if was_empty {
+      self.transitions.push(OverlayStackTransition::Started);
+    }
   }
 
   /// 弹出栈顶覆盖层
   pub fn pop(&mut self) -> Option<OverlayState> {
-    self.stack.pop()
+    let overlay = self.stack.pop()?;
+    if self.stack.is_empty() {
+      self.transitions.push(OverlayStackTransition::Stopped);
+    }
+    Some(overlay)
   }
 
   pub fn current_kind(&self) -> Option<OverlayKind> {
@@ -92,7 +111,11 @@ impl OverlayStackState {
 
   pub fn remove_kind(&mut self, kind: OverlayKind) -> Option<OverlayState> {
     let index = self.stack.iter().position(|overlay| overlay.kind == kind)?;
-    Some(self.stack.remove(index))
+    let overlay = self.stack.remove(index);
+    if self.stack.is_empty() {
+      self.transitions.push(OverlayStackTransition::Stopped);
+    }
+    Some(overlay)
   }
 
   pub fn get(&self, kind: OverlayKind) -> Option<&OverlayState> {
@@ -101,7 +124,15 @@ impl OverlayStackState {
 
   /// 清空所有覆盖层
   pub fn clear(&mut self) {
+    let was_empty = self.stack.is_empty();
     self.stack.clear();
+    if !was_empty {
+      self.transitions.push(OverlayStackTransition::Stopped);
+    }
+  }
+
+  pub fn drain_transitions(&mut self) -> Vec<OverlayStackTransition> {
+    std::mem::take(&mut self.transitions)
   }
 }
 
@@ -203,5 +234,24 @@ mod tests {
 
     stack.remove_kind(OverlayKind::SafeModeWarning);
     assert_eq!(stack.current_kind(), Some(OverlayKind::LanguageLoading));
+  }
+
+  #[test]
+  fn lifecycle_transitions_only_follow_empty_stack_boundaries() {
+    let mut stack = OverlayStackState::new();
+    stack.push(overlay(OverlayKind::Screensaver));
+    stack.push(overlay(OverlayKind::WindowSizeWarning));
+    assert_eq!(
+      stack.drain_transitions(),
+      vec![OverlayStackTransition::Started]
+    );
+
+    stack.remove_kind(OverlayKind::WindowSizeWarning);
+    assert!(stack.drain_transitions().is_empty());
+    stack.remove_kind(OverlayKind::Screensaver);
+    assert_eq!(
+      stack.drain_transitions(),
+      vec![OverlayStackTransition::Stopped]
+    );
   }
 }

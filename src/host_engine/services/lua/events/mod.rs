@@ -360,8 +360,8 @@ pub enum LuaEventData {
   Focus {
     gained: bool,
   },
-  ScreensaverStarted,
-  ScreensaverStopped,
+  OverlayStarted,
+  OverlayStopped,
   Timer(LuaTimerEvent),
   Animation(LuaAnimationEvent),
   File(LuaFileEvent),
@@ -382,8 +382,8 @@ impl LuaEventData {
       Self::Mouse { .. } => "mouse",
       Self::Resize { .. } => "resize",
       Self::Focus { .. } => "focus",
-      Self::ScreensaverStarted => "screensaver_started",
-      Self::ScreensaverStopped => "screensaver_stopped",
+      Self::OverlayStarted => "overlay_started",
+      Self::OverlayStopped => "overlay_stopped",
       Self::Timer(_) => "timer",
       Self::Animation(_) => "animation",
       Self::File(_) => "file",
@@ -473,8 +473,8 @@ impl LuaEventData {
       super::LuaSessionKind::Screensaver => match self {
         Self::Action { .. }
         | Self::Mouse { .. }
-        | Self::ScreensaverStarted
-        | Self::ScreensaverStopped
+        | Self::OverlayStarted
+        | Self::OverlayStopped
         | Self::HitArea(_)
         | Self::Hyperlink(_)
         | Self::Markdown(_)
@@ -517,7 +517,7 @@ impl LuaEventData {
         data.set("height", *height)?;
       }
       Self::Focus { gained } => data.set("gained", *gained)?,
-      Self::ScreensaverStarted | Self::ScreensaverStopped => {}
+      Self::OverlayStarted | Self::OverlayStopped => {}
       Self::Timer(event) => {
         data.set("id", event.id)?;
         data.set("timer_kind", event.timer_kind.as_str())?;
@@ -888,8 +888,8 @@ mod tests {
         "resize",
       ),
       (LuaEventData::Focus { gained: true }, "focus"),
-      (LuaEventData::ScreensaverStarted, "screensaver_started"),
-      (LuaEventData::ScreensaverStopped, "screensaver_stopped"),
+      (LuaEventData::OverlayStarted, "overlay_started"),
+      (LuaEventData::OverlayStopped, "overlay_stopped"),
       (
         LuaEventData::Timer(LuaTimerEvent {
           id: 1,

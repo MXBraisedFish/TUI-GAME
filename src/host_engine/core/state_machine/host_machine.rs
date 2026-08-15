@@ -300,6 +300,13 @@ impl HostMachineState {
     self.runtime_mut()?.overlays_mut().remove_kind(kind)
   }
 
+  pub fn take_overlay_transitions(&mut self) -> Vec<super::OverlayStackTransition> {
+    self
+      .runtime_mut()
+      .map(|runtime| runtime.overlays_mut().drain_transitions())
+      .unwrap_or_default()
+  }
+
   pub fn is_host_mode(&self) -> bool {
     self
       .runtime()

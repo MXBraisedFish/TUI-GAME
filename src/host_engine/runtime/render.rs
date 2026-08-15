@@ -639,7 +639,7 @@ fn apply_lua_draw_commands(
   services: &mut EngineServices,
   commands: Vec<crate::host_engine::services::LuaDrawCommand>,
 ) {
-  use crate::host_engine::services::{LuaDrawCommand, LuaDrawTarget, TextColor};
+  use crate::host_engine::services::{LuaDrawCommand, LuaDrawTarget};
   for command in commands {
     match command {
       LuaDrawCommand::Text {
@@ -736,28 +736,9 @@ fn apply_lua_draw_commands(
         width,
         height,
       } => match target {
-        LuaDrawTarget::Base => services.render.draw_filled_rect(
-          &mut services.canvas,
-          x,
-          y,
-          width,
-          height,
-          Some(" ".to_string()),
-          Some(TextColor::Transparent),
-          Some(TextColor::Transparent),
-        ),
+        LuaDrawTarget::Base => services.canvas.erase_rect(x, y, width, height),
         LuaDrawTarget::Slice(id) => {
-          services.render.draw_filled_rect_on(
-            &mut services.canvas,
-            id,
-            x,
-            y,
-            width,
-            height,
-            Some(" ".to_string()),
-            Some(TextColor::Transparent),
-            Some(TextColor::Transparent),
-          );
+          services.canvas.erase_rect_on(id, x, y, width, height);
         }
       },
     }

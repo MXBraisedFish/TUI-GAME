@@ -78,7 +78,7 @@ pub use input::{
 };
 pub use input_method::{ImPolicy, InputMethodService};
 pub use layout::{LayoutService, Rect, Size};
-pub use log::{LogService, LogSessionId, LogSessionKind, LogSource};
+pub use log::{LogLevel, LogPrintOptions, LogService, LogSessionId, LogSessionKind, LogSource};
 pub use lua::{
   GameService, GameStopData, LuaActionState, LuaAnimationEvent, LuaAnimationEventKind,
   LuaApiConfig, LuaApiContext, LuaAudioEvent, LuaAudioEventKind, LuaBudgetKind,

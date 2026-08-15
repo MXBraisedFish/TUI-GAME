@@ -232,9 +232,7 @@ impl LuaEventBroker {
       LuaEventData::Resize { .. } | LuaEventData::Focus { .. } => {
         &[LuaSessionKind::Game, LuaSessionKind::Screensaver]
       }
-      LuaEventData::ScreensaverStarted | LuaEventData::ScreensaverStopped => {
-        &[LuaSessionKind::Game]
-      }
+      LuaEventData::OverlayStarted | LuaEventData::OverlayStopped => &[LuaSessionKind::Game],
       _ => {
         return Err(LuaEnqueueError::EventNotAllowed {
           target: LuaSessionKind::Game,
@@ -456,6 +454,22 @@ impl LuaEventBroker {
       .queue_mut(kind)
       .events
       .retain(|delivery| !matches!(delivery.event.data, LuaEventData::Action { .. }));
+  }
+
+  /// 覆盖屏取得输入所有权时，丢弃尚未派发给脚本的交互事件。
+  pub fn clear_pending_interactive(&mut self, kind: LuaSessionKind) {
+    self.queue_mut(kind).events.retain(|delivery| {
+      !matches!(
+        delivery.event.data,
+        LuaEventData::Action { .. }
+          | LuaEventData::Mouse { .. }
+          | LuaEventData::HitArea(_)
+          | LuaEventData::Hyperlink(_)
+          | LuaEventData::Markdown(_)
+          | LuaEventData::TextInput(_)
+          | LuaEventData::ScrollBox(_)
+      )
+    });
   }
 
   pub fn pending_len(&self, kind: LuaSessionKind) -> usize {
@@ -834,6 +848,28 @@ mod tests {
       .unwrap();
     assert_eq!(broker.pending_len(LuaSessionKind::Game), 2);
     assert_eq!(broker.pending_len(LuaSessionKind::Screensaver), 1);
+  }
+
+  #[test]
+  fn overlay_boundary_clears_pending_game_interactions_before_lifecycle_event() {
+    let game = token(LuaSessionKind::Game, 1);
+    let mut broker = LuaEventBroker::new();
+    broker.synchronize_sessions(Some(game), None);
+    broker
+      .push_system(
+        1,
+        LuaEventData::Action {
+          action: "jump".to_string(),
+          state: LuaActionState::Pressed,
+        },
+      )
+      .unwrap();
+    broker.clear_pending_interactive(LuaSessionKind::Game);
+    broker.push_system(1, LuaEventData::OverlayStarted).unwrap();
+
+    let events = broker.drain_frame(LuaSessionKind::Game);
+    assert_eq!(events.len(), 1);
+    assert!(matches!(events[0].event.data, LuaEventData::OverlayStarted));
   }
 
   #[test]

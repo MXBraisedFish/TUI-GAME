@@ -55,9 +55,7 @@ pub fn close(services: &mut EngineServices, mut world: RuntimeWorld, _exit_state
   }
   let _ = services.input_method.release_input_method();
 
-  services
-    .log
-    .info(LogSource::Shutdown, "[Shutdown] Engine closed.");
+  services.log.info(LogSource::Shutdown, "Engine closed.");
 
   services.terminal.exit();
   world.state.enter_stopped();

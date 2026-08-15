@@ -53,6 +53,15 @@ impl CanvasBuffer {
       self.written[index] = true;
     }
   }
+
+  /// 擦除指定单元格，使其恢复为未写入状态。
+  pub fn erase(&mut self, x: u16, y: u16) {
+    let Some(index) = self.index(x, y) else {
+      return;
+    };
+    self.cells[index] = CanvasCell::blank();
+    self.written[index] = false;
+  }
   pub fn get(&self, x: u16, y: u16) -> Option<&CanvasCell> {
     let index = self.index(x, y)?;
     self.cells.get(index)

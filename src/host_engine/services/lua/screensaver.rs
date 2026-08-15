@@ -100,6 +100,7 @@ impl ScreensaverService {
     self.session.as_ref().map(|session| LuaSessionDiagnostics {
       entry_path: session.entry_path().to_path_buf(),
       stats: session.last_stats(),
+      memory_bytes: session.memory_used(),
     })
   }
 

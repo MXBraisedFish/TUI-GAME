@@ -43,8 +43,8 @@ pub fn install_panic_hook() {
     // 终端恢复必须先于日志与输出；后两者本身也可能失败。
     TerminalService::force_restore();
 
-    let log_dir = std::path::Path::new("data/log");
-    let logged = std::fs::create_dir_all(log_dir)
+    let log_dir = crash_log_dir();
+    let logged = std::fs::create_dir_all(&log_dir)
       .and_then(|_| {
         std::fs::OpenOptions::new()
           .create(true)
@@ -59,4 +59,18 @@ pub fn install_panic_hook() {
       previous_hook(panic_info);
     }
   }))
+}
+
+fn crash_log_dir() -> std::path::PathBuf {
+  if let Ok(current_dir) = std::env::current_dir()
+    && (current_dir.join("assets").exists() || current_dir.join("Cargo.toml").exists())
+  {
+    return current_dir.join("data/log");
+  }
+  if let Ok(executable) = std::env::current_exe()
+    && let Some(directory) = executable.parent()
+  {
+    return directory.join("data/log");
+  }
+  std::path::PathBuf::from("data/log")
 }

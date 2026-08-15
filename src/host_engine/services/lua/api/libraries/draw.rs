@@ -119,6 +119,12 @@ pub(super) fn draw(lua: &Lua, state: SharedApiState) -> mlua::Result<Table> {
     lua.create_function(move |_, values: MultiValue| {
       args::no_args("draw.render", values)?;
       let mut state = state2.borrow_mut();
+      if state.phase == LuaCallPhase::Render {
+        return Err(args::message(
+          "draw.render",
+          "invalid_state: draw.render cannot be called during Render",
+        ));
+      }
       if !state
         .commands
         .iter()
@@ -134,12 +140,6 @@ pub(super) fn draw(lua: &Lua, state: SharedApiState) -> mlua::Result<Table> {
 
 fn enqueue_draw(state: &SharedApiState, method: &str, command: LuaDrawCommand) -> mlua::Result<()> {
   let mut state = state.borrow_mut();
-  if state.phase != LuaCallPhase::Render {
-    return Err(args::message(
-      method,
-      "invalid_state: drawing is only allowed during Render",
-    ));
-  }
   if state.draw_command_count >= 4096 {
     state.fatal_api_error = true;
     return Err(args::message(

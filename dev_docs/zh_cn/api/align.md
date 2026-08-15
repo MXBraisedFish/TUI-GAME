@@ -2,7 +2,7 @@
 
 ## 基本库说明
 
-`align` 根据当前终端尺寸（Base 可视区域）计算对齐坐标。游戏与屏保会话均可使用。坐标基于终端左上角原点，**结果允许为负数**。库表为只读。
+`align` 根据当前画布尺寸和相对位置计算对齐坐标。
 
 ## 目录
 
@@ -21,91 +21,136 @@
 
 ### 方法
 
-| 方法名 | 说明 |
-| ------ | ---- |
-| `align.resolve_x{...}` | 计算水平坐标 |
-| `align.resolve_y{...}` | 计算垂直坐标 |
+| 方法名                       | 说明        |
+| ------------------------- | --------- |
+| `align.resolve_x{...}`    | 计算水平坐标    |
+| `align.resolve_y{...}`    | 计算垂直坐标    |
 | `align.resolve_rect{...}` | 计算矩形左上角坐标 |
 
 ## 常量
 
-### `AUTO`
+## `AUTO`
 
-| 项目 | 内容 |
-| ---- | ---- |
-| **可应用参数** | `horizontal_align`、`vertical_align` |
-| **作用** | 自动对齐：水平时等价 `HORIZONTAL_CENTER`，垂直时等价 `VERTICAL_CENTER` |
-| **额外补充** | 值为字符串 `"auto"` |
+自动对齐模式。
 
----
+**可用于**
 
-### `LEFT`
+- 参数 `horizontal_align`
+- 参数 `vertical_align`
 
-| 项目 | 内容 |
-| ---- | ---- |
-| **可应用参数** | `horizontal_align` |
-| **作用** | 左对齐：以左边缘为锚点 |
-| **额外补充** | 值为字符串 `"left"` |
+### 调用
 
----
+```lua
+align.AUTO
+```
 
-### `HORIZONTAL_CENTER`
+### 额外补充
 
-| 项目 | 内容 |
-| ---- | ---- |
-| **可应用参数** | `horizontal_align` |
-| **作用** | 水平居中：以终端水平中心为锚点 |
-| **额外补充** | 值为字符串 `"horizontal_center"` |
+- `align` API 中用于水平对齐时等价于 `align.HORIZONTAL_CENTER`。
+- `align` API 中用于垂直对齐时等价于 `align.VERTICAL_CENTER`。
+- `draw` 和 `measurement` API 中用于垂直对齐时等价于 `align.LEFT`。
 
 ---
 
-### `RIGHT`
+## `HORIZONTAL_CENTER`
 
-| 项目 | 内容 |
-| ---- | ---- |
-| **可应用参数** | `horizontal_align` |
-| **作用** | 右对齐：以右边缘为锚点 |
-| **额外补充** | 值为字符串 `"right"` |
+水平居中模式。
 
----
+**可用于**
 
-### `TOP`
+- 参数 `horizontal_align`
 
-| 项目 | 内容 |
-| ---- | ---- |
-| **可应用参数** | `vertical_align` |
-| **作用** | 顶部对齐：以上边缘为锚点 |
-| **额外补充** | 值为字符串 `"top"` |
+### 调用
+
+```lua
+align.HORIZONTAL_CENTER
+```
 
 ---
 
-### `VERTICAL_CENTER`
+## `RIGHT`
 
-| 项目 | 内容 |
-| ---- | ---- |
-| **可应用参数** | `vertical_align` |
-| **作用** | 垂直居中：以终端垂直中心为锚点 |
-| **额外补充** | 值为字符串 `"vertical_center"` |
+右对齐模式。
 
----
+**可用于**
 
-### `BOTTOM`
+- 参数 `horizontal_align`
 
-| 项目 | 内容 |
-| ---- | ---- |
-| **可应用参数** | `vertical_align` |
-| **作用** | 底部对齐：以下边缘为锚点 |
-| **额外补充** | 值为字符串 `"bottom"` |
+### 调用
+
+```lua
+align.RIGHT
+```
 
 ---
 
-### `CENTER`
+## `TOP`
 
-| 项目 | 内容 |
-| ---- | ---- |
-| **可应用参数** | `horizontal_align`、`vertical_align` |
-| **作用** | 双向居中：水平/垂直均可使用，等价对应方向的居中常量 |
-| **额外补充** | 值为字符串 `"center"` |
+顶部对齐模式。
+
+**可用于**
+
+- 参数 `vertical_align`
+
+### 调用
+
+```lua
+align.TOP
+```
+
+---
+
+## `VERTICAL_CENTER`
+
+垂直居中模式。
+
+**可用于**
+
+- 参数 `vertical_align`
+
+### 调用
+
+```lua
+align.VERTICAL_CENTER
+```
+
+---
+
+## `BOTTOM`
+
+底部对齐模式。
+
+**可用于**
+
+- 参数 `vertical_align`
+
+### 调用
+
+```lua
+align.BOTTOM
+```
+
+---
+
+## `CENTER`
+
+双向居中模式。
+
+**可用于**
+
+- 参数 `horizontal_align`
+- 参数 `vertical_align`
+
+### 调用
+
+```lua
+align.CENTER
+```
+
+### 额外补充
+
+- 水平对齐时等价于 `align.HORIZONTAL_CENTER`。
+- 垂直对齐时等价于 `align.VERTICAL_CENTER`。
 
 ---
 
@@ -132,6 +177,39 @@
 | `x` | integer | 解析后的水平坐标 | 允许为负数 |
 
 - **方法的使用**：
+
+```lua
+
+```
+
+## `resolve_x`
+
+根据元素宽度与水平对齐方式，计算元素左边缘的 x 坐标。
+
+### 调用
+
+```lua
+-- 表参数
+align.resolve_x{}
+```
+
+### 参数
+
+| 参数名                | 类型          | 必填  | 默认值      | 说明       |
+| ------------------ | ----------- | --- | -------- | -------- |
+| `width`            | integer     | 是   | -        | 元素宽度     |
+| `horizontal_align` | const-align | 是   | -        | 水平对齐方式   |
+| `offset_x`         | integer     | 否   | `0`      | 锚点上的水平偏移 |
+| `relative_x`       | integer     | 否   | `nil`    | x 轴相对锚点  |
+| `slice_layer`      | string      | 否   | `"base"` | 图层       |
+
+### 返回
+
+| 返回值名 | 类型 | 说明 |
+| --- | --- | --- |
+| `x` | integer | 解析后的水平坐标 |
+
+### 示例
 
 ```lua
 

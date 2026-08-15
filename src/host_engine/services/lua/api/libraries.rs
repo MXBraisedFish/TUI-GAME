@@ -132,6 +132,46 @@ fn enqueue_debug_log(state: &mut super::LuaApiState, level: &str, message: Strin
   }
 }
 
+fn enqueue_debug_print(
+  state: &mut super::LuaApiState,
+  message: String,
+  time: bool,
+  level: Option<String>,
+  type_head: bool,
+) {
+  if state.debug_log_window_started.elapsed() >= Duration::from_secs(1) {
+    if state.debug_log_dropped > 0 {
+      push_host_command(
+        state,
+        LuaHostCommand::Log {
+          level: "warn".to_string(),
+          message: format!(
+            "suppressed {} Lua debug log messages due to rate limiting",
+            state.debug_log_dropped
+          ),
+        },
+      );
+    }
+    state.debug_log_window_started = std::time::Instant::now();
+    state.debug_log_count = 0;
+    state.debug_log_dropped = 0;
+  }
+  if state.debug_log_count < 100 {
+    state.debug_log_count += 1;
+    push_host_command(
+      state,
+      LuaHostCommand::Print {
+        message: truncate(message, 4096),
+        time,
+        level,
+        type_head,
+      },
+    );
+  } else {
+    state.debug_log_dropped = state.debug_log_dropped.saturating_add(1);
+  }
+}
+
 fn truncate(mut value: String, max: usize) -> String {
   if value.len() > max {
     while !value.is_char_boundary(max.min(value.len())) {

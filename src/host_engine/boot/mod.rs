@@ -15,13 +15,11 @@ pub fn prepare() -> BootOutput {
     terminal_profile.mouse,
   );
 
-  services
-    .log
-    .info(LogSource::Boot, "[Boot] Preparing engine...");
+  services.log.info(LogSource::Boot, "Preparing engine...");
 
   services
     .log
-    .info(LogSource::Boot, "[Boot] Preparing package scan...");
+    .info(LogSource::Boot, "Preparing package scan...");
 
   services
     .i18n
@@ -82,13 +80,13 @@ pub fn prepare() -> BootOutput {
 
   services
     .log
-    .info(LogSource::Boot, "[Boot] Package scan scheduled.");
+    .info(LogSource::Boot, "Package scan scheduled.");
 
   let world = RuntimeWorld::new();
 
   services.log.info(
     LogSource::Boot,
-    &format!("[Boot] Storage root: {}", root_dir.display()),
+    &format!("Storage root: {}", root_dir.display()),
   );
 
   BootOutput { services, world }

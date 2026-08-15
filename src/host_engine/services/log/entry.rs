@@ -9,3 +9,11 @@ pub struct LogEntry {
   pub source: LogSource,
   pub message: String,
 }
+
+/// 可选日志头配置，主要用于脚本自定义打印。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct LogPrintOptions {
+  pub time: bool,
+  pub level: Option<LogLevel>,
+  pub type_head: bool,
+}

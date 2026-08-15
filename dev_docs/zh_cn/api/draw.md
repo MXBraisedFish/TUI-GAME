@@ -2,155 +2,314 @@
 
 ## 基本库说明
 
-`draw` 提供绘制指令：文本、填充矩形、描边矩形、擦除与请求渲染。游戏与屏保会话均可使用。**所有方法只能在 `Render` 回调阶段调用**，其余阶段调用会报错。绘制结果在回调结束后统一提交渲染。库表为只读。
+`draw` 提供画布绘制指令，可在 `Render` 回调中使用。
+
+---
 
 ## 目录
 
-### 常量
-
-本库无常量。
-
 ### 方法
 
-| 方法名                     | 说明       |
-| ----------------------- | -------- |
-| `draw.text{...}`        | 绘制文本     |
-| `draw.fill_rect{...}`   | 填充矩形     |
-| `draw.stroke_rect{...}` | 描边矩形     |
-| `draw.erase_rect{...}`  | 擦除矩形区域   |
-| `draw.render()`         | 请求本帧渲染输出 |
+| 方法名           | 说明                 | 索引                          |
+| ------------- | ------------------ | --------------------------- |
+| `text`        | 在指定位置绘制文本          | [text](#text)               |
+| `fill_rect`   | 填充一个矩形区域           | [fill_rect](#fill_rect)     |
+| `stroke_rect` | 绘制一个矩形边框           | [stroke_rect](#stroke_rect) |
+| `erase_rect`  | 擦除指定矩形区域           | [erase_rect](#erase_rect)   |
+| `render`      | 请求执行一次 `Render` 回调 | [render](#render)           |
+
+---
 
 ## 方法
 
-### `text`
+## `text`
 
-- **方法作用**：在指定位置绘制文本。
-- **方法要求**：无（仅限 `Render` 阶段）
-- **方法参数**：
+在指定位置绘制文本。
 
-| 参数名                | 类型      | 必填  | 默认值      | 说明       | 额外补充                                                          |
-| ------------------ | ------- | --- | -------- | -------- | ------------------------------------------------------------- |
-| `x`                | integer | 是   | —        | 左上角 x 坐标 | 坐标原点为左上角                                                      |
-| `y`                | integer | 是   | —        | 左上角 y 坐标 | —                                                             |
-| `text`             | string  | 是   | —        | 要绘制的文本   | —                                                             |
-| `fg`               | const   | 否   | `nil`    | 前景色      | 使用 `color.*` 常量或 `color.rgb/hex`                              |
-| `bg`               | const   | 否   | `nil`    | 背景色      | 可为 `color.TRANSPARENT`                                        |
-| `horizontal_align` | const   | 否   | `"left"` | 多行文本相对第一行的水平对齐 | 支持 `left` / `horizontal_center` / `center` / `right` / `auto` |
-| `auto_wrap`        | boolean | 否   | 自动       | 是否启用自动换行 | `nil`/`true` 为自动换行，`false` 为普通换行                              |
-| `word_wrap`        | boolean | 否   | `true`   | 是否整词换行   | 关闭后按字符任意断行                                                    |
-| `max_width`        | integer | 否   | `nil`    | 最大宽度约束   | 必须满足 `1..65535`                                               |
-| `max_height`       | integer | 否   | `nil`    | 最大高度约束   | 必须满足 `1..65535`                                               |
-| `overflow_marker`  | string  | 否   | `"..."`  | 溢出省略标记   | —                                                             |
-| `rich_params`      | table   | 否   | `nil`    | 富文本参数表   | 键值均为字符串/数字/布尔                                                 |
-| `bold`             | boolean | 否   | `false`  | 粗体       | —                                                             |
-| `italic`           | boolean | 否   | `false`  | 斜体       | —                                                             |
-| `underline`        | boolean | 否   | `false`  | 下划线      | —                                                             |
-| `strike`           | boolean | 否   | `false`  | 删除线      | —                                                             |
-| `blink`            | boolean | 否   | `false`  | 闪烁       | —                                                             |
-| `reverse`          | boolean | 否   | `false`  | 反显       | —                                                             |
-| `hidden`           | boolean | 否   | `false`  | 隐藏       | —                                                             |
-| `dim`              | boolean | 否   | `false`  | 暗淡       | —                                                             |
-| `text_mode`        | const   | 否   | `"auto"` | 文本模式     | `AUTO` 识别并移除 `f%`；`PLAIN_TEXT`/`RICH_TEXT` 均不移除前缀 |
-| `slice_layer`      | string  | 否   | `"base"` | 图层       | 当前仅支持 `"base"`                                                |
-
-- **方法返回**：无返回值。
-
-- **方法的使用**：
+### 调用
 
 ```lua
-
+-- 表参数
+draw.text{}
 ```
+
+### 参数
+
+| 参数                 | 类型           | 必填  | 默认值           | 说明           |
+| ------------------ | ------------ | --- | ------------- | ------------ |
+| `x`                | integer      | 是   | -             | 文本起始位置的 x 坐标 |
+| `y`                | integer      | 是   | -             | 文本起始位置的 y 坐标 |
+| `text`             | string       | 是   | -             | 要绘制的文本       |
+| `fg`               | const-color  | 否   | `nil`         | 前景色          |
+| `bg`               | const-color  | 否   | `nil`         | 背景色          |
+| `slice_layer`      | string       | 否   | `"base"`      | 绘制目标图层       |
+| `horizontal_align` | const-align  | 否   | `align.LEFT`  | 多行文本的水平对齐方式  |
+| `auto_wrap`        | boolean      | 否   | `true`        | 是否自动换行       |
+| `word_wrap`        | boolean      | 否   | `true`        | 是否按完整单词换行    |
+| `max_width`        | integer      | 否   | `nil`         | 最大绘制宽度       |
+| `max_height`       | integer      | 否   | `nil`         | 最大绘制高度       |
+| `overflow_marker`  | string       | 否   | `"..."`       | 文本溢出时使用的省略标记 |
+| `text_mode`        | const-string | 否   | `string.AUTO` | 文本解析模式       |
+| `rich_params`      | table        | 否   | `nil`         | 富文本参数        |
+| `bold`             | boolean      | 否   | `false`       | 粗体           |
+| `italic`           | boolean      | 否   | `false`       | 斜体           |
+| `underline`        | boolean      | 否   | `false`       | 下划线          |
+| `strike`           | boolean      | 否   | `false`       | 删除线          |
+| `blink`            | boolean      | 否   | `false`       | 闪烁           |
+| `reverse`          | boolean      | 否   | `false`       | 反显           |
+| `hidden`           | boolean      | 否   | `false`       | 隐藏           |
+| `dim`              | boolean      | 否   | `false`       | 暗淡           |
+
+### 返回
+
+无。
+
+### 示例
+
+```lua
+draw.text {
+	x = 2,
+	y = 1,
+	text = "Hello TUI GAME",
+	fg = color.BRIGHT_RED
+}
+
+draw.text {
+	x = 2,
+	y = 2,
+	text = "Hello TUI GAME",
+	fg = color.WHITE,
+	italic = true
+}
+```
+
+输出：
+
+![draw.text示例](../image/draw_text_example.png)
 
 ---
 
-### `fill_rect`
+## `fill_rect`
 
-- **方法作用**：填充一个矩形区域。
-- **方法要求**：无（仅限 `Render` 阶段）
-- **方法参数**：
+填充一个矩形区域。
 
-| 参数名 | 类型 | 必填 | 默认值 | 说明 | 额外补充 |
-| ------ | ---- | ---- | ------ | ---- | -------- |
-| `x` | integer | 是 | — | 左上角 x 坐标 | — |
-| `y` | integer | 是 | — | 左上角 y 坐标 | — |
-| `width` | integer | 是 | — | 宽度 | 必须满足 `1..65535` |
-| `height` | integer | 是 | — | 高度 | 必须满足 `1..65535` |
-| `char` | string | 否 | `nil` | 填充字符 | 必须为单个显示格字符 |
-| `fg` | const | 否 | `nil` | 前景色 | — |
-| `bg` | const | 否 | `nil` | 背景色 | 可为 `color.TRANSPARENT` |
-| `slice_layer` | string | 否 | `"base"` | 图层 | 当前仅支持 `"base"` |
-
-- **方法返回**：无返回值。
-
-- **方法的使用**：
+### 调用
 
 ```lua
-
+-- 表参数
+draw.fill_rect{}
 ```
+
+### 参数
+
+| 参数            | 类型          | 必填  | 默认值      | 说明          |
+| ------------- | ----------- | --- | -------- | ----------- |
+| `x`           | integer     | 是   | -        | 矩形左上角的 x 坐标 |
+| `y`           | integer     | 是   | -        | 矩形左上角的 y 坐标 |
+| `width`       | integer     | 是   | -        | 矩形宽度        |
+| `height`      | integer     | 是   | -        | 矩形高度        |
+| `char`        | string      | 否   | `nil`    | 填充字符        |
+| `fg`          | const-color | 否   | `nil`    | 前景色         |
+| `bg`          | const-color | 否   | `nil`    | 背景色         |
+| `slice_layer` | string      | 否   | `"base"` | 绘制目标图层      |
+
+### 返回
+
+无。
+
+### 示例
+
+```lua
+draw.fill_rect {
+	x = 2,
+	y = 1,
+	width = 10,
+	height = 4,
+	bg = color.BLUE
+}
+
+draw.fill_rect {
+	x = 13,
+	y = 1,
+	width = 10,
+	height = 4,
+	char = "-",
+	fg = color.GREEN
+}
+```
+
+输出：
+
+![draw.fill_rect示例](../image/draw_fill_rect_example.png)
+
+### 额外补充
+
+- `char` 参数必须为宽度为 **1** 的字符。
 
 ---
 
-### `stroke_rect`
+## `stroke_rect`
 
-- **方法作用**：绘制一个矩形边框。
-- **方法要求**：无（仅限 `Render` 阶段）
-- **方法参数**：
+绘制一个矩形边框。
 
-| 参数名 | 类型 | 必填 | 默认值 | 说明 | 额外补充 |
-| ------ | ---- | ---- | ------ | ---- | -------- |
-| `x` | integer | 是 | — | 左上角 x 坐标 | — |
-| `y` | integer | 是 | — | 左上角 y 坐标 | — |
-| `width` | integer | 是 | — | 宽度 | 必须满足 `1..65535` |
-| `height` | integer | 是 | — | 高度 | 必须满足 `1..65535` |
-| `fg` | const | 否 | `nil` | 前景色 | — |
-| `bg` | const | 否 | `nil` | 背景色 | 可为 `color.TRANSPARENT` |
-| `border_char` | const | 否 | `nil` | 自定义边框字符表 | 填写 `char.LINE/BOLD_LINE/DOUBLE_LINE/ROUNDED_LINE` 常量或自定义边框表，省略时使用单线，单个字符须占一个显示格 |
-| `slice_layer` | string | 否 | `"base"` | 图层 | 当前仅支持 `"base"` |
-
-- **方法返回**：无返回值。
-
-- **方法的使用**：
+### 调用
 
 ```lua
-
+-- 表参数
+draw.stroke_rect{}
 ```
+
+### 参数
+
+| 参数            | 类型                 | 必填  | 默认值         | 说明          |
+| ------------- | ------------------ | --- | ----------- | ----------- |
+| `x`           | integer            | 是   | -           | 矩形左上角的 x 坐标 |
+| `y`           | integer            | 是   | -           | 矩形左上角的 y 坐标 |
+| `width`       | integer            | 是   | -           | 矩形宽度        |
+| `height`      | integer            | 是   | -           | 矩形高度        |
+| `fg`          | const-color        | 否   | `nil`       | 边框前景色       |
+| `bg`          | const-color        | 否   | `nil`       | 边框背景色       |
+| `border_char` | const-char / table | 否   | `char.LINE` | 边框字符        |
+| `slice_layer` | string             | 否   | `"base"`    | 绘制目标图层      |
+
+### 返回
+
+无。
+
+### 示例
+
+```lua
+draw.stroke_rect {
+	x = 2,
+	y = 1,
+	width = 12,
+	height = 5,
+	fg = color.WHITE,
+	border_char = char.ROUNDED_LINE
+}
+
+draw.stroke_rect {
+	x = 15,
+	y = 1,
+	width = 12,
+	height = 5,
+	fg = color.YELLOW,
+	border_char = {
+		top = "-",
+		left_top = "+",
+		left = "|",
+		left_bottom = "+",
+		bottom = "-",
+		right_bottom = "+",
+		right = "|",
+		right_top = "+",
+	}
+}
+```
+
+输出：
+
+![draw.stroke_rect示例](../image/draw_stroke_rect_example.png)
+
+### 额外补充
+
+	- `border_char` 表：
+```lua
+{
+	top          = " ", -- string / const-char
+	left_top     = " ", -- string / const-char
+	left         = " ", -- string / const-char
+	left_bottom  = " ", -- string / const-char
+	bottom       = " ", -- string / const-char
+	right_bottom = " ", -- string / const-char
+	right        = " ", -- string / const-char
+	right_top    = " "  -- string / const-char
+}
+```
+- `border_char` 每个字段必须为宽度为 **1** 的字符。
 
 ---
 
-### `erase_rect`
+## `erase_rect`
 
-- **方法作用**：擦除矩形区域，恢复为下层内容。
-- **方法要求**：无（仅限 `Render` 阶段）
-- **方法参数**：
+擦除指定矩形区域。
 
-| 参数名 | 类型 | 必填 | 默认值 | 说明 | 额外补充 |
-| ------ | ---- | ---- | ------ | ---- | -------- |
-| `x` | integer | 是 | — | 左上角 x 坐标 | — |
-| `y` | integer | 是 | — | 左上角 y 坐标 | — |
-| `width` | integer | 是 | — | 宽度 | 必须满足 `1..65535` |
-| `height` | integer | 是 | — | 高度 | 必须满足 `1..65535` |
-| `slice_layer` | string | 否 | `"base"` | 图层 | 当前仅支持 `"base"` |
-
-- **方法返回**：无返回值。
-
-- **方法的使用**：
+### 调用
 
 ```lua
-
+-- 表参数
+draw.erase_rect{}
 ```
+
+### 参数
+
+| 参数            | 类型      | 必填  | 默认值      | 说明          |
+| ------------- | ------- | --- | -------- | ----------- |
+| `x`           | integer | 是   | -        | 矩形左上角的 x 坐标 |
+| `y`           | integer | 是   | -        | 矩形左上角的 y 坐标 |
+| `width`       | integer | 是   | -        | 矩形宽度        |
+| `height`      | integer | 是   | -        | 矩形高度        |
+| `slice_layer` | string  | 否   | `"base"` | 绘制目标图层      |
+
+### 返回
+
+无。
+
+### 示例
+
+```lua
+draw.fill_rect {
+	x = 2,
+	y = 1,
+	width = 10,
+	height = 4,
+	bg = color.BLUE
+}
+
+draw.erase_rect {
+	x = 3,
+	y = 2,
+	width = 8,
+	height = 2,
+}
+```
+
+输出：
+
+![draw.erase_rect示例](../image/draw_erase_rect_example.png)
 
 ---
 
-### `render`
+## `render`
 
-- **方法作用**：请求将本帧已入队的绘制指令输出到终端。
-- **方法要求**：无（仅限 `Render` 阶段）
-- **方法参数**：无参数。
-
-- **方法返回**：无返回值。
-
-- **方法的使用**：
+请求执行一次 `Render` 回调。
+### 调用
 
 ```lua
-
+-- 单参数
+draw.render()
 ```
+
+### 返回
+
+无。
+
+### 示例
+
+```lua
+function HandleEvent(event)
+	-- 更新需要显示的内容
+	message = "Hello TUI GAME"
+
+	-- 请求重新绘制
+	draw.render()
+end
+
+function Render()
+	-- 绘制逻辑
+end
+```
+
+### 额外补充
+
+- **不可**在 `Render` 回调中调用。

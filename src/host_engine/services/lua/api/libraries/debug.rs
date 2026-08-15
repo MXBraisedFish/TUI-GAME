@@ -23,18 +23,31 @@ pub(super) fn debug(lua: &Lua, state: SharedApiState) -> mlua::Result<Table> {
           ignore_once(&mut state.borrow_mut(), method, "debug mode is disabled");
           return Ok(());
         }
-        let message = if name == "print" {
+        if name == "print" {
           let table = args::named(method, values, &["message", "time", "level", "type_head"])?;
-          args::string(
+          let message = args::string(
             args::required(&table, method, "message")?,
             method,
             "message",
-          )?
+          )?;
+          let time = args::optional_bool(&table, method, "time", false)?;
+          let type_head = args::optional_bool(&table, method, "type_head", false)?;
+          let level = args::optional_string(&table, method, "level", None)?;
+          let level = level
+            .map(|level| level.to_ascii_lowercase())
+            .map(|level| match level.as_str() {
+              "trace" | "debug" | "info" | "warn" | "error" | "fatal" => Ok(level),
+              _ => Err(args::message(
+                method,
+                "level must be trace, debug, info, warn, error, fatal, or nil",
+              )),
+            })
+            .transpose()?;
+          enqueue_debug_print(&mut state.borrow_mut(), message, time, level, type_head);
         } else {
-          args::string(args::one(method, "message", values)?, method, "message")?
-        };
-        let mut state = state.borrow_mut();
-        enqueue_debug_log(&mut state, level, message);
+          let message = args::string(args::one(method, "message", values)?, method, "message")?;
+          enqueue_debug_log(&mut state.borrow_mut(), level, message);
+        }
         Ok(())
       })?,
     )?;

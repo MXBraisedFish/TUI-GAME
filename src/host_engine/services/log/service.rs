@@ -7,7 +7,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::host_engine::services::storage::atomic_write;
 use crate::host_engine::services::{FileService, I18nService, PackageId};
 
-use super::{LogEntry, LogLabels, LogLevel, LogSource, format_file_log_entry, format_log_entry};
+use super::{
+  LogEntry, LogLabels, LogLevel, LogPrintOptions, LogSource, format_file_log_entry,
+  format_log_entry, format_print_log_entry,
+};
 
 /// 日志服务：以环形队列存储最近 N 条日志，支持按级别写入与导出。
 pub struct LogService {
@@ -133,6 +136,7 @@ impl LogService {
       self.record_package_file_error(path, io::Error::new(error.kind(), error.to_string()));
       return Err(error);
     }
+    self.package_file_errors.remove(&path);
     self.session_logs.insert(
       id,
       SessionLog {
@@ -230,6 +234,44 @@ impl LogService {
     self.push_session(id, LogLevel::Error, source, message);
   }
 
+  pub fn print_session(
+    &mut self,
+    id: LogSessionId,
+    source: LogSource,
+    message: impl Into<String>,
+    options: LogPrintOptions,
+  ) {
+    let entry = self.make_entry(
+      options.level.unwrap_or(LogLevel::Info),
+      source,
+      message.into(),
+    );
+    if let Some(session) = self.session_logs.get(&id) {
+      let text = format_print_log_entry(&entry, &self.labels, options);
+      let path = session.path.clone();
+      self.write_package_entry(&path, &text);
+    }
+  }
+
+  pub fn print_package(
+    &mut self,
+    package_id: &PackageId,
+    source: LogSource,
+    message: impl Into<String>,
+    options: LogPrintOptions,
+  ) {
+    let entry = self.make_entry(
+      options.level.unwrap_or(LogLevel::Info),
+      source,
+      message.into(),
+    );
+    let text = format_print_log_entry(&entry, &self.labels, options);
+    match self.package_log_path(package_id) {
+      Ok(path) => self.write_package_entry(&path, &text),
+      Err(error) => self.record_package_file_error(PathBuf::from(package_id.storage_key()), error),
+    }
+  }
+
   fn push_session(
     &mut self,
     id: LogSessionId,
@@ -261,13 +303,17 @@ impl LogService {
   }
 
   fn write_package_entry(&mut self, path: &std::path::Path, text: &str) {
-    if let Err(error) = append_capped(path, text, MAX_PACKAGE_LOG_BYTES) {
-      self.record_package_file_error(path.to_path_buf(), error);
+    match append_capped(path, text, MAX_PACKAGE_LOG_BYTES) {
+      Ok(()) => {
+        self.package_file_errors.remove(path);
+      }
+      Err(error) => {
+        self.record_package_file_error(path.to_path_buf(), error);
+      }
     }
   }
 
   fn record_package_file_error(&mut self, path: PathBuf, error: io::Error) {
-    self.last_file_error = Some(error.to_string());
     if self.package_file_errors.insert(path.clone()) {
       self.push(
         LogLevel::Error,

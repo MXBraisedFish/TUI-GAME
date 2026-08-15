@@ -6,8 +6,8 @@ mod phase;
 mod service;
 mod source;
 
-pub use entry::LogEntry;
-pub use formatter::{format_file_log_entry, format_log_entry};
+pub use entry::{LogEntry, LogPrintOptions};
+pub use formatter::{format_file_log_entry, format_log_entry, format_print_log_entry};
 pub use labels::LogLabels;
 pub use level::{LogLevel, format_log_level};
 pub use phase::LogPhase;
