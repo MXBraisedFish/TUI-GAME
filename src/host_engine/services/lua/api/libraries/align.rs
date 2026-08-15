@@ -86,7 +86,7 @@ pub(super) fn align(lua: &Lua, state: SharedApiState) -> mlua::Result<Table> {
   let state = state.clone();
   source.raw_set(
     "resolve_rect",
-    lua.create_function(move |_, values: MultiValue| {
+    lua.create_function(move |lua, values: MultiValue| {
       let method = "align.resolve_rect";
       let table = args::named(
         method,
@@ -135,7 +135,10 @@ pub(super) fn align(lua: &Lua, state: SharedApiState) -> mlua::Result<Table> {
         args::optional_integer(&table, method, "offset_y", Some(0))?.unwrap(),
         false,
       )?;
-      Ok((x, y))
+      let result = lua.create_table()?;
+      result.raw_set("x", x)?;
+      result.raw_set("y", y)?;
+      Ok(result)
     })?,
   )?;
   readonly::proxy(lua, source)

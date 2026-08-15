@@ -26,16 +26,8 @@ function UpdateFrame(dt, alpha)
 end
 
 function Render(surface)
-  for item in ipairs(char.ASCII) do
-    x = x + 2
-    if x % 20 == 0 then
-      x = 2
-      y = y + 1
-    end
-    draw.text { x = x, y = y, text = item.value }
-  end
-  x = 0
-  y = 0
+  x = align.resolve_x {width = 5, horizontal_align = align.CENTER}
+  draw.text {x = x, y = 0, text = "Hellow"}
 end
 
 function SaveGame()

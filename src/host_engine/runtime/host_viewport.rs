@@ -55,6 +55,15 @@ fn refresh_host_areas(host_objects: &mut HostObjectPool, physical: Size, top_too
   );
 }
 
+pub(super) fn developer_size(physical: Size, top_toolbar: bool) -> Size {
+  let reserved_height = u16::from(top_toolbar && physical.height > 0)
+    .saturating_add(u16::from(top_toolbar && physical.height > 1));
+  Size {
+    width: physical.width,
+    height: physical.height.saturating_sub(reserved_height),
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -113,6 +122,49 @@ mod tests {
         y: 2,
         width: 120,
         height: 38
+      }
+    );
+  }
+
+  #[test]
+  fn developer_size_matches_the_toolbar_viewport() {
+    assert_eq!(
+      developer_size(
+        Size {
+          width: 120,
+          height: 40,
+        },
+        true,
+      ),
+      Size {
+        width: 120,
+        height: 38,
+      }
+    );
+    assert_eq!(
+      developer_size(
+        Size {
+          width: 120,
+          height: 1,
+        },
+        true,
+      ),
+      Size {
+        width: 120,
+        height: 0,
+      }
+    );
+    assert_eq!(
+      developer_size(
+        Size {
+          width: 120,
+          height: 40,
+        },
+        false,
+      ),
+      Size {
+        width: 120,
+        height: 40,
       }
     );
   }

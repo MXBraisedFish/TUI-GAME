@@ -1707,6 +1707,45 @@ mod tests {
   }
 
   #[test]
+  fn align_resolve_rect_returns_a_named_coordinate_table() {
+    let source = valid_script(
+      r#"
+        function Init(ctx)
+          local top_left, extra = align.resolve_rect{
+            width = 10,
+            height = 4,
+            horizontal_align = align.LEFT,
+            vertical_align = align.TOP,
+          }
+          local center = align.resolve_rect{
+            width = 10,
+            height = 4,
+            horizontal_align = align.CENTER,
+            vertical_align = align.CENTER,
+          }
+          local bottom_right = align.resolve_rect{
+            width = 10,
+            height = 4,
+            horizontal_align = align.RIGHT,
+            vertical_align = align.BOTTOM,
+          }
+          debug.assert{ value = type{ value = top_left } == "table" }
+          debug.assert{ value = top_left.x == 0 and top_left.y == 0 }
+          debug.assert{ value = center.x == 55 and center.y == 17 }
+          debug.assert{ value = bottom_right.x == 110 and bottom_right.y == 34 }
+          debug.assert{ value = extra == nil }
+        end
+      "#,
+    );
+    let mut session_spec = spec(&source, LuaSessionKind::Game);
+    session_spec.terminal_size = Size {
+      width: 120,
+      height: 38,
+    };
+    LuaSession::load(session_spec, LuaPolicy::default()).unwrap();
+  }
+
+  #[test]
   fn lua_text_modes_share_the_expected_measurement_semantics() {
     let source = valid_script(
       r#"

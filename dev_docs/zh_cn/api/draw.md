@@ -42,7 +42,6 @@ draw.text{}
 | `text`             | string       | 是   | -             | 要绘制的文本       |
 | `fg`               | const-color  | 否   | `nil`         | 前景色          |
 | `bg`               | const-color  | 否   | `nil`         | 背景色          |
-| `slice_layer`      | string       | 否   | `"base"`      | 绘制目标图层       |
 | `horizontal_align` | const-align  | 否   | `align.LEFT`  | 多行文本的水平对齐方式  |
 | `auto_wrap`        | boolean      | 否   | `true`        | 是否自动换行       |
 | `word_wrap`        | boolean      | 否   | `true`        | 是否按完整单词换行    |
@@ -59,6 +58,7 @@ draw.text{}
 | `reverse`          | boolean      | 否   | `false`       | 反显           |
 | `hidden`           | boolean      | 否   | `false`       | 隐藏           |
 | `dim`              | boolean      | 否   | `false`       | 暗淡           |
+| `slice_layer`      | string       | 否   | `"base"`      | 绘制目标切片图层     |
 
 ### 返回
 
@@ -111,7 +111,7 @@ draw.fill_rect{}
 | `char`        | string      | 否   | `nil`    | 填充字符        |
 | `fg`          | const-color | 否   | `nil`    | 前景色         |
 | `bg`          | const-color | 否   | `nil`    | 背景色         |
-| `slice_layer` | string      | 否   | `"base"` | 绘制目标图层      |
+| `slice_layer` | string      | 否   | `"base"` | 绘制目标切片图层    |
 
 ### 返回
 
@@ -170,7 +170,7 @@ draw.stroke_rect{}
 | `fg`          | const-color        | 否   | `nil`       | 边框前景色       |
 | `bg`          | const-color        | 否   | `nil`       | 边框背景色       |
 | `border_char` | const-char / table | 否   | `char.LINE` | 边框字符        |
-| `slice_layer` | string             | 否   | `"base"`    | 绘制目标图层      |
+| `slice_layer` | string             | 否   | `"base"`    | 绘制目标切片图层    |
 
 ### 返回
 
@@ -249,7 +249,7 @@ draw.erase_rect{}
 | `y`           | integer | 是   | -        | 矩形左上角的 y 坐标 |
 | `width`       | integer | 是   | -        | 矩形宽度        |
 | `height`      | integer | 是   | -        | 矩形高度        |
-| `slice_layer` | string  | 否   | `"base"` | 绘制目标图层      |
+| `slice_layer` | string  | 否   | `"base"` | 绘制目标切片图层    |
 
 ### 返回
 

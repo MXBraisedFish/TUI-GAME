@@ -28,8 +28,8 @@ use crate::host_engine::services::{
   LuaSessionDiagnostics, LuaSessionError, LuaSessionKind, LuaSessionToken, LuaTaskOperation,
   PackageEvent, PackageListEntry, PopupDismissEvent, PopupRequest, RandomGeneratorId, RandomSeed,
   RecordingState, Rect, ScreenshotAsyncEvent, ScreenshotDoubleAction, ScreenshotService,
-  ScreenshotTask, SystemEvent, TaskId, TextColor, UiEvent, UiObjectPoolOwner, VideoAsyncEvent,
-  VideoExportStage, translate_action_map,
+  ScreenshotTask, Size, SystemEvent, TaskId, TextColor, UiEvent, UiObjectPoolOwner,
+  VideoAsyncEvent, VideoExportStage, translate_action_map,
 };
 use crate::host_engine::ui::{
   ClearWarningCommand, ClearWarningTarget, ClearWarningUi, DisplaySettingsCommand,
@@ -1791,10 +1791,11 @@ fn dispatch_lua_events(
     let mut deliveries = deliveries.into_iter();
     while let Some(delivery) = deliveries.next() {
       if let LuaEventData::Resize { width, height } = &delivery.event.data {
-        let size = crate::host_engine::services::Size {
+        let physical = crate::host_engine::services::Size {
           width: *width,
           height: *height,
         };
+        let size = lua_session_base_size_for_physical(services, kind, physical);
         match kind {
           LuaSessionKind::Game => services.game.set_terminal_size(size),
           LuaSessionKind::Screensaver => services.screensaver.set_terminal_size(size),
@@ -1921,6 +1922,11 @@ fn update_lua_sessions(
   router: &mut LuaEventBroker,
   frame_delta: Duration,
 ) {
+  let game_size = lua_session_base_size(services, LuaSessionKind::Game);
+  let screensaver_size = lua_session_base_size(services, LuaSessionKind::Screensaver);
+  services.game.set_terminal_size(game_size);
+  services.screensaver.set_terminal_size(screensaver_size);
+
   if services.game.is_active()
     && let Err(error) = services.game.advance(frame_delta)
   {
@@ -1941,16 +1947,15 @@ fn update_lua_sessions(
     None if services.game.is_active() => Some(LuaSessionKind::Game),
     _ => None,
   };
-  let size = services.layout.physical_size();
   match visible_session {
     Some(LuaSessionKind::Game) => {
-      if let Err(error) = services.game.render(size) {
+      if let Err(error) = services.game.render(game_size) {
         handle_lua_fault(services, world, error);
       }
       let _ = apply_lua_host_commands(LuaSessionKind::Game, services, world, router);
     }
     Some(LuaSessionKind::Screensaver) => {
-      if let Err(error) = services.screensaver.render(size) {
+      if let Err(error) = services.screensaver.render(screensaver_size) {
         handle_lua_fault(services, world, error);
       }
       let _ = apply_lua_host_commands(LuaSessionKind::Screensaver, services, world, router);
@@ -1965,6 +1970,24 @@ fn update_lua_sessions(
   }
   if visible_session != Some(LuaSessionKind::Screensaver) {
     let _ = services.screensaver.take_draw_commands();
+  }
+}
+
+fn lua_session_base_size(services: &EngineServices, kind: LuaSessionKind) -> Size {
+  lua_session_base_size_for_physical(services, kind, services.layout.physical_size())
+}
+
+fn lua_session_base_size_for_physical(
+  services: &EngineServices,
+  kind: LuaSessionKind,
+  physical: Size,
+) -> Size {
+  match kind {
+    LuaSessionKind::Game => host_viewport::developer_size(
+      physical,
+      services.storage.display_settings_profile().top_toolbar,
+    ),
+    LuaSessionKind::Screensaver => physical,
   }
 }
 
@@ -2517,7 +2540,7 @@ fn toggle_screensaver(
     session_kind: LuaSessionKind::Screensaver,
     entry_path,
     fixed_delta: Duration::from_secs_f64(1.0 / 60.0),
-    terminal_size: services.layout.physical_size(),
+    terminal_size: lua_session_base_size(services, LuaSessionKind::Screensaver),
     continue_data: None,
     best_data: None,
     save_game_enabled: false,
