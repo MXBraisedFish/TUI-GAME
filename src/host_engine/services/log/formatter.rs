@@ -46,6 +46,11 @@ pub fn format_print_log_entry(
     text.push_str(labels.level(level));
     text.push(']');
   }
+  if let Some(title) = options.title.as_deref() {
+    text.push('[');
+    text.push_str(title);
+    text.push(']');
+  }
   if !text.is_empty() {
     text.push(' ');
   }
@@ -96,8 +101,32 @@ mod tests {
         time: false,
         level: Some(LogLevel::Warn),
         type_head: true,
+        title: None,
       },
     );
     assert_eq!(text, "[Lua][WARN] message\n");
+  }
+
+  #[test]
+  fn custom_print_orders_type_time_level_and_title() {
+    let entry = LogEntry {
+      timestamp_ms: 0,
+      sequence: 1,
+      level: LogLevel::Info,
+      source: LogSource::Game,
+      message: "message".to_string(),
+    };
+    let text = format_print_log_entry(
+      &entry,
+      &LogLabels::new(),
+      LogPrintOptions {
+        time: true,
+        level: Some(LogLevel::Info),
+        type_head: true,
+        title: Some("Title".to_string()),
+      },
+    );
+    assert!(text.starts_with("[Game]["));
+    assert!(text.ends_with("][INFO][Title] message\n"));
   }
 }

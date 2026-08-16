@@ -71,6 +71,7 @@ impl LogLabels {
       LogSource::Pack,
       LogSource::Lua,
       LogSource::Game,
+      LogSource::Screensaver,
       LogSource::Overlay,
       LogSource::Ui,
       LogSource::Crash,
@@ -114,10 +115,18 @@ mod tests {
     let mut translated = I18nService::new();
     translated.insert_runtime_namespace(
       "log",
-      HashMap::from([("log.service.lua".to_string(), "脚本".to_string())]),
+      HashMap::from([
+        ("log.service.lua".to_string(), "脚本".to_string()),
+        ("log.service.game".to_string(), "游戏".to_string()),
+        ("log.service.screensaver".to_string(), "屏保".to_string()),
+        ("log.level.warn".to_string(), "警告".to_string()),
+      ]),
     );
     labels.refresh_from_i18n(&translated);
     assert_eq!(labels.source(LogSource::Lua), "脚本");
+    assert_eq!(labels.source(LogSource::Game), "游戏");
+    assert_eq!(labels.source(LogSource::Screensaver), "屏保");
+    assert_eq!(labels.level(LogLevel::Warn), "警告");
 
     labels.refresh_from_i18n(&I18nService::new());
     assert_eq!(labels.source(LogSource::Lua), "Lua");
@@ -142,6 +151,7 @@ pub fn log_label_keys() -> &'static [&'static str] {
     "log.service.package",
     "log.service.lua",
     "log.service.game",
+    "log.service.screensaver",
     "log.service.overlay",
     "log.service.ui",
     "log.service.crash",

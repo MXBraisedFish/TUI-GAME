@@ -4,28 +4,32 @@
 
 `align` 根据当前画布尺寸和相对位置计算对齐坐标。
 
+---
+
 ## 目录
 
 ### 常量
 
-| 常量名 | 说明 |
-| ------ | ---- |
-| `align.AUTO` | 自动对齐（水平/垂直居中） |
-| `align.LEFT` | 左对齐 |
-| `align.HORIZONTAL_CENTER` | 水平居中 |
-| `align.RIGHT` | 右对齐 |
-| `align.TOP` | 顶部对齐 |
-| `align.VERTICAL_CENTER` | 垂直居中 |
-| `align.BOTTOM` | 底部对齐 |
-| `align.CENTER` | 双向居中 |
+| 常量名              | 说明     | 索引                                    |
+| ------------------- | -------- | --------------------------------------- |
+| `AUTO`              | 自动对齐 | [AUTO](#AUTO)                           |
+| `LEFT`              | 左对齐   | [LEFT](#LEFT)                           |
+| `HORIZONTAL_CENTER` | 水平居中 | [HORIZONTAL_CENTER](#HORIZONTAL_CENTER) |
+| `RIGHT`             | 右对齐   | [RIGHT](#RIGHT)                         |
+| `TOP`               | 顶部对齐 | [TOP](#TOP)                             |
+| `VERTICAL_CENTER`   | 垂直居中 | [VERTICAL_CENTER](#VERTICAL_CENTER)     |
+| `BOTTOM`            | 底部对齐 | [BOTTOM](#BOTTOM)                       |
+| `CENTER`            | 双向居中 | [CENTER](#CENTER)                       |
 
 ### 方法
 
-| 方法名                       | 说明        |
-| ------------------------- | --------- |
-| `align.resolve_x{...}`    | 计算水平坐标    |
-| `align.resolve_y{...}`    | 计算垂直坐标    |
-| `align.resolve_rect{...}` | 计算矩形左上角坐标 |
+| 方法名         | 说明               | 索引                          |
+| -------------- | ------------------ | ----------------------------- |
+| `resolve_x`    | 计算水平坐标       | [resolve_x](#resolve_x)       |
+| `resolve_y`    | 计算垂直坐标       | [resolve_y](#resolve_y)       |
+| `resolve_rect` | 计算矩形左上角坐标 | [resolve_rect](#resolve_rect) |
+
+---
 
 ## 常量
 
@@ -44,11 +48,49 @@
 align.AUTO
 ```
 
+### 示例
+
+```lua
+rect = align.resolve_rect { width = 4, height = 1, horizontal_align = align.AUTO, vertical_align = align.AUTO, offset_x = 0, offset_y = 0 }
+draw.text { x = rect.x, y = rect.y, text = "AUTO", fg = color.BRIGHT_RED }
+```
+
+输出：
+
+![align.AUTO示例](../image/align_AUTO_example.png)
+
 ### 额外补充
 
 - `align` API 中用于水平对齐时等价于 `align.HORIZONTAL_CENTER`。
 - `align` API 中用于垂直对齐时等价于 `align.VERTICAL_CENTER`。
 - `draw` 和 `measurement` API 中用于垂直对齐时等价于 `align.LEFT`。
+
+---
+
+## `LEFT`
+
+右对齐模式。
+
+**可用于**
+
+- 参数 `horizontal_align`
+
+### 调用
+
+```lua
+align.LEFT
+```
+
+### 示例
+
+```lua
+x = align.resolve_x { width = 4, horizontal_align = align.LEFT }
+draw.text { x = x, y = 3, text = "LEFT", fg = color.BRIGHT_RED }
+```
+
+输出：
+
+![align.LEFT示例](../image/align_LEFT_example.png)
 
 ---
 
@@ -66,6 +108,17 @@ align.AUTO
 align.HORIZONTAL_CENTER
 ```
 
+### 示例
+
+```lua
+x = align.resolve_x { width = 8, horizontal_align = align.HORIZONTAL_CENTER }
+draw.text { x = x, y = 3, text = "H_CENTER", fg = color.BRIGHT_RED }
+```
+
+输出：
+
+![align.HORIZONTAL_CENTER示例](../image/align_HORIZONTAL_CENTER_example.png)
+
 ---
 
 ## `RIGHT`
@@ -81,6 +134,17 @@ align.HORIZONTAL_CENTER
 ```lua
 align.RIGHT
 ```
+
+### 示例
+
+```lua
+x = align.resolve_x { width = 5, horizontal_align = align.RIGHT }
+draw.text { x = x, y = 3, text = "RIGHT", fg = color.BRIGHT_RED }
+```
+
+输出：
+
+![align.RIGHT示例](../image/align_RIGHT_example.png)
 
 ---
 
@@ -98,6 +162,17 @@ align.RIGHT
 align.TOP
 ```
 
+### 示例
+
+```lua
+y = align.resolve_y { height = 3, vertical_align = align.TOP }
+draw.text { x = 4, y = y, text = "TOP", fg = color.BRIGHT_RED, max_width = 1 }
+```
+
+输出：
+
+![align.TOP示例](../image/align_TOP_example.png)
+
 ---
 
 ## `VERTICAL_CENTER`
@@ -114,6 +189,17 @@ align.TOP
 align.VERTICAL_CENTER
 ```
 
+### 示例
+
+```lua
+y = align.resolve_y { height = 8, vertical_align = align.VERTICAL_CENTER }
+draw.text { x = 4, y = y, text = "V|CENTER", fg = color.BRIGHT_RED, max_width = 1 }
+```
+
+输出：
+
+![align.VERTICAL_CENTER示例](../image/align_VERTICAL_CENTER_example.png)
+
 ---
 
 ## `BOTTOM`
@@ -129,6 +215,17 @@ align.VERTICAL_CENTER
 ```lua
 align.BOTTOM
 ```
+
+### 示例
+
+```lua
+y = align.resolve_y { height = 7, vertical_align = align.BOTTOM }
+draw.text { x = 4, y = y, text = "BOTTOM", fg = color.BRIGHT_RED, max_width = 1 }
+```
+
+输出：
+
+![align.BOTTOM示例](../image/align_BOTTOM_example.png)
 
 ---
 
@@ -147,6 +244,17 @@ align.BOTTOM
 align.CENTER
 ```
 
+### 示例
+
+```lua
+rect = align.resolve_rect { width = 6, height = 1, horizontal_align = align.CENTER, vertical_align = align.CENTER, offset_x = 0, offset_y = 0 }
+draw.text { x = rect.x, y = rect.y, text = "CENTER", fg = color.BRIGHT_RED }
+```
+
+输出：
+
+![align.CENTER示例](../image/align_CENTER_example.png)
+
 ### 额外补充
 
 - 水平对齐时等价于 `align.HORIZONTAL_CENTER`。
@@ -158,7 +266,7 @@ align.CENTER
 
 ## `resolve_x`
 
-根据元素宽度与水平对齐方式，计算元素左边缘的 x 坐标。
+根据元素宽度与水平对齐方式，计算文本左边缘的 x 坐标。
 
 ### 调用
 
@@ -169,19 +277,22 @@ align.resolve_x{}
 
 ### 参数
 
-| 参数名                | 类型          | 必填  | 默认值      | 说明       |
-| ------------------ | ----------- | --- | -------- | -------- |
-| `width`            | integer     | 是   | -        | 文本宽度     |
-| `horizontal_align` | const-align | 是   | -        | 水平对齐方式   |
-| `offset_x`         | integer     | 否   | `0`      | 锚点上的水平偏移 |
-| `relative_x`       | integer     | 否   | `nil`    | 自定义水平锚点  |
-| `slice_layer`      | string      | 否   | `"base"` | 目标切片图层   |
+| 参数名             | 类型          | 必填 | 默认值   | 说明             |
+| ------------------ | ------------- | ---- | -------- | ---------------- |
+| `width`            | integer       | 是   | -        | 文本宽度         |
+| `horizontal_align` | const-align   | 是   | -        | 水平对齐方式     |
+| `offset_x`         | integer       | 否   | `0`      | 锚点上的水平偏移 |
+| `relative_x`       | integer / nil | 否   | `nil`    | 自定义水平锚点   |
+| `slice_layer`      | string        | 否   | `"base"` | 目标切片图层     |
 
 ### 返回
 
-| 返回值名 | 类型 | 说明 |
-| --- | --- | --- |
-| `x` | integer | 解析后的水平坐标 |
+直接返回一个值。
+
+| 类型      | 说明       |
+| ------- | -------- |
+| integer | 绘制起始水平坐标 |
+
 ### 示例
 
 ```lua
@@ -203,7 +314,7 @@ draw.text { x = x3, y = 4, text = "Game", fg = color.BRIGHT_GREEN }
 
 ## `resolve_y`
 
-根据元素高度与垂直对齐方式，计算元素上边缘的 y 坐标。
+根据元素高度与垂直对齐方式，计算文本上边缘的 y 坐标。
 
 ### 调用
 
@@ -214,19 +325,21 @@ align.resolve_y{}
 
 ### 参数
 
-| 参数名              | 类型      | 必填  | 默认值      | 说明       |
-| ---------------- | ------- | --- | -------- | -------- |
-| `height`         | integer | 是   | -        | 文本高度     |
-| `vertical_align` | const   | 是   | -        | 垂直对齐方式   |
-| `offset_y`       | integer | 否   | `0`      | 锚点上的垂直偏移 |
-| `relative_y`     | integer | 否   | `nil`    | 自定义垂直锚点  |
-| `slice_layer`    | string  | 否   | `"base"` | 目标切片图层   |
+| 参数名           | 类型          | 必填 | 默认值   | 说明             |
+| ---------------- | ------------- | ---- | -------- | ---------------- |
+| `height`         | integer       | 是   | -        | 文本高度         |
+| `vertical_align` | const-align   | 是   | -        | 垂直对齐方式     |
+| `offset_y`       | integer       | 否   | `0`      | 锚点上的垂直偏移 |
+| `relative_y`     | integer / nil | 否   | `nil`    | 自定义垂直锚点   |
+| `slice_layer`    | string        | 否   | `"base"` | 目标切片图层     |
 
 ### 返回
 
-| 返回值名 | 类型 | 说明 |
-| --- | --- | --- |
-| `y` | integer | 解析后的垂直坐标 |
+直接返回一个值。
+
+| 类型      | 说明       |
+| ------- | -------- |
+| integer | 绘制起始垂直坐标 |
 
 ### 示例
 
@@ -247,40 +360,9 @@ draw.text { x = 5, y = y3, text = "Game", fg = color.BRIGHT_GREEN, max_width = 1
 
 ---
 
-### `resolve_rect`
-
-- **方法作用**：同时计算矩形左上角坐标，一次得到 `x, y`。
-- **方法要求**：无
-- **方法参数**：
-
-| 参数名 | 类型 | 必填 | 默认值 | 说明 | 额外补充 |
-| ------ | ---- | ---- | ------ | ---- | -------- |
-| `width` | integer | 是 | — | 矩形宽度 | 必须为正整数 |
-| `height` | integer | 是 | — | 矩形高度 | 必须为正整数 |
-| `horizontal_align` | const | 是 | — | 水平对齐方式 | 使用 `align.AUTO/LEFT/HORIZONTAL_CENTER/RIGHT/CENTER` |
-| `vertical_align` | const | 是 | — | 垂直对齐方式 | 使用 `align.AUTO/TOP/VERTICAL_CENTER/BOTTOM/CENTER` |
-| `offset_x` | integer | 否 | `0` | 水平偏移 | — |
-| `offset_y` | integer | 否 | `0` | 垂直偏移 | — |
-| `relative_x` | integer | 否 | `nil` | 自定义水平锚点 | 省略时按对齐方式计算 |
-| `relative_y` | integer | 否 | `nil` | 自定义垂直锚点 | 省略时按对齐方式计算 |
-| `slice_layer` | string | 否 | `"base"` | 图层 | 当前仅支持 `"base"` |
-
-- **方法返回**：
-
-| 返回值名 | 类型 | 说明 | 额外补充 |
-| -------- | ---- | ---- | -------- |
-| `x` | integer | 矩形左边缘坐标 | 允许为负数 |
-| `y` | integer | 矩形上边缘坐标 | 允许为负数 |
-
-- **方法的使用**：
-
-```lua
-
-```
-
 ## `resolve_rect`
 
-同时计算矩形左上角坐标，一次得到 `x, y`。
+根据元素宽度与高度、水平对齐方式和垂直对齐方式，计算文本左边缘的 x 坐标、文本上边缘的 y 坐标。
 
 ### 调用
 
@@ -291,36 +373,35 @@ align.resolve_rect{}
 
 ### 参数
 
-| 参数名 | 类型 | 必填 | 默认值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `width` | integer | 是 | - | 矩形宽度 |
-| `height` | integer | 是 | - | 矩形高度 |
-| `horizontal_align` | const | 是 | - | 水平对齐方式 |
-| `vertical_align` | const | 是 | - | 垂直对齐方式 |
-| `offset_x` | integer | 否 | `0` | 水平偏移 |
-| `offset_y` | integer | 否 | `0` | 垂直偏移 |
-| `relative_x` | integer | 否 | `nil` | 自定义水平锚点 |
-| `relative_y` | integer | 否 | `nil` | 自定义垂直锚点 |
-| `slice_layer` | string | 否 | `"base"` | 图层 |
+| 参数名             | 类型          | 必填 | 默认值   | 说明             |
+| ------------------ | ------------- | ---- | -------- | ---------------- |
+| `width`            | integer       | 是   | -        | 文本宽度         |
+| `height`           | integer       | 是   | -        | 文本高度         |
+| `horizontal_align` | const-align   | 是   | -        | 水平对齐方式     |
+| `vertical_align`   | const-align   | 是   | -        | 垂直对齐方式     |
+| `offset_x`         | integer       | 否   | `0`      | 锚点上的水平偏移 |
+| `offset_y`         | integer       | 否   | `0`      | 锚点上的垂直偏移 |
+| `relative_x`       | integer / nil | 否   | `nil`    | 自定义水平锚点   |
+| `relative_y`       | integer / nil | 否   | `nil`    | 自定义垂直锚点   |
+| `slice_layer`      | string        | 否   | `"base"` | 目标切片图层     |
 
 ### 返回
 
-| 返回值名 | 类型 | 说明 |
-| --- | --- | --- |
-| `x` | integer | 矩形左边缘坐标 |
-| `y` | integer | 矩形上边缘坐标 |
+返回一个结果表。
+
+| 字段  | 类型      | 说明       |
+| --- | ------- | -------- |
+| `x` | integer | 绘制起始水平坐标 |
+| `y` | integer | 绘制起始垂直坐标 |
 
 ### 示例
 
 ```lua
-y1 = align.resolve_y { height = 5, vertical_align = align.TOP }
-draw.text { x = 5, y = y1, text = "Hello", fg = color.BRIGHT_RED, max_width = 1 }
+rect1 = align.resolve_rect { width = 20, height = 4, horizontal_align = align.LEFT, vertical_align = align.CENTER, offset_x = 20, offset_y = -2 }
+draw.fill_rect { x = rect1.x, y = rect1.y, width = 20, height = 4, bg = color.BRIGHT_YELLOW }
 
-y2 = align.resolve_y { height = 3, vertical_align = align.CENTER, offset_y = -2 }
-draw.text { x = 5, y = y2, text = "TUI", fg = color.BRIGHT_BLUE, max_width = 1 }
-
-y3 = align.resolve_y { height = 4, vertical_align = align.BOTTOM, relative_y = 23 }
-draw.text { x = 5, y = y3, text = "Game", fg = color.BRIGHT_GREEN, max_width = 1 }
+rect2 = align.resolve_rect { width = 10, height = 4, horizontal_align = align.CENTER, vertical_align = align.BOTTOM, offset_x = -5, offset_y = 0 }
+draw.fill_rect { x = rect2.x, y = rect2.y, width = 10, height = 4, bg = color.BRIGHT_GREEN }
 ```
 
 输出：

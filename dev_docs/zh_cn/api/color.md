@@ -8,286 +8,797 @@
 
 ### 常量
 
-| 常量名 | 说明 |
-| ------ | ---- |
-| `color.BLACK` | 黑色 |
-| `color.RED` | 红色 |
-| `color.GREEN` | 绿色 |
-| `color.YELLOW` | 黄色 |
-| `color.BLUE` | 蓝色 |
-| `color.MAGENTA` | 品红 |
-| `color.CYAN` | 青色 |
-| `color.GRAY` | 灰色（`GREY` 别名） |
-| `color.GREY` | 灰色 |
-| `color.BRIGHT_GRAY` | 亮灰（`BRIGHT_GREY` 别名） |
-| `color.BRIGHT_GREY` | 亮灰 |
-| `color.BRIGHT_RED` | 亮红 |
-| `color.BRIGHT_GREEN` | 亮绿 |
-| `color.BRIGHT_YELLOW` | 亮黄 |
-| `color.BRIGHT_BLUE` | 亮蓝 |
-| `color.BRIGHT_MAGENTA` | 亮品红 |
-| `color.BRIGHT_CYAN` | 亮青 |
-| `color.WHITE` | 白色 |
-| `color.NONE` | 无颜色 |
-| `color.TRANSPARENT` | 透明（仅背景色） |
+| 常量名                        | 说明   |
+| ----------------------------- | ------ |
+| `BLACK`                       | 黑色   |
+| `RED`                         | 红色   |
+| `GREEN`                       | 绿色   |
+| `YELLOW`                      | 黄色   |
+| `BLUE`                        | 蓝色   |
+| `MAGENTA`                     | 品红   |
+| `CYAN`                        | 青色   |
+| `GRAY` / `GREY`               | 灰色   |
+| `BRIGHT_GRAY` / `BRIGHT_GREY` | 亮灰   |
+| `BRIGHT_RED`                  | 亮红   |
+| `BRIGHT_GREEN`                | 亮绿   |
+| `BRIGHT_YELLOW`               | 亮黄   |
+| `BRIGHT_BLUE`                 | 亮蓝   |
+| `BRIGHT_MAGENTA`              | 亮品红 |
+| `BRIGHT_CYAN`                 | 亮青   |
+| `WHITE`                       | 白色   |
+| `NONE`                        | 无颜色 |
+| `TRANSPARENT`                 | 透明   |
 
 ### 方法
 
-| 方法名 | 说明 |
-| ------ | ---- |
-| `color.rgb{...}` | 构造 `rgb(r,g,b)` 颜色字符串 |
-| `color.hex{...}` | 构造 `#rrggbb` 颜色字符串 |
+| 方法名 | 说明                         |
+| ------ | ---------------------------- |
+| `rgb`  | 构造 `rgb(r,g,b)` 颜色字符串 |
+| `hex`  | 构造 `#rrggbb` 颜色字符串    |
 
 ## 常量
 
-### `BLACK`
+## `BLACK`
 
-| 项目 | 内容 |
-| ---- | ---- |
-| **可应用参数** | `fg`、`bg` 等颜色参数 |
-| **作用** | 黑色 |
-| **额外补充** | 值为字符串 `"black"` |
+黑色。
 
----
+**可用于**
 
-### `RED`
+- 参数 `fg`
+- 参数 `bg`
+- 富文本标签
 
-| 项目 | 内容 |
-| ---- | ---- |
-| **可应用参数** | `fg`、`bg` 等颜色参数 |
-| **作用** | 红色 |
-| **额外补充** | 值为字符串 `"red"` |
+### 调用
 
----
+```lua
+color.BLACK
+```
 
-### `GREEN`
+### 示例
 
-| 项目 | 内容 |
-| ---- | ---- |
-| **可应用参数** | `fg`、`bg` 等颜色参数 |
-| **作用** | 绿色 |
-| **额外补充** | 值为字符串 `"green"` |
+```lua
+draw.fill_rect { x = 0, y = 0, width = 8, height = 3, bg = color.WHITE }
+draw.text { x = 3, y = 1, text = "FG", fg = color.BLACK, bg = color.TRANSPARENT }
 
----
+draw.fill_rect { x = 0, y = 3, width = 8, height = 3, bg = color.BLACK }
+draw.text { x = 3, y = 4, text = "BG", fg = color.WHITE, bg = color.TRANSPARENT }
+```
 
-### `YELLOW`
+输出：
 
-| 项目 | 内容 |
-| ---- | ---- |
-| **可应用参数** | `fg`、`bg` 等颜色参数 |
-| **作用** | 黄色 |
-| **额外补充** | 值为字符串 `"yellow"` |
+![color.BLACK示例](../image/color_BLACK_example.png)
 
----
+### 额外补充
 
-### `BLUE`
-
-| 项目 | 内容 |
-| ---- | ---- |
-| **可应用参数** | `fg`、`bg` 等颜色参数 |
-| **作用** | 蓝色 |
-| **额外补充** | 值为字符串 `"blue"` |
+- 该参数为相对颜色，实际显示根据每个人的终端设置而不同
+- 示例图实际色号：
+  \#000000
+  rgb(0,0,0)
 
 ---
 
-### `MAGENTA`
+## `RED`
 
-| 项目 | 内容 |
-| ---- | ---- |
-| **可应用参数** | `fg`、`bg` 等颜色参数 |
-| **作用** | 品红 |
-| **额外补充** | 值为字符串 `"magenta"` |
+红色。
 
----
+**可用于**
 
-### `CYAN`
+- 参数 `fg`
+- 参数 `bg`
+- 富文本标签
 
-| 项目 | 内容 |
-| ---- | ---- |
-| **可应用参数** | `fg`、`bg` 等颜色参数 |
-| **作用** | 青色 |
-| **额外补充** | 值为字符串 `"cyan"` |
+### 调用
 
----
+```lua
+color.RED
+```
 
-### `GRAY`
+### 示例
 
-| 项目 | 内容 |
-| ---- | ---- |
-| **可应用参数** | `fg`、`bg` 等颜色参数 |
-| **作用** | 灰色 |
-| **额外补充** | 值为字符串 `"gray"`，与 `GREY` 等价 |
+```lua
+draw.fill_rect { x = 0, y = 0, width = 8, height = 3, bg = color.NONE }
+draw.text { x = 3, y = 1, text = "FG", fg = color.RED, bg = color.TRANSPARENT }
 
----
+draw.fill_rect { x = 0, y = 3, width = 8, height = 3, bg = color.RED }
+draw.text { x = 3, y = 4, text = "BG", fg = color.WHITE, bg = color.TRANSPARENT }
+```
 
-### `GREY`
+输出：
 
-| 项目 | 内容 |
-| ---- | ---- |
-| **可应用参数** | `fg`、`bg` 等颜色参数 |
-| **作用** | 灰色 |
-| **额外补充** | 值为字符串 `"gray"`，`GRAY` 的别名 |
+![color.RED示例](../image/color_RED_example.png)
 
----
+### 额外补充
 
-### `BRIGHT_GRAY`
-
-| 项目 | 内容 |
-| ---- | ---- |
-| **可应用参数** | `fg`、`bg` 等颜色参数 |
-| **作用** | 亮灰 |
-| **额外补充** | 值为字符串 `"bright_gray"`，与 `BRIGHT_GREY` 等价 |
+- 该参数为相对颜色，实际显示根据每个人的终端设置而不同
+- 示例图实际色号：
+  \#cc0000
+  rgb(204,0,0)
 
 ---
 
-### `BRIGHT_GREY`
+## `GREEN`
 
-| 项目 | 内容 |
-| ---- | ---- |
-| **可应用参数** | `fg`、`bg` 等颜色参数 |
-| **作用** | 亮灰 |
-| **额外补充** | 值为字符串 `"bright_gray"`，`BRIGHT_GRAY` 的别名 |
+绿色。
 
----
+**可用于**
 
-### `BRIGHT_RED`
+- 参数 `fg`
+- 参数 `bg`
+- 富文本标签
 
-| 项目 | 内容 |
-| ---- | ---- |
-| **可应用参数** | `fg`、`bg` 等颜色参数 |
-| **作用** | 亮红 |
-| **额外补充** | 值为字符串 `"bright_red"` |
+### 调用
 
----
+```lua
+color.GREEN
+```
 
-### `BRIGHT_GREEN`
+### 示例
 
-| 项目 | 内容 |
-| ---- | ---- |
-| **可应用参数** | `fg`、`bg` 等颜色参数 |
-| **作用** | 亮绿 |
-| **额外补充** | 值为字符串 `"bright_green"` |
+```lua
+draw.fill_rect { x = 0, y = 0, width = 8, height = 3, bg = color.NONE }
+draw.text { x = 3, y = 1, text = "FG", fg = color.GREEN, bg = color.TRANSPARENT }
 
----
+draw.fill_rect { x = 0, y = 3, width = 8, height = 3, bg = color.GREEN }
+draw.text { x = 3, y = 4, text = "BG", fg = color.WHITE, bg = color.TRANSPARENT }
+```
 
-### `BRIGHT_YELLOW`
+输出：
 
-| 项目 | 内容 |
-| ---- | ---- |
-| **可应用参数** | `fg`、`bg` 等颜色参数 |
-| **作用** | 亮黄 |
-| **额外补充** | 值为字符串 `"bright_yellow"` |
+![color.GREEN示例](../image/color_GREEN_example.png)
 
----
+### 额外补充
 
-### `BRIGHT_BLUE`
-
-| 项目 | 内容 |
-| ---- | ---- |
-| **可应用参数** | `fg`、`bg` 等颜色参数 |
-| **作用** | 亮蓝 |
-| **额外补充** | 值为字符串 `"bright_blue"` |
+- 该参数为相对颜色，实际显示根据每个人的终端设置而不同
+- 示例图实际色号：
+  \#4e9a06
+  rgb(78,154,6)
 
 ---
 
-### `BRIGHT_MAGENTA`
+## `YELLOW`
 
-| 项目 | 内容 |
-| ---- | ---- |
-| **可应用参数** | `fg`、`bg` 等颜色参数 |
-| **作用** | 亮品红 |
-| **额外补充** | 值为字符串 `"bright_magenta"` |
+黄色。
+
+**可用于**
+
+- 参数 `fg`
+- 参数 `bg`
+- 富文本标签
+
+### 调用
+
+```lua
+color.YELLOW
+```
+
+### 示例
+
+```lua
+draw.fill_rect { x = 0, y = 0, width = 8, height = 3, bg = color.NONE }
+draw.text { x = 3, y = 1, text = "FG", fg = color.YELLOW, bg = color.TRANSPARENT }
+
+draw.fill_rect { x = 0, y = 3, width = 8, height = 3, bg = color.YELLOW }
+draw.text { x = 3, y = 4, text = "BG", fg = color.WHITE, bg = color.TRANSPARENT }
+```
+
+输出：
+
+![color.YELLOW示例](../image/color_YELLOW_example.png)
+
+### 额外补充
+
+- 该参数为相对颜色，实际显示根据每个人的终端设置而不同
+- 示例图实际色号：
+  \#c4a000
+  rgb(196,160,0)
 
 ---
 
-### `BRIGHT_CYAN`
+## `BLUE`
 
-| 项目 | 内容 |
-| ---- | ---- |
-| **可应用参数** | `fg`、`bg` 等颜色参数 |
-| **作用** | 亮青 |
-| **额外补充** | 值为字符串 `"bright_cyan"` |
+蓝色。
+
+**可用于**
+
+- 参数 `fg`
+- 参数 `bg`
+- 富文本标签
+
+### 调用
+
+```lua
+color.BLUE
+```
+
+### 示例
+
+```lua
+draw.fill_rect { x = 0, y = 0, width = 8, height = 3, bg = color.NONE }
+draw.text { x = 3, y = 1, text = "FG", fg = color.BLUE, bg = color.TRANSPARENT }
+
+draw.fill_rect { x = 0, y = 3, width = 8, height = 3, bg = color.BLUE }
+draw.text { x = 3, y = 4, text = "BG", fg = color.WHITE, bg = color.TRANSPARENT }
+```
+
+输出：
+
+![color.BLUE示例](../image/color_BLUE_example.png)
+
+### 额外补充
+
+- 该参数为相对颜色，实际显示根据每个人的终端设置而不同
+- 示例图实际色号：
+  \#3465a4
+  rgb(52,101,164)
 
 ---
 
-### `WHITE`
+## `MAGENTA`
 
-| 项目 | 内容 |
-| ---- | ---- |
-| **可应用参数** | `fg`、`bg` 等颜色参数 |
-| **作用** | 白色 |
-| **额外补充** | 值为字符串 `"white"` |
+品红。
+
+**可用于**
+
+- 参数 `fg`
+- 参数 `bg`
+- 富文本标签
+
+### 调用
+
+```lua
+color.MAGENTA
+```
+
+### 示例
+
+```lua
+draw.fill_rect { x = 0, y = 0, width = 8, height = 3, bg = color.NONE }
+draw.text { x = 3, y = 1, text = "FG", fg = color.MAGENTA, bg = color.TRANSPARENT }
+
+draw.fill_rect { x = 0, y = 3, width = 8, height = 3, bg = color.MAGENTA }
+draw.text { x = 3, y = 4, text = "BG", fg = color.WHITE, bg = color.TRANSPARENT }
+```
+
+输出：
+
+![color.MAGENTA示例](../image/color_MAGENTA_example.png)
+
+### 额外补充
+
+- 该参数为相对颜色，实际显示根据每个人的终端设置而不同
+- 示例图实际色号：
+  \#75507b
+  rgb(117,80,123)
 
 ---
 
-### `NONE`
+## `CYAN`
 
-| 项目 | 内容 |
-| ---- | ---- |
-| **可应用参数** | `fg`、`bg` 等颜色参数 |
-| **作用** | 无颜色，等价于省略颜色参数 |
-| **额外补充** | 值为字符串 `"none"`；传入后不设置颜色 |
+青色。
+
+**可用于**
+
+- 参数 `fg`
+- 参数 `bg`
+- 富文本标签
+
+### 调用
+
+```lua
+color.CYAN
+```
+
+### 示例
+
+```lua
+draw.fill_rect { x = 0, y = 0, width = 8, height = 3, bg = color.NONE }
+draw.text { x = 3, y = 1, text = "FG", fg = color.CYAN, bg = color.TRANSPARENT }
+
+draw.fill_rect { x = 0, y = 3, width = 8, height = 3, bg = color.CYAN }
+draw.text { x = 3, y = 4, text = "BG", fg = color.WHITE, bg = color.TRANSPARENT }
+```
+
+输出：
+
+![color.CYAN示例](../image/color_CYAN_example.png)
+
+### 额外补充
+
+- 该参数为相对颜色，实际显示根据每个人的终端设置而不同
+- 示例图实际色号：
+  \#06989a
+  rgb(6,152,154)
 
 ---
 
-### `TRANSPARENT`
+## `GRAY` / `GREY`
 
-| 项目 | 内容 |
-| ---- | ---- |
-| **可应用参数** | 仅 `bg` 等背景色参数 |
-| **作用** | 透明背景，露出下层内容 |
-| **额外补充** | 值为字符串 `"transparent"`；**仅背景色可用**，用于前景色时报错 |
+灰色。
+
+**可用于**
+
+- 参数 `fg`
+- 参数 `bg`
+- 富文本标签
+
+### 调用
+
+```lua
+color.GRAY
+```
+
+### 示例
+
+```lua
+draw.fill_rect { x = 0, y = 0, width = 8, height = 3, bg = color.NONE }
+draw.text { x = 3, y = 1, text = "FG", fg = color.GRAY, bg = color.TRANSPARENT }
+
+draw.fill_rect { x = 0, y = 3, width = 8, height = 3, bg = color.GREY }
+draw.text { x = 3, y = 4, text = "BG", fg = color.BLACK, bg = color.TRANSPARENT }
+```
+
+输出：
+
+![color.GRAY示例](../image/color_GRAY_example.png)
+
+### 额外补充
+
+- 该参数为相对颜色，实际显示根据每个人的终端设置而不同
+- 示例图实际色号：
+  \#d3d7cf
+  rgb(211,215,207)
+
+---
+
+## `BRIGHT_GRAY` / `BRIGHT_GREY`
+
+亮灰。
+
+**可用于**
+
+- 参数 `fg`
+- 参数 `bg`
+- 富文本标签
+
+### 调用
+
+```lua
+color.BRIGHT_GRAY
+```
+
+### 示例
+
+```lua
+draw.fill_rect { x = 0, y = 0, width = 8, height = 3, bg = color.NONE }
+draw.text { x = 3, y = 1, text = "FG", fg = color.BRIGHT_GRAY, bg = color.TRANSPARENT }
+
+draw.fill_rect { x = 0, y = 3, width = 8, height = 3, bg = color.BRIGHT_GREY }
+draw.text { x = 3, y = 4, text = "BG", fg = color.BLACK, bg = color.TRANSPARENT }
+```
+
+输出：
+
+![color.BRIGHT_GRAY示例](../image/color_BRIGHT_GRAY_example.png)
+
+### 额外补充
+
+- 该参数为相对颜色，实际显示根据每个人的终端设置而不同
+- 示例图实际色号：
+  \#eeeeec
+  rgb(238,238,236)
+
+---
+
+## `BRIGHT_RED`
+
+亮红。
+
+**可用于**
+
+- 参数 `fg`
+- 参数 `bg`
+- 富文本标签
+
+### 调用
+
+```lua
+color.BRIGHT_RED
+```
+
+### 示例
+
+```lua
+draw.fill_rect { x = 0, y = 0, width = 8, height = 3, bg = color.NONE }
+draw.text { x = 3, y = 1, text = "FG", fg = color.BRIGHT_RED, bg = color.TRANSPARENT }
+
+draw.fill_rect { x = 0, y = 3, width = 8, height = 3, bg = color.BRIGHT_RED }
+draw.text { x = 3, y = 4, text = "BG", fg = color.WHITE, bg = color.TRANSPARENT }
+```
+
+输出：
+
+![color.BRIGHT_RED示例](../image/color_BRIGHT_RED_example.png)
+
+### 额外补充
+
+- 该参数为相对颜色，实际显示根据每个人的终端设置而不同
+- 示例图实际色号：
+  \#ef2929
+  rgb(239,41,41)
+
+---
+
+## `BRIGHT_GREEN`
+
+亮绿。
+
+**可用于**
+
+- 参数 `fg`
+- 参数 `bg`
+- 富文本标签
+
+### 调用
+
+```lua
+color.BRIGHT_GREEN
+```
+
+### 示例
+
+```lua
+draw.fill_rect { x = 0, y = 0, width = 8, height = 3, bg = color.NONE }
+draw.text { x = 3, y = 1, text = "FG", fg = color.BRIGHT_GREEN, bg = color.TRANSPARENT }
+
+draw.fill_rect { x = 0, y = 3, width = 8, height = 3, bg = color.BRIGHT_GREEN }
+draw.text { x = 3, y = 4, text = "BG", fg = color.BLACK, bg = color.TRANSPARENT }
+```
+
+输出：
+
+![color.BRIGHT_GREEN示例](../image/color_BRIGHT_GREEN_example.png)
+
+### 额外补充
+
+- 该参数为相对颜色，实际显示根据每个人的终端设置而不同
+- 示例图实际色号：
+  \#8ae234
+  rgb(138,226,52)
+
+---
+
+## `BRIGHT_YELLOW`
+
+亮黄。
+
+**可用于**
+
+- 参数 `fg`
+- 参数 `bg`
+- 富文本标签
+
+### 调用
+
+```lua
+color.BRIGHT_YELLOW
+```
+
+### 示例
+
+```lua
+draw.fill_rect { x = 0, y = 0, width = 8, height = 3, bg = color.NONE }
+draw.text { x = 3, y = 1, text = "FG", fg = color.BRIGHT_YELLOW, bg = color.TRANSPARENT }
+
+draw.fill_rect { x = 0, y = 3, width = 8, height = 3, bg = color.BRIGHT_YELLOW }
+draw.text { x = 3, y = 4, text = "BG", fg = color.BLACK, bg = color.TRANSPARENT }
+```
+
+输出：
+
+![color.BRIGHT_YELLOW示例](../image/color_BRIGHT_YELLOW_example.png)
+
+### 额外补充
+
+- 该参数为相对颜色，实际显示根据每个人的终端设置而不同
+- 示例图实际色号：
+  \#fce94f
+  rgb(252,233,79)
+
+---
+
+## `BRIGHT_BLUE`
+
+亮蓝。
+
+**可用于**
+
+- 参数 `fg`
+- 参数 `bg`
+- 富文本标签
+
+### 调用
+
+```lua
+color.BRIGHT_BLUE
+```
+
+### 示例
+
+```lua
+draw.fill_rect { x = 0, y = 0, width = 8, height = 3, bg = color.NONE }
+draw.text { x = 3, y = 1, text = "FG", fg = color.BRIGHT_BLUE, bg = color.TRANSPARENT }
+
+draw.fill_rect { x = 0, y = 3, width = 8, height = 3, bg = color.BRIGHT_BLUE }
+draw.text { x = 3, y = 4, text = "BG", fg = color.BLACK, bg = color.TRANSPARENT }
+```
+
+输出：
+
+![color.BRIGHT_BLUE示例](../image/color_BRIGHT_BLUE_example.png)
+
+### 额外补充
+
+- 该参数为相对颜色，实际显示根据每个人的终端设置而不同
+- 示例图实际色号：
+  \#729fcf
+  rgb(114,159,207)
+
+---
+
+## `BRIGHT_MAGENTA`
+
+亮品红。
+
+**可用于**
+
+- 参数 `fg`
+- 参数 `bg`
+- 富文本标签
+
+### 调用
+
+```lua
+color.BRIGHT_MAGENTA
+```
+
+### 示例
+
+```lua
+draw.fill_rect { x = 0, y = 0, width = 8, height = 3, bg = color.NONE }
+draw.text { x = 3, y = 1, text = "FG", fg = color.BRIGHT_MAGENTA, bg = color.TRANSPARENT }
+
+draw.fill_rect { x = 0, y = 3, width = 8, height = 3, bg = color.BRIGHT_MAGENTA }
+draw.text { x = 3, y = 4, text = "BG", fg = color.BLACK, bg = color.TRANSPARENT }
+```
+
+输出：
+
+![color.BRIGHT_MAGENTA示例](../image/color_BRIGHT_MAGENTA_example.png)
+
+### 额外补充
+
+- 该参数为相对颜色，实际显示根据每个人的终端设置而不同
+- 示例图实际色号：
+  \#ad7fa8
+  rgb(173,127,168)
+
+---
+
+## `BRIGHT_CYAN`
+
+亮青。
+
+**可用于**
+
+- 参数 `fg`
+- 参数 `bg`
+- 富文本标签
+
+### 调用
+
+```lua
+color.BRIGHT_CYAN
+```
+
+### 示例
+
+```lua
+draw.fill_rect { x = 0, y = 0, width = 8, height = 3, bg = color.NONE }
+draw.text { x = 3, y = 1, text = "FG", fg = color.BRIGHT_CYAN, bg = color.TRANSPARENT }
+
+draw.fill_rect { x = 0, y = 3, width = 8, height = 3, bg = color.BRIGHT_CYAN }
+draw.text { x = 3, y = 4, text = "BG", fg = color.BLACK, bg = color.TRANSPARENT }
+```
+
+输出：
+
+![color.BRIGHT_CYAN示例](../image/color_BRIGHT_CYAN_example.png)
+
+### 额外补充
+
+- 该参数为相对颜色，实际显示根据每个人的终端设置而不同
+- 示例图实际色号：
+  \#34e2e2
+  rgb(52,226,226)
+
+---
+
+## `WHITE`
+
+白色。
+
+**可用于**
+
+- 参数 `fg`
+- 参数 `bg`
+- 富文本标签
+
+### 调用
+
+```lua
+color.WHITE
+```
+
+### 示例
+
+```lua
+draw.fill_rect { x = 0, y = 0, width = 8, height = 3, bg = color.NONE }
+draw.text { x = 3, y = 1, text = "FG", fg = color.WHITE, bg = color.TRANSPARENT }
+
+draw.fill_rect { x = 0, y = 3, width = 8, height = 3, bg = color.WHITE }
+draw.text { x = 3, y = 4, text = "BG", fg = color.BLACK, bg = color.TRANSPARENT }
+```
+
+输出：
+
+![color.WHITE示例](../image/color_WHITE_example.png)
+
+### 额外补充
+
+- 该参数为相对颜色，实际显示根据每个人的终端设置而不同
+- 示例图实际色号：
+  \#eeeeec
+  rgb(238,238,236)
+
+---
+
+## `NONE`
+
+默认颜色。
+
+**可用于**
+
+- 参数 `fg`
+- 参数 `bg`
+
+### 调用
+
+```lua
+color.NONE
+```
+
+### 示例
+
+```lua
+draw.text { x = 3, y = 1, text = "NONE", fg = color.NONE, bg = color.NONE }
+```
+
+输出：
+
+![color.NONE示例](../image/color_NONE_example.png)
+
+### 额外补充
+
+- 该参数为相对颜色，实际显示根据每个人的终端设置而不同
+
+---
+
+## `TRANSPARENT`
+
+透明背景。
+
+**可用于**
+
+- 参数 `bg`
+
+### 调用
+
+```lua
+color.TRANSPARENT
+```
+
+### 示例
+
+```lua
+draw.fill_rect { x = 0, y = 0, width = 8, height = 6, bg = color.RED }
+
+draw.text { x = 2, y = 1, text = "NONE", fg = color.WHITE, bg = color.NONE }
+
+draw.text { x = 2, y = 4, text = "TRAN", fg = color.WHITE, bg = color.TRANSPARENT }
+```
+
+输出：
+
+![color.TRANSPARENT示例](../image/color_TRANSPARENT_example.png)
 
 ---
 
 ## 方法
 
-### `rgb`
+## `rgb`
 
-- **方法作用**：根据 RGB 分量构造颜色字符串 `rgb(r,g,b)`。
-- **方法要求**：无
-- **方法参数**：
+根据 RGB 分量构造颜色字符串 `rgb(r,g,b)`。
 
-| 参数名 | 类型 | 必填 | 默认值 | 说明 | 额外补充 |
-| ------ | ---- | ---- | ------ | ---- | -------- |
-| `r` | integer | 是 | — | 红色分量 | 必须满足 `0..255` |
-| `g` | integer | 是 | — | 绿色分量 | 必须满足 `0..255` |
-| `b` | integer | 是 | — | 蓝色分量 | 必须满足 `0..255` |
-
-- **方法返回**：
-
-| 返回值名 | 类型 | 说明 | 额外补充 |
-| -------- | ---- | ---- | -------- |
-| `color` | string | 形如 `"rgb(255,0,0)"` | 可直接用于 `fg`/`bg` 参数 |
-
-- **方法的使用**：
+### 调用
 
 ```lua
-
+-- 单参数
+color.rgb()
 ```
+
+### 参数
+
+| 参数名 | 类型    | 必填 | 默认值 | 说明     |
+| ------ | ------- | ---- | ------ | -------- |
+| `r`    | integer | 是   | -      | 红色分量 |
+| `g`    | integer | 是   | -      | 绿色分量 |
+| `b`    | integer | 是   | -      | 蓝色分量 |
+
+### 返回
+
+直接返回一个值。
+
+| 类型   | 说明                  |
+| ------ | --------------------- |
+| string | 形如 `"rgb(255,0,0)"` |
+
+### 示例
+
+```lua
+rgb = color.rgb { r = 123, g = 128, b = 200 }
+draw.text { x = 0, y = 0, text = rgb, fg = rgb }
+```
+
+输出：
+
+![color.rgb示例](../image/color_rgb_example.png)
 
 ---
 
-### `hex`
+## `hex`
 
-- **方法作用**：根据 RGB 分量构造十六进制颜色字符串 `#rrggbb`。
-- **方法要求**：无
-- **方法参数**：
+根据 RGB 分量构造十六进制颜色字符串 `#rrggbb`。
 
-| 参数名 | 类型 | 必填 | 默认值 | 说明 | 额外补充 |
-| ------ | ---- | ---- | ------ | ---- | -------- |
-| `r` | integer | 是 | — | 红色分量 | 必须满足 `0..255` |
-| `g` | integer | 是 | — | 绿色分量 | 必须满足 `0..255` |
-| `b` | integer | 是 | — | 蓝色分量 | 必须满足 `0..255` |
-
-- **方法返回**：
-
-| 返回值名 | 类型 | 说明 | 额外补充 |
-| -------- | ---- | ---- | -------- |
-| `color` | string | 形如 `"#ff0000"` | 可直接用于 `fg`/`bg` 参数 |
-
-- **方法的使用**：
+### 调用
 
 ```lua
-
+-- 单参数
+color.hex()
 ```
+
+### 参数
+
+| 参数名 | 类型    | 必填 | 默认值 | 说明     |
+| ------ | ------- | ---- | ------ | -------- |
+| `r`    | integer | 是   | -      | 红色分量 |
+| `g`    | integer | 是   | -      | 绿色分量 |
+| `b`    | integer | 是   | -      | 蓝色分量 |
+
+### 返回
+
+直接返回一个值。
+
+| 类型   | 说明             |
+| ------ | ---------------- |
+| string | 形如 `"#ff0000"` |
+
+### 示例
+
+```lua
+hex = color.hex { r = 176, g = 238, b = 222 }
+draw.text { x = 0, y = 0, text = hex, fg = hex }
+```
+
+输出：
+
+![color.hex示例](../image/color_hex_example.png)

@@ -1686,7 +1686,7 @@ mod tests {
       r#"
         function Init(ctx)
           local ok = debug.pcall{ func = function() math.PI = 0 end }
-          debug.assert{ value = not ok, message = "math must be read-only" }
+          debug.assert{ value = not ok.ok, message = "math must be read-only" }
           local iterator = pairs(math)
           local item = iterator()
           debug.assert{ value = type{ value = item } == "table" }
@@ -1952,7 +1952,7 @@ mod tests {
             func = function() encoding.hex_decode("0xz1") end,
           }
           debug.assert{
-            value = not cyclic_ok and not sparse_ok and not entity_ok and not hex_ok,
+            value = not cyclic_ok.ok and not sparse_ok.ok and not entity_ok.ok and not hex_ok.ok,
           }
         end
       "#,
@@ -1973,7 +1973,7 @@ mod tests {
         end
         function Render(draw_context)
           local ok = debug.pcall{ func = function() draw.render() end }
-          debug.assert{ value = not ok }
+          debug.assert{ value = not ok.ok }
           draw.text{ x = 1, y = 1, text = "render" }
         end
       "#,
@@ -2053,11 +2053,133 @@ mod tests {
       command,
       LuaHostCommand::Print {
         message,
+        title: None,
         time: false,
         level: None,
         type_head: false,
       } if message == "plain"
     )));
+  }
+
+  #[test]
+  fn debug_print_constants_and_convenience_methods_use_the_standard_options() {
+    let source = valid_script(
+      r#"
+        function Init(ctx)
+          debug.assert{
+            value = debug.VERSION == "Lua 5.4 / TUI GAME API 1"
+              and debug.TRACE == "trace"
+              and debug.DEBUG == "debug"
+              and debug.INFO == "info"
+              and debug.WARN == "warn"
+              and debug.ERROR == "error"
+              and debug.FATAL == "fatal",
+          }
+          debug.print{
+            message = "custom",
+            title = "Title",
+            level = debug.WARN,
+            time = true,
+            type_head = true,
+          }
+          debug.info("info")
+          debug.warn{ message = "warn" }
+          debug.error("error")
+        end
+      "#,
+    );
+    let mut session = LuaSession::load_with_api(
+      spec(&source, LuaSessionKind::Game),
+      LuaPolicy::default(),
+      LuaApiConfig {
+        debug_enabled: true,
+        ..LuaApiConfig::default()
+      },
+    )
+    .unwrap();
+    let commands = session.take_host_commands();
+    assert!(commands.iter().any(|command| matches!(
+      command,
+      LuaHostCommand::Print {
+        message,
+        title: Some(title),
+        time: true,
+        level: Some(level),
+        type_head: true,
+      } if message == "custom" && title == "Title" && level == "warn"
+    )));
+    for (expected_message, expected_level) in
+      [("info", "info"), ("warn", "warn"), ("error", "error")]
+    {
+      assert!(commands.iter().any(|command| matches!(
+        command,
+        LuaHostCommand::Print {
+          message,
+          title: None,
+          time: true,
+          level: Some(level),
+          type_head: true,
+        } if message == expected_message && level == expected_level
+      )));
+    }
+  }
+
+  #[test]
+  fn protected_calls_return_named_result_tables() {
+    let source = valid_script(
+      r#"
+        function Init(ctx)
+          local success = debug.pcall{
+            func = function(left, right)
+              return left + right, nil, "tail"
+            end,
+            values = { 2, 3 },
+          }
+          debug.assert{
+            value = success.ok
+              and type(success.values) == "table"
+              and success.values.n == 3
+              and success.values[1] == 5
+              and success.values[2] == nil
+              and success.values[3] == "tail"
+              and success.error == nil,
+          }
+
+          local failure = debug.pcall{
+            func = function()
+              debug.assert{ value = false, message = "failed" }
+            end,
+          }
+          debug.assert{
+            value = not failure.ok
+              and type(failure.error) == "string"
+              and failure.values == nil,
+          }
+
+          local obsolete_message = debug.pcall{
+            func = function()
+              debug.pcall{ func = function() end, message = "removed" }
+            end,
+          }
+          debug.assert{
+            value = not obsolete_message.ok and type(obsolete_message.error) == "string",
+          }
+
+          local handled = debug.xpcall{
+            func = function()
+              debug.assert{ value = false, message = "failed" }
+            end,
+            error_callback = function(message)
+              return "handled"
+            end,
+          }
+          debug.assert{
+            value = not handled.ok and handled.error == "handled",
+          }
+        end
+      "#,
+    );
+    LuaSession::load(spec(&source, LuaSessionKind::Game), LuaPolicy::default()).unwrap();
   }
 
   #[test]
@@ -2084,7 +2206,8 @@ mod tests {
           }
           local packed = table.pack{ values = { [1] = "first", n = 3 } }
           debug.assert{
-            value = not sqrt_ok and not pow_ok and not depth_ok and not cycle_ok and not unknown_ok
+            value = not sqrt_ok.ok and not pow_ok.ok and not depth_ok.ok and not cycle_ok.ok
+              and not unknown_ok.ok
               and packed.n == 3 and packed[1] == "first" and packed[3] == nil,
           }
         end
@@ -2130,7 +2253,7 @@ mod tests {
           event.clear_action("ignored")
           file.write("ignored")
           file.list_dir("ignored")
-          debug.log({ invalid = true })
+          debug.info({ invalid = true })
         end
       "#,
     );
@@ -2145,7 +2268,7 @@ mod tests {
       "event.clear_action",
       "file.write",
       "file.list_dir",
-      "debug.log",
+      "debug.info",
     ] {
       assert!(
         commands.iter().any(|command| matches!(
@@ -2161,9 +2284,9 @@ mod tests {
   fn api_configuration_is_active_during_entry_and_init() {
     let source = valid_script(
       r#"
-        debug.log("entry")
+        debug.info("entry")
         function Init(ctx)
-          debug.log("init")
+          debug.info("init")
           event.clear_action()
         end
       "#,
@@ -2183,7 +2306,7 @@ mod tests {
     assert_eq!(
       commands
         .iter()
-        .filter(|command| matches!(command, LuaHostCommand::Log { .. }))
+        .filter(|command| matches!(command, LuaHostCommand::Print { .. }))
         .count(),
       2
     );
@@ -2192,6 +2315,59 @@ mod tests {
         .iter()
         .any(|command| matches!(command, LuaHostCommand::ClearActions))
     );
+  }
+
+  #[test]
+  fn event_action_controls_require_an_unrestricted_game_session() {
+    let source = valid_script(
+      r#"
+        function Init(ctx)
+          event.skip_action()
+          event.clear_action()
+        end
+      "#,
+    );
+    let load = |session_kind, safe_mode_enabled| {
+      let mut session = LuaSession::load_with_api(
+        spec(&source, session_kind),
+        LuaPolicy::default(),
+        LuaApiConfig {
+          safe_mode_enabled,
+          ..LuaApiConfig::default()
+        },
+      )
+      .unwrap();
+      session.take_host_commands()
+    };
+
+    let permitted = load(LuaSessionKind::Game, false);
+    assert!(
+      permitted
+        .iter()
+        .any(|command| matches!(command, LuaHostCommand::SkipActions))
+    );
+    assert!(
+      permitted
+        .iter()
+        .any(|command| matches!(command, LuaHostCommand::ClearActions))
+    );
+
+    for commands in [
+      load(LuaSessionKind::Game, true),
+      load(LuaSessionKind::Screensaver, false),
+      load(LuaSessionKind::Screensaver, true),
+    ] {
+      assert!(!commands.iter().any(|command| matches!(
+        command,
+        LuaHostCommand::SkipActions | LuaHostCommand::ClearActions
+      )));
+      for method in ["event.skip_action", "event.clear_action"] {
+        assert!(commands.iter().any(|command| matches!(
+          command,
+          LuaHostCommand::Ignored { method: found, .. } if *found == method
+        )));
+      }
+    }
   }
 
   #[test]
@@ -2255,7 +2431,7 @@ mod tests {
     assert!(
       permitted_commands
         .iter()
-        .any(|command| matches!(command, LuaHostCommand::Log { .. }))
+        .any(|command| matches!(command, LuaHostCommand::Print { .. }))
     );
     assert!(permitted_commands.iter().any(|command| matches!(
       command,
@@ -2292,7 +2468,8 @@ mod tests {
             func = function() loader.load("cycle") end,
           }
           debug.assert{
-            value = not traversal_ok and not extension_ok and not bytecode_ok and not cycle_ok,
+            value = not traversal_ok.ok and not extension_ok.ok and not bytecode_ok.ok
+              and not cycle_ok.ok,
           }
         end
       "#,

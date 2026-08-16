@@ -873,6 +873,39 @@ mod tests {
   }
 
   #[test]
+  fn clearing_script_actions_preserves_non_action_lua_events() {
+    let game = token(LuaSessionKind::Game, 1);
+    let mut broker = LuaEventBroker::new();
+    broker.synchronize_sessions(Some(game), None);
+    broker
+      .push_system(
+        1,
+        LuaEventData::Action {
+          action: "jump".to_string(),
+          state: LuaActionState::Pressed,
+        },
+      )
+      .unwrap();
+    broker
+      .push_system(
+        1,
+        LuaEventData::Resize {
+          width: 100,
+          height: 30,
+        },
+      )
+      .unwrap();
+    broker.push_system(1, LuaEventData::OverlayStarted).unwrap();
+
+    broker.clear_pending_actions(LuaSessionKind::Game);
+
+    let events = broker.drain_frame(LuaSessionKind::Game);
+    assert_eq!(events.len(), 2);
+    assert!(matches!(events[0].event.data, LuaEventData::Resize { .. }));
+    assert!(matches!(events[1].event.data, LuaEventData::OverlayStarted));
+  }
+
+  #[test]
   fn screensaver_filters_interaction_and_write_events_by_owner() {
     let game = token(LuaSessionKind::Game, 1);
     let screen = token(LuaSessionKind::Screensaver, 1);

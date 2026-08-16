@@ -9,7 +9,7 @@ function Init(ctx)
   if ctx.best_data ~= nil then
     best_probes = ctx.best_data.probes or 0
   end
-  debug.log("Safe Mode Lab initialized")
+  debug.info("Safe Mode Lab initialized")
 end
 
 function HandleEvent(event)
@@ -30,7 +30,7 @@ function HandleEvent(event)
   elseif event.type == "file" and event.data.kind == "write_text" then
     if event.data.ok then
       status = "Probe written: " .. (event.data.path or "state/probe.log")
-      debug.log("Safe Mode write probe completed")
+      debug.info("Safe Mode write probe completed")
     else
       status = "Probe failed: " .. event.data.error.code
       debug.warn(status)

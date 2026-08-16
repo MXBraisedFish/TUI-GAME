@@ -3,19 +3,29 @@ use super::*;
 pub(super) fn debug(lua: &Lua, state: SharedApiState) -> mlua::Result<Table> {
   let source = lua.create_table()?;
   source.raw_set("VERSION", "Lua 5.4 / TUI GAME API 1")?;
+  for (name, value) in [
+    ("TRACE", "trace"),
+    ("DEBUG", "debug"),
+    ("INFO", "info"),
+    ("WARN", "warn"),
+    ("ERROR", "error"),
+    ("FATAL", "fatal"),
+  ] {
+    source.raw_set(name, value)?;
+  }
   for (name, level) in [
-    ("print", "plain"),
-    ("log", "info"),
-    ("warn", "warn"),
-    ("error", "error"),
+    ("print", None),
+    ("info", Some("info")),
+    ("warn", Some("warn")),
+    ("error", Some("error")),
   ] {
     let state = state.clone();
     source.raw_set(
       name,
       lua.create_function(move |_, values: MultiValue| {
-        let method = match level {
-          "plain" => "debug.print",
-          "info" => "debug.log",
+        let method = match name {
+          "print" => "debug.print",
+          "info" => "debug.info",
           "warn" => "debug.warn",
           _ => "debug.error",
         };
@@ -24,12 +34,17 @@ pub(super) fn debug(lua: &Lua, state: SharedApiState) -> mlua::Result<Table> {
           return Ok(());
         }
         if name == "print" {
-          let table = args::named(method, values, &["message", "time", "level", "type_head"])?;
+          let table = args::named(
+            method,
+            values,
+            &["message", "title", "level", "time", "type_head"],
+          )?;
           let message = args::string(
             args::required(&table, method, "message")?,
             method,
             "message",
           )?;
+          let title = args::optional_string(&table, method, "title", None)?;
           let time = args::optional_bool(&table, method, "time", false)?;
           let type_head = args::optional_bool(&table, method, "type_head", false)?;
           let level = args::optional_string(&table, method, "level", None)?;
@@ -43,10 +58,24 @@ pub(super) fn debug(lua: &Lua, state: SharedApiState) -> mlua::Result<Table> {
               )),
             })
             .transpose()?;
-          enqueue_debug_print(&mut state.borrow_mut(), message, time, level, type_head);
+          enqueue_debug_print(
+            &mut state.borrow_mut(),
+            message,
+            title,
+            time,
+            level,
+            type_head,
+          );
         } else {
           let message = args::string(args::one(method, "message", values)?, method, "message")?;
-          enqueue_debug_log(&mut state.borrow_mut(), level, message);
+          enqueue_debug_print(
+            &mut state.borrow_mut(),
+            message,
+            None,
+            true,
+            level.map(str::to_string),
+            true,
+          );
         }
         Ok(())
       })?,
@@ -82,7 +111,7 @@ fn protected(lua: &Lua, extended: bool, state: SharedApiState) -> mlua::Result<F
     let allowed = if extended {
       &["func", "error_callback", "values"][..]
     } else {
-      &["func", "values", "message"][..]
+      &["func", "values"][..]
     };
     let table = args::named(method, values, allowed)?;
     let value = args::required(&table, method, "func")?;
@@ -95,14 +124,22 @@ fn protected(lua: &Lua, extended: bool, state: SharedApiState) -> mlua::Result<F
       args::values(&table, method)?
     };
     match function.call::<MultiValue>(MultiValue::from_vec(call_values)) {
-      Ok(mut result) => {
+      Ok(result) => {
         if state.borrow().fatal_budget_exceeded || state.borrow().fatal_api_error {
           return Err(mlua::Error::RuntimeError(
             "fatal Lua API resource limit exceeded".to_string(),
           ));
         }
-        result.push_front(Value::Boolean(true));
-        Ok(result)
+        let output = lua.create_table()?;
+        output.raw_set("ok", true)?;
+        let packed = lua.create_table()?;
+        let count = result.len();
+        for (index, value) in result.into_iter().enumerate() {
+          packed.raw_set(index + 1, value)?;
+        }
+        packed.raw_set("n", count)?;
+        output.raw_set("values", packed)?;
+        Ok(output)
       }
       Err(error) => {
         if state.borrow().fatal_budget_exceeded
@@ -117,10 +154,10 @@ fn protected(lua: &Lua, extended: bool, state: SharedApiState) -> mlua::Result<F
             error_value = handler.call(error_value)?;
           }
         }
-        Ok(MultiValue::from_vec(vec![
-          Value::Boolean(false),
-          error_value,
-        ]))
+        let output = lua.create_table()?;
+        output.raw_set("ok", false)?;
+        output.raw_set("error", error_value)?;
+        Ok(output)
       }
     }
   })

@@ -13,30 +13,16 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "API.md",
+                "file": "api/encoding.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "API"
+              "title": "encoding"
             }
           },
           {
-            "id": "49c26b1d30ee3af5",
-            "type": "leaf",
-            "state": {
-              "type": "markdown",
-              "state": {
-                "file": "api/base.md",
-                "mode": "source",
-                "source": false
-              },
-              "icon": "lucide-file",
-              "title": "base"
-            }
-          },
-          {
-            "id": "93a8f88703c2affd",
+            "id": "af54fb1e8941dee2",
             "type": "leaf",
             "state": {
               "type": "markdown",
@@ -47,6 +33,20 @@
               },
               "icon": "lucide-file",
               "title": "draw"
+            }
+          },
+          {
+            "id": "49c26b1d30ee3af5",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "api/debug.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "debug"
             }
           },
           {
@@ -83,16 +83,16 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "api/base.md",
+                "file": "api/color.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "base"
+              "title": "color"
             }
           }
         ],
-        "currentTab": 3
+        "currentTab": 5
       }
     ],
     "direction": "vertical"
@@ -256,29 +256,32 @@
       "bases:新建数据库": false
     }
   },
-  "active": "5d8818bdd0f97395",
+  "active": "2ab02da958db9679",
   "lastOpenFiles": [
-    "api/draw.md",
-    "api/align.md",
-    "image/align_resolve_y_example.png",
-    "api/string.md",
-    "image/align_resolve_x_example.png",
-    "api/char.md",
+    "image/color_hex_example.png",
+    "image/color_rgb_example.png",
+    "image/color_TRANSPARENT_example.png",
+    "image/color_NONE_example.png",
+    "image/color_WHITE_example.png",
+    "image/color_BRIGHT_CYAN_example.png",
+    "image/color_BRIGHT_MAGENTA_example.png",
+    "image/color_BRIGHT_BLUE_example.png",
+    "image/color_BRIGHT_YELLOW_example.png",
+    "image/color_BRIGHT_GREEN_example.png",
+    "image/color_BRIGHT_RED_example.png",
     "api/base.md",
-    "image/char_ASCII_example.png",
-    "image/char_ASCII__example.png",
-    "image/char_ASCII_CHARACTER_example.png",
-    "EVENT.md",
-    "image/char_ASCII_LETTER_example.png",
-    "image/char_ASCII_UPPERCASE_example.png",
-    "image/char_ASCII_LOWERCASE_example.png",
-    "image/ASCII_UPPERCASE.png",
-    "image/ASCII_LOWERCASE.png",
-    "API.md",
+    "api/string.md",
+    "api/align.md",
+    "api/draw.md",
+    "api/encoding.md",
     "api/debug.md",
+    "api/serialization.md",
+    "api/color.md",
+    "api/char.md",
+    "API.md",
+    "EVENT.md",
     "api/game.md",
     "LUA_RUNTIME.md",
-    "api/serialization.md",
     "BOSS.md",
     "GAME.md",
     "LANGUAGE.md",
@@ -291,8 +294,6 @@
     "api/math.md",
     "api/loader.md",
     "api/i18n.md",
-    "api/file.md",
-    "api/event.md",
     "api",
     "库",
     "API.md.tmp.31024.45c5566c4009",

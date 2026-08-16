@@ -15,6 +15,7 @@
   "log.service.package": "包管理",
   "log.service.lua": "Lua",
   "log.service.game": "游戏",
+  "log.service.screensaver": "屏保",
   "log.service.overlay": "覆盖层",
   "log.service.ui": "界面",
   "log.service.crash": "崩溃",

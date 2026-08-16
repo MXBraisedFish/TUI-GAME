@@ -15,6 +15,7 @@
   "log.service.package": "Package",
   "log.service.lua": "Lua",
   "log.service.game": "Game",
+  "log.service.screensaver": "Screensaver",
   "log.service.overlay": "Overlay",
   "log.service.ui": "Ui",
   "log.service.crash": "Crash",

@@ -112,6 +112,7 @@ pub enum LuaHostCommand {
   },
   Print {
     message: String,
+    title: Option<String>,
     time: bool,
     level: Option<String>,
     type_head: bool,

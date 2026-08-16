@@ -100,41 +100,10 @@ fn push_host_command(state: &mut super::LuaApiState, command: LuaHostCommand) {
   }
 }
 
-fn enqueue_debug_log(state: &mut super::LuaApiState, level: &str, message: String) {
-  if state.debug_log_window_started.elapsed() >= Duration::from_secs(1) {
-    if state.debug_log_dropped > 0 {
-      push_host_command(
-        state,
-        LuaHostCommand::Log {
-          level: "warn".to_string(),
-          message: format!(
-            "suppressed {} Lua debug log messages due to rate limiting",
-            state.debug_log_dropped
-          ),
-        },
-      );
-    }
-    state.debug_log_window_started = std::time::Instant::now();
-    state.debug_log_count = 0;
-    state.debug_log_dropped = 0;
-  }
-  if state.debug_log_count < 100 {
-    state.debug_log_count += 1;
-    push_host_command(
-      state,
-      LuaHostCommand::Log {
-        level: level.to_string(),
-        message: truncate(message, 4096),
-      },
-    );
-  } else {
-    state.debug_log_dropped = state.debug_log_dropped.saturating_add(1);
-  }
-}
-
 fn enqueue_debug_print(
   state: &mut super::LuaApiState,
   message: String,
+  title: Option<String>,
   time: bool,
   level: Option<String>,
   type_head: bool,
@@ -162,6 +131,7 @@ fn enqueue_debug_print(
       state,
       LuaHostCommand::Print {
         message: truncate(message, 4096),
+        title: title.map(|title| truncate(title, 4096)),
         time,
         level,
         type_head,

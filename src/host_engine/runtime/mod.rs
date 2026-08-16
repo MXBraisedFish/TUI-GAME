@@ -2016,6 +2016,7 @@ fn apply_lua_host_commands(
       }
       LuaHostCommand::Print {
         message,
+        title,
         time,
         level,
         type_head,
@@ -2027,6 +2028,7 @@ fn apply_lua_host_commands(
           time,
           level: level.as_deref().and_then(lua_log_level),
           type_head,
+          title,
         },
       ),
       LuaHostCommand::Ignored { method, reason } => log_lua_session_message(
@@ -2340,10 +2342,12 @@ fn print_lua_session_message(
     LuaSessionKind::Game => services.game.log_session(),
     LuaSessionKind::Screensaver => services.screensaver.log_session(),
   };
+  let source = match kind {
+    LuaSessionKind::Game => LogSource::Game,
+    LuaSessionKind::Screensaver => LogSource::Screensaver,
+  };
   if let Some(id) = id {
-    services
-      .log
-      .print_session(id, LogSource::Lua, message, options);
+    services.log.print_session(id, source, message, options);
     return;
   }
   if let Some(package) = match kind {
@@ -2354,7 +2358,7 @@ fn print_lua_session_message(
   {
     services
       .log
-      .print_package(&package, LogSource::Lua, message, options);
+      .print_package(&package, source, message, options);
   } else {
     services.log.info(LogSource::Lua, message);
   }
