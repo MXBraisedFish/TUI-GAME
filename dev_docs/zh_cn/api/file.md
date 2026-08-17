@@ -1355,9 +1355,9 @@ file.create_dir{}
 
 ```lua
 assets/
-- file.txt
 
-file.create_dir { path = "file.txt", text = "Hello Tui Game", event_tip = "Get!" }
+file.create_dir { path = "file" }
+file.create_dir { path = "test1/test2" }
 
 function HandleEvent(event)
   if event.type == "file" then
@@ -1369,17 +1369,33 @@ end
 输出：
 
 ```json
+assets/
++ file/
+- test1/
+  - test2/
+
 {
   "type": "file",
   "frame": X,
   "sequence": X,
   "data": {
     "request_id": X,
-    "path": "file.txt",
     "ok": true,
-    "kind": "write_text",
-    "tip": "Get!"
-  }
+    "kind": "create_dir",
+    "path": "file"
+  },
+}
+
+{
+  "type": "file",
+  "frame": X,
+  "sequence": X,
+  "data": {
+    "request_id": X,
+    "ok": true,
+    "kind": "create_dir",
+    "path": "test1/test2"
+  },
 }
 ```
 
@@ -1454,3 +1470,57 @@ file.remove{}
 ### 返回
 
 事件返回，请查看⌊[事件结构](../EVENT.md)⌉文档⌊file⌉部分。
+
+### 示例
+
+```lua
+assets/
++ test/
+| - test.txt
+- file.txt
+
+file.remove { path = "file.txt" }
+file.remove { path = "test", recursive = false }
+
+function HandleEvent(event)
+  if event.type == "file" then
+    debug.print { message = serialization.json_encode(event) }
+  end
+end
+```
+
+输出：
+
+```json
+assets/
++ test/
+  - test.txt
+
+{
+  "type": "file",
+  "frame": X,
+  "sequence": X,
+  "data": {
+    "request_id": X,
+    "ok": true,
+    "kind": "remove",
+    "path": "file.txt"
+  },
+}
+
+{
+  "type": "file",
+  "frame": X,
+  "sequence": X,
+  "data": {
+    "request_id": X,
+    "ok": false,
+    "kind": "remove",
+    "path": "test",
+    "error": {
+      "code": "io",
+      "message": "I/O operation failed"
+    },
+  }
+}
+```
