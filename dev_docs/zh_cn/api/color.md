@@ -19,7 +19,7 @@
 | `BLUE` | 蓝色 | [BLUE](#BLUE) |
 | `MAGENTA` | 品红 | [MAGENTA](#MAGENTA) |
 | `CYAN` | 青色 | [CYAN](#CYAN) |
-| `GRAY` / `GREY` | 灰色 | [GRAY / GREY](#GRAY) |
+| `GRAY` / `GREY` | 灰色 | [GRAY / GREY](#GRAY--GREY) |
 | `BRIGHT_GRAY` / `BRIGHT_GREY` | 亮灰 | [BRIGHT_GRAY / BRIGHT_GREY](#BRIGHT_GRAY) |
 | `BRIGHT_RED` | 亮红 | [BRIGHT_RED](#BRIGHT_RED) |
 | `BRIGHT_GREEN` | 亮绿 | [BRIGHT_GREEN](#BRIGHT_GREEN) |
