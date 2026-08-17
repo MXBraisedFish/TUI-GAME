@@ -1191,6 +1191,9 @@ end
 
 异步枚举 `assets/` 目录下的条目。
 
+> 需关闭安全模式
+> 仅游戏脚本
+
 ### 调用
 
 ```lua
@@ -1203,7 +1206,7 @@ file.list_dir{}
 | 参数名      | 类型                | 必填 | 默认值     | 说明                      |
 | ----------- | ------------------- | ---- | ---------- | ------------------------- |
 | `path`      | string              | 是   | -          | 相对 `assets/` 的目录路径 |
-| `recursive` | boolean             | 否   | `false`    | 是否递归子目录            |
+| `recursive` | boolean             | 否   | `false`    | 是否递归子目录枚举        |
 | `file_type` | string / const-file | 否   | `file.ALL` | 仅匹配指定扩展名          |
 | `event_tip` | string / nil        | 否   | `nil`      | 事件提示文本              |
 
@@ -1321,4 +1324,133 @@ end
 }
 ```
 
+---
 
+## `create_dir`
+
+异步创建指定目录到 `assets/` 目录。
+
+> 需关闭安全模式
+> 仅游戏脚本
+
+### 调用
+
+```lua
+-- 表参数
+file.create_dir{}
+```
+
+### 参数
+
+| 参数名      | 类型         | 必填 | 默认值 | 说明                      |
+| ----------- | ------------ | ---- | ------ | ------------------------- |
+| `path`      | string       | 是   | -      | 相对 `assets/` 的目录路径 |
+| `event_tip` | string / nil | 否   | `nil`  | 事件提示文本              |
+
+### 返回
+
+事件返回，请查看⌊[事件结构](../EVENT.md)⌉文档⌊file⌉部分。
+
+### 示例
+
+```lua
+assets/
+- file.txt
+
+file.create_dir { path = "file.txt", text = "Hello Tui Game", event_tip = "Get!" }
+
+function HandleEvent(event)
+  if event.type == "file" then
+    debug.print { message = serialization.json_encode(event) }
+  end
+end
+```
+
+输出：
+
+```json
+{
+  "type": "file",
+  "frame": X,
+  "sequence": X,
+  "data": {
+    "request_id": X,
+    "path": "file.txt",
+    "ok": true,
+    "kind": "write_text",
+    "tip": "Get!"
+  }
+}
+```
+
+---
+
+## `exists`
+
+判断 `assets/` 目录下的指定文件或目录是否存在。
+
+### 调用
+
+```lua
+-- 单参数
+file.exists()
+```
+
+### 参数
+
+| 参数名 | 类型   | 必填 | 默认值 | 说明                      |
+| ------ | ------ | ---- | ------ | ------------------------- |
+| `path` | string | 是   | -      | 相对 `assets/` 的目录路径 |
+
+### 返回
+
+直接返回一个值
+
+| 类型    | 说明               |
+| ------- | ------------------ |
+| boolean | 文件或目录是否存在 |
+
+### 示例
+
+```lua
+assets/
+- test/
+
+debug.print { message = tostring(file.exists("test")) }
+debug.print { message = tostring(file.exists("none")) }
+```
+
+输出：
+
+```test
+true
+false
+```
+
+---
+
+## `remove`
+
+异步删除 `assets/` 目录下指定文件或目录。
+
+> 需关闭安全模式
+> 仅游戏脚本
+
+### 调用
+
+```lua
+-- 表参数
+file.remove{}
+```
+
+### 参数
+
+| 参数名      | 类型         | 必填 | 默认值  | 说明                       |
+| ----------- | ------------ | ---- | ------- | -------------------------- |
+| `path`      | string       | 是   | -       | 相对 `assets/` 的目录路径  |
+| `recursive` | boolean      | 否   | `false` | 是否递归删除子目录中的内容 |
+| `event_tip` | string / nil | 否   | `nil`   | 事件提示文本               |
+
+### 返回
+
+事件返回，请查看⌊[事件结构](../EVENT.md)⌉文档⌊file⌉部分。

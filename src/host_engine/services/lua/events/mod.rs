@@ -122,6 +122,8 @@ pub enum LuaFileOperation {
   WriteText,
   WriteBytes,
   ListDir,
+  CreateDir,
+  Remove,
 }
 
 impl LuaFileOperation {
@@ -132,11 +134,16 @@ impl LuaFileOperation {
       Self::WriteText => "write_text",
       Self::WriteBytes => "write_bytes",
       Self::ListDir => "list_dir",
+      Self::CreateDir => "create_dir",
+      Self::Remove => "remove",
     }
   }
 
   pub fn is_write(self) -> bool {
-    matches!(self, Self::WriteText | Self::WriteBytes | Self::ListDir)
+    matches!(
+      self,
+      Self::WriteText | Self::WriteBytes | Self::ListDir | Self::CreateDir | Self::Remove
+    )
   }
 }
 
@@ -212,6 +219,8 @@ pub enum LuaFileOutcome {
   Text(String),
   Bytes(Vec<u8>),
   Written,
+  DirectoryCreated,
+  Removed,
   Entries(Vec<LuaFileEntry>),
   Failed(LuaEventError),
 }
@@ -547,7 +556,9 @@ impl LuaEventData {
             data.set("ok", true)?;
             data.set("bytes", lua.create_string(bytes)?)?;
           }
-          LuaFileOutcome::Written => data.set("ok", true)?,
+          LuaFileOutcome::Written | LuaFileOutcome::DirectoryCreated | LuaFileOutcome::Removed => {
+            data.set("ok", true)?
+          }
           LuaFileOutcome::Entries(entries) => {
             data.set("ok", true)?;
             let values = lua.create_table()?;
@@ -773,6 +784,36 @@ mod tests {
         .as_ref(),
       &[0, 1, 255]
     );
+  }
+
+  #[test]
+  fn directory_file_payloads_only_expose_success_metadata() {
+    let lua = Lua::new();
+    for (kind, outcome, expected_kind) in [
+      (
+        LuaFileOperation::CreateDir,
+        LuaFileOutcome::DirectoryCreated,
+        "create_dir",
+      ),
+      (LuaFileOperation::Remove, LuaFileOutcome::Removed, "remove"),
+    ] {
+      let data = LuaEventData::File(LuaFileEvent {
+        request_id: 8,
+        kind,
+        path: "save/slot-a".to_string(),
+        tip: Some("operation".to_string()),
+        outcome,
+      })
+      .to_lua_table(&lua)
+      .unwrap();
+      assert_eq!(data.get::<String>("kind").unwrap(), expected_kind);
+      assert_eq!(data.get::<String>("path").unwrap(), "save/slot-a");
+      assert_eq!(data.get::<String>("tip").unwrap(), "operation");
+      assert!(data.get::<bool>("ok").unwrap());
+      for field in ["text", "bytes", "entries", "error"] {
+        assert!(matches!(data.get::<Value>(field).unwrap(), Value::Nil));
+      }
+    }
   }
 
   #[test]

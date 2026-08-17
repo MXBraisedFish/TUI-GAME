@@ -5,9 +5,12 @@ const MAX_VIRTUAL_PATH_BYTES: usize = 8192;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum SandboxPathKind {
+  Any,
   File,
   Directory,
   WritableFile,
+  WritableDirectory,
+  Removable,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -62,6 +65,10 @@ impl SafeRelativePath {
 
   pub(crate) fn virtual_path(&self) -> &str {
     &self.virtual_path
+  }
+
+  pub(crate) fn is_root(&self) -> bool {
+    self.relative.as_os_str().is_empty()
   }
 
   pub(crate) fn extension(&self) -> Option<&str> {
@@ -126,10 +133,14 @@ pub(crate) fn resolve_sandbox_path(
   }
 
   let candidate = canonical_root.join(&relative.relative);
-  let resolved = if candidate.exists() {
+  let resolved = if kind == SandboxPathKind::Removable {
+    resolve_removable_candidate(&canonical_root, &candidate)?
+  } else if candidate.exists() {
     candidate
       .canonicalize()
       .map_err(|_| SandboxPathError::NotFound)?
+  } else if kind == SandboxPathKind::WritableDirectory {
+    resolve_missing_candidate(&canonical_root, &candidate)?
   } else if kind == SandboxPathKind::WritableFile {
     let parent = candidate
       .parent()
@@ -148,13 +159,87 @@ pub(crate) fn resolve_sandbox_path(
     return Err(SandboxPathError::EscapesRoot);
   }
   match kind {
+    SandboxPathKind::Any => Ok(resolved),
     SandboxPathKind::File if !resolved.is_file() => Err(SandboxPathError::NotFile),
     SandboxPathKind::Directory if !resolved.is_dir() => Err(SandboxPathError::NotDirectory),
     SandboxPathKind::WritableFile if resolved.exists() && !resolved.is_file() => {
       Err(SandboxPathError::NotFile)
     }
+    SandboxPathKind::WritableDirectory if resolved.exists() && !resolved.is_dir() => {
+      Err(SandboxPathError::NotDirectory)
+    }
+    SandboxPathKind::Removable => Ok(resolved),
     _ => Ok(resolved),
   }
+}
+
+fn resolve_removable_candidate(
+  canonical_root: &Path,
+  candidate: &Path,
+) -> Result<PathBuf, SandboxPathError> {
+  if std::fs::symlink_metadata(candidate).is_err() {
+    return Err(SandboxPathError::NotFound);
+  }
+  let name = candidate
+    .file_name()
+    .ok_or(SandboxPathError::ParentUnavailable)?;
+  let parent = candidate
+    .parent()
+    .ok_or(SandboxPathError::ParentUnavailable)?
+    .canonicalize()
+    .map_err(|_| SandboxPathError::ParentUnavailable)?;
+  if !parent.starts_with(canonical_root) {
+    return Err(SandboxPathError::EscapesRoot);
+  }
+  Ok(parent.join(name))
+}
+
+pub(crate) fn sandbox_path_exists(
+  root: &Path,
+  relative: &SafeRelativePath,
+) -> Result<bool, SandboxPathError> {
+  match resolve_sandbox_path(root, relative, SandboxPathKind::Any) {
+    Ok(_) => Ok(true),
+    Err(SandboxPathError::NotFound) => {
+      let canonical_root = root
+        .canonicalize()
+        .map_err(|_| SandboxPathError::RootUnavailable)?;
+      let candidate = canonical_root.join(&relative.relative);
+      resolve_missing_candidate(&canonical_root, &candidate)?;
+      Ok(false)
+    }
+    Err(error) => Err(error),
+  }
+}
+
+fn resolve_missing_candidate(
+  canonical_root: &Path,
+  candidate: &Path,
+) -> Result<PathBuf, SandboxPathError> {
+  let mut existing = candidate;
+  let mut suffix = Vec::new();
+  while !existing.exists() {
+    let name = existing
+      .file_name()
+      .ok_or(SandboxPathError::ParentUnavailable)?;
+    suffix.push(name.to_os_string());
+    existing = existing
+      .parent()
+      .ok_or(SandboxPathError::ParentUnavailable)?;
+  }
+  let mut resolved = existing
+    .canonicalize()
+    .map_err(|_| SandboxPathError::ParentUnavailable)?;
+  if !resolved.starts_with(canonical_root) {
+    return Err(SandboxPathError::EscapesRoot);
+  }
+  for segment in suffix.into_iter().rev() {
+    resolved.push(segment);
+  }
+  if !resolved.starts_with(canonical_root) {
+    return Err(SandboxPathError::EscapesRoot);
+  }
+  Ok(resolved)
 }
 
 fn valid_portable_segment(segment: &str) -> bool {

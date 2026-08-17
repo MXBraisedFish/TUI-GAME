@@ -2,7 +2,7 @@ mod api;
 mod events;
 mod game;
 mod object_pool;
-mod path;
+pub(crate) mod path;
 mod policy;
 mod screensaver;
 mod session;

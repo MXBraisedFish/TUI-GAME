@@ -2253,6 +2253,8 @@ mod tests {
           event.clear_action("ignored")
           file.write("ignored")
           file.list_dir("ignored")
+          file.create_dir("ignored")
+          file.remove("ignored")
           debug.info({ invalid = true })
         end
       "#,
@@ -2268,6 +2270,8 @@ mod tests {
       "event.clear_action",
       "file.write",
       "file.list_dir",
+      "file.create_dir",
+      "file.remove",
       "debug.info",
     ] {
       assert!(
@@ -2389,9 +2393,14 @@ mod tests {
       valid_script(
         r#"
           function Init(ctx)
+            debug.assert{ value = file.exists(".") }
+            debug.assert{ value = file.exists{ path = "./input.txt" } }
+            debug.assert{ value = not file.exists("./missing.txt") }
             file.list_dir{ path = ".", recursive = true }
             file.read{ path = "./input.txt" }
             file.write{ path = "./output.txt", text = "output" }
+            file.create_dir{ path = "./created/nested/leaf", event_tip = "created" }
+            file.remove{ path = "./input.txt", event_tip = "removed" }
             local empty = debug.pcall{
               func = function() file.list_dir{ path = "" } end,
             }
@@ -2452,6 +2461,30 @@ mod tests {
         virtual_path,
         ..
       } if path == &expected_root.join("output.txt") && virtual_path == "output.txt"
+    )));
+    assert!(requests.iter().any(|command| matches!(
+      command,
+      LuaHostCommand::FileRequest {
+        task: crate::host_engine::services::FileTask::LuaCreateDir { path, .. },
+        operation: LuaFileOperation::CreateDir,
+        virtual_path,
+        event_tip: Some(event_tip),
+        ..
+      } if path == &expected_root.join("created/nested/leaf")
+        && virtual_path == "created/nested/leaf"
+        && event_tip == "created"
+    )));
+    assert!(requests.iter().any(|command| matches!(
+      command,
+      LuaHostCommand::FileRequest {
+        task: crate::host_engine::services::FileTask::LuaRemove { path, recursive: false, .. },
+        operation: LuaFileOperation::Remove,
+        virtual_path,
+        event_tip: Some(event_tip),
+        ..
+      } if path == &expected_root.join("input.txt")
+        && virtual_path == "input.txt"
+        && event_tip == "removed"
     )));
 
     fs::remove_dir_all(package_root).unwrap();

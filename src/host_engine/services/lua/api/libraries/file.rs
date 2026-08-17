@@ -1,6 +1,6 @@
 use super::*;
 use crate::host_engine::services::lua::path::{
-  SafeRelativePath, SandboxPathKind, resolve_sandbox_path,
+  SafeRelativePath, SandboxPathKind, resolve_sandbox_path, sandbox_path_exists,
 };
 
 pub(super) fn file(lua: &Lua, state: SharedApiState) -> mlua::Result<Table> {
@@ -129,6 +129,92 @@ pub(super) fn file(lua: &Lua, state: SharedApiState) -> mlua::Result<Table> {
       Ok(())
     })?,
   )?;
+  let create_dir_state = state.clone();
+  source.raw_set(
+    "create_dir",
+    lua.create_function(move |_, values: MultiValue| {
+      let method = "file.create_dir";
+      if !file_permission(&create_dir_state, method) {
+        return Ok(());
+      }
+      let table = args::named(method, values, &["path", "event_tip"])?;
+      let relative_path = file_path(&table, method)?;
+      let virtual_path = relative_path.virtual_path().to_string();
+      let event_tip = file_tip(&table, method)?;
+      let assets_root = create_dir_state.borrow().context.assets_root.clone();
+      let path = resolve_file_path(
+        &assets_root,
+        &relative_path,
+        SandboxPathKind::WritableDirectory,
+        method,
+      )?;
+      enqueue_file_request(
+        &create_dir_state,
+        FileTask::LuaCreateDir {
+          root: assets_root,
+          path,
+          virtual_path: virtual_path.clone(),
+        },
+        LuaFileOperation::CreateDir,
+        virtual_path,
+        event_tip,
+      );
+      Ok(())
+    })?,
+  )?;
+  let exists_state = state.clone();
+  source.raw_set(
+    "exists",
+    lua.create_function(move |_, values: MultiValue| {
+      let method = "file.exists";
+      let value = args::one(method, "path", values)?;
+      let path = args::string(value, method, "path")?;
+      let relative_path = parse_file_path(&path, method)?;
+      sandbox_path_exists(&exists_state.borrow().context.assets_root, &relative_path)
+        .map_err(|error| args::message(method, format!("unsafe asset path: {error}")))
+    })?,
+  )?;
+  let remove_state = state.clone();
+  source.raw_set(
+    "remove",
+    lua.create_function(move |_, values: MultiValue| {
+      let method = "file.remove";
+      if !file_permission(&remove_state, method) {
+        return Ok(());
+      }
+      let table = args::named(method, values, &["path", "recursive", "event_tip"])?;
+      let relative_path = file_path(&table, method)?;
+      if relative_path.is_root() {
+        return Err(args::message(method, "cannot remove the assets root"));
+      }
+      let recursive = match table.get::<Value>("recursive")? {
+        Value::Nil => false,
+        value => args::boolean(value, method, "recursive")?,
+      };
+      let virtual_path = relative_path.virtual_path().to_string();
+      let event_tip = file_tip(&table, method)?;
+      let assets_root = remove_state.borrow().context.assets_root.clone();
+      let path = resolve_file_path(
+        &assets_root,
+        &relative_path,
+        SandboxPathKind::Removable,
+        method,
+      )?;
+      enqueue_file_request(
+        &remove_state,
+        FileTask::LuaRemove {
+          root: assets_root,
+          path,
+          virtual_path: virtual_path.clone(),
+          recursive,
+        },
+        LuaFileOperation::Remove,
+        virtual_path,
+        event_tip,
+      );
+      Ok(())
+    })?,
+  )?;
   let list_state = state.clone();
   source.raw_set(
     "list_dir",
@@ -209,7 +295,11 @@ pub(super) fn file_permission(state: &SharedApiState, method: &'static str) -> b
 
 pub(super) fn file_path(table: &Table, method: &str) -> mlua::Result<SafeRelativePath> {
   let path = args::string(args::required(table, method, "path")?, method, "path")?;
-  SafeRelativePath::parse(&path)
+  parse_file_path(&path, method)
+}
+
+fn parse_file_path(path: &str, method: &str) -> mlua::Result<SafeRelativePath> {
+  SafeRelativePath::parse(path)
     .map_err(|error| args::message(method, format!("unsafe asset path: {error}")))
 }
 

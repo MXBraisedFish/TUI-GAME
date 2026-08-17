@@ -22,6 +22,7 @@ use super::{
   image::{ImageConvertParams, ImageService},
   input::{KeyEvent, SystemEvent},
   log::LogSource,
+  lua::path::{SafeRelativePath, SandboxPathKind, resolve_sandbox_path},
   network::{NetworkEvent, NetworkTask},
   package::{self, PackageAsyncEvent, PackageTask},
   recording::{self, RecordingAsyncEvent, RecordingTask},
@@ -106,6 +107,17 @@ pub enum FileTask {
     recursive: bool,
     file_type: Option<String>,
   },
+  LuaCreateDir {
+    root: PathBuf,
+    path: PathBuf,
+    virtual_path: String,
+  },
+  LuaRemove {
+    root: PathBuf,
+    path: PathBuf,
+    virtual_path: String,
+    recursive: bool,
+  },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -147,6 +159,14 @@ pub enum FileEvent {
     task_id: TaskId,
     path: PathBuf,
     entries: Vec<FileListEntry>,
+  },
+  LuaCreateDirFinished {
+    task_id: TaskId,
+    path: PathBuf,
+  },
+  LuaRemoveFinished {
+    task_id: TaskId,
+    path: PathBuf,
   },
   Failed {
     task_id: TaskId,
@@ -486,7 +506,9 @@ fn write_target(task: &EngineTask) -> Option<PathBuf> {
     EngineTask::Video(task) => Some(task.output_path.clone()),
     EngineTask::File(FileTask::WriteText { path, .. })
     | EngineTask::File(FileTask::WriteBytes { path, .. })
-    | EngineTask::File(FileTask::LuaWriteText { path, .. }) => Some(path.clone()),
+    | EngineTask::File(FileTask::LuaWriteText { path, .. })
+    | EngineTask::File(FileTask::LuaCreateDir { path, .. })
+    | EngineTask::File(FileTask::LuaRemove { path, .. }) => Some(path.clone()),
     EngineTask::File(
       FileTask::ReadText { .. }
       | FileTask::ReadBytes { .. }
@@ -660,11 +682,158 @@ fn run_file_task(
         Err(error)
       }
     },
+    FileTask::LuaCreateDir {
+      root,
+      path,
+      virtual_path,
+    } => match revalidate_lua_path(
+      &root,
+      &path,
+      &virtual_path,
+      SandboxPathKind::WritableDirectory,
+    )
+    .and_then(|path| {
+      create_lua_directory_tree(&root, &path)?;
+      Ok(path)
+    }) {
+      Ok(path) => {
+        let _ = event_tx.send(EngineEvent::File(FileEvent::LuaCreateDirFinished {
+          task_id,
+          path,
+        }));
+        Ok(())
+      }
+      Err(error) => {
+        send_file_error(event_tx, task_id, path, error.clone());
+        Err(error)
+      }
+    },
+    FileTask::LuaRemove {
+      root,
+      path,
+      virtual_path,
+      recursive,
+    } => match revalidate_lua_path(&root, &path, &virtual_path, SandboxPathKind::Removable)
+      .and_then(|path| remove_lua_path(&path, recursive).map(|_| path))
+    {
+      Ok(path) => {
+        let _ = event_tx.send(EngineEvent::File(FileEvent::LuaRemoveFinished {
+          task_id,
+          path,
+        }));
+        Ok(())
+      }
+      Err(error) => {
+        send_file_error(event_tx, task_id, path, error.clone());
+        Err(error)
+      }
+    },
   }
 }
 
 const LUA_FILE_LIMIT: usize = 1024 * 1024;
 const LUA_DIRECTORY_LIMIT: usize = 4096;
+const LUA_DIRECTORY_DEPTH_LIMIT: usize = 32;
+
+fn revalidate_lua_path(
+  root: &Path,
+  submitted_path: &Path,
+  virtual_path: &str,
+  kind: SandboxPathKind,
+) -> Result<PathBuf, String> {
+  let relative = SafeRelativePath::parse(virtual_path).map_err(|error| error.to_string())?;
+  if relative.is_root() && matches!(kind, SandboxPathKind::Removable) {
+    return Err("cannot remove the assets root".to_string());
+  }
+  let resolved = resolve_sandbox_path(root, &relative, kind).map_err(|error| error.to_string())?;
+  if resolved != submitted_path {
+    return Err("safe path changed before the operation started".to_string());
+  }
+  Ok(resolved)
+}
+
+fn create_lua_directory_tree(root: &Path, target: &Path) -> Result<(), String> {
+  let canonical_root = root.canonicalize().map_err(|error| error.to_string())?;
+  let relative = target
+    .strip_prefix(&canonical_root)
+    .map_err(|_| "directory path escapes assets root".to_string())?;
+  if relative.components().count() > LUA_DIRECTORY_DEPTH_LIMIT {
+    return Err("directory creation exceeds 32 levels".to_string());
+  }
+
+  let mut current = canonical_root.clone();
+  for component in relative.components() {
+    current.push(component.as_os_str());
+    match fs::symlink_metadata(&current) {
+      Ok(_) => {
+        let resolved = current.canonicalize().map_err(|error| error.to_string())?;
+        if !resolved.starts_with(&canonical_root) {
+          return Err("symbolic link escapes assets root".to_string());
+        }
+        if !resolved.is_dir() {
+          return Err("directory path contains a non-directory entry".to_string());
+        }
+        current = resolved;
+      }
+      Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+        fs::create_dir(&current).map_err(|error| error.to_string())?;
+        let resolved = current.canonicalize().map_err(|error| error.to_string())?;
+        if !resolved.starts_with(&canonical_root) {
+          return Err("created directory escapes assets root".to_string());
+        }
+        current = resolved;
+      }
+      Err(error) => return Err(error.to_string()),
+    }
+  }
+  Ok(())
+}
+
+fn remove_lua_path(path: &Path, recursive: bool) -> Result<(), String> {
+  let metadata = fs::symlink_metadata(path).map_err(|error| error.to_string())?;
+  if metadata.file_type().is_symlink() {
+    return if fs::metadata(path).is_ok_and(|target| target.is_dir()) {
+      fs::remove_dir(path).map_err(|error| error.to_string())
+    } else {
+      fs::remove_file(path).map_err(|error| error.to_string())
+    };
+  }
+  if metadata.is_file() {
+    return fs::remove_file(path).map_err(|error| error.to_string());
+  }
+  if !metadata.is_dir() {
+    return Err("path is not a file or directory".to_string());
+  }
+  if !recursive {
+    return fs::remove_dir(path).map_err(|error| error.to_string());
+  }
+
+  let mut entries = 0usize;
+  validate_lua_remove_tree(path, 0, &mut entries)?;
+  fs::remove_dir_all(path).map_err(|error| error.to_string())
+}
+
+fn validate_lua_remove_tree(
+  directory: &Path,
+  depth: usize,
+  entries: &mut usize,
+) -> Result<(), String> {
+  if depth > LUA_DIRECTORY_DEPTH_LIMIT {
+    return Err("directory recursion exceeds 32 levels".to_string());
+  }
+  for entry in fs::read_dir(directory).map_err(|error| error.to_string())? {
+    let entry = entry.map_err(|error| error.to_string())?;
+    *entries = entries.saturating_add(1);
+    if *entries > LUA_DIRECTORY_LIMIT {
+      return Err("directory operation exceeds 4096 entries".to_string());
+    }
+    let metadata = fs::symlink_metadata(entry.path()).map_err(|error| error.to_string())?;
+    if metadata.is_dir() && !metadata.file_type().is_symlink() {
+      validate_lua_remove_tree(&entry.path(), depth + 1, entries)?;
+    }
+  }
+  Ok(())
+}
 
 fn read_lua_text(path: &Path, encoding: &str) -> Result<String, String> {
   let bytes = fs::read(path).map_err(|error| error.to_string())?;
@@ -974,6 +1143,16 @@ mod tests {
     path
   }
 
+  #[cfg(unix)]
+  fn create_directory_link(target: &Path, link: &Path) -> std::io::Result<()> {
+    std::os::unix::fs::symlink(target, link)
+  }
+
+  #[cfg(windows)]
+  fn create_directory_link(target: &Path, link: &Path) -> std::io::Result<()> {
+    std::os::windows::fs::symlink_dir(target, link)
+  }
+
   #[test]
   fn async_runtime_assigns_unique_task_ids() {
     let runtime = AsyncRuntime::with_worker_count(1);
@@ -1108,6 +1287,145 @@ mod tests {
       list_lua_files(&directory, true, None).unwrap_err(),
       "directory recursion exceeds 32 levels"
     );
+    fs::remove_dir_all(directory).unwrap();
+  }
+
+  #[test]
+  fn lua_directory_creation_and_removal_are_revalidated_and_reported() {
+    let directory = file_test_directory().canonicalize().unwrap();
+    let created = directory.join("created/nested/leaf");
+    let (event_tx, event_rx) = unbounded();
+
+    run_file_task(
+      TaskId(1),
+      FileTask::LuaCreateDir {
+        root: directory.clone(),
+        path: created.clone(),
+        virtual_path: "created/nested/leaf".to_string(),
+      },
+      &event_tx,
+    )
+    .unwrap();
+    assert!(created.is_dir());
+    assert!(directory.join("created").is_dir());
+    assert!(directory.join("created/nested").is_dir());
+    create_lua_directory_tree(&directory, &created).unwrap();
+    assert!(matches!(
+      event_rx.recv().unwrap(),
+      EngineEvent::File(FileEvent::LuaCreateDirFinished { task_id: TaskId(1), path })
+        if path == created
+    ));
+
+    fs::write(created.join("child.txt"), "child").unwrap();
+    assert!(
+      run_file_task(
+        TaskId(2),
+        FileTask::LuaRemove {
+          root: directory.clone(),
+          path: created.clone(),
+          virtual_path: "created/nested/leaf".to_string(),
+          recursive: false,
+        },
+        &event_tx,
+      )
+      .is_err()
+    );
+    assert!(created.is_dir());
+    assert!(matches!(
+      event_rx.recv().unwrap(),
+      EngineEvent::File(FileEvent::Failed { task_id: TaskId(2), path, error })
+        if path == created && !error.is_empty()
+    ));
+
+    run_file_task(
+      TaskId(3),
+      FileTask::LuaRemove {
+        root: directory.clone(),
+        path: created.clone(),
+        virtual_path: "created/nested/leaf".to_string(),
+        recursive: true,
+      },
+      &event_tx,
+    )
+    .unwrap();
+    assert!(!created.exists());
+    assert!(matches!(
+      event_rx.recv().unwrap(),
+      EngineEvent::File(FileEvent::LuaRemoveFinished { task_id: TaskId(3), path })
+        if path == created
+    ));
+
+    let root_removal = run_file_task(
+      TaskId(4),
+      FileTask::LuaRemove {
+        root: directory.clone(),
+        path: directory.clone(),
+        virtual_path: ".".to_string(),
+        recursive: true,
+      },
+      &event_tx,
+    );
+    assert_eq!(root_removal.unwrap_err(), "cannot remove the assets root");
+    assert!(directory.is_dir());
+    fs::remove_dir_all(directory).unwrap();
+  }
+
+  #[test]
+  fn lua_directory_creation_checks_depth_before_creating_any_level() {
+    let directory = file_test_directory().canonicalize().unwrap();
+    let mut target = directory.clone();
+    for _ in 0..33 {
+      target.push("d");
+    }
+
+    assert_eq!(
+      create_lua_directory_tree(&directory, &target).unwrap_err(),
+      "directory creation exceeds 32 levels"
+    );
+    assert!(!directory.join("d").exists());
+    fs::remove_dir_all(directory).unwrap();
+  }
+
+  #[test]
+  fn lua_recursive_remove_preflights_depth_before_deleting() {
+    let directory = file_test_directory();
+    let target = directory.join("target");
+    fs::create_dir(&target).unwrap();
+    let mut nested = target.clone();
+    for _ in 0..33 {
+      nested.push("d");
+      fs::create_dir(&nested).unwrap();
+    }
+    fs::write(nested.join("kept.txt"), "kept").unwrap();
+
+    assert_eq!(
+      remove_lua_path(&target, true).unwrap_err(),
+      "directory recursion exceeds 32 levels"
+    );
+    assert!(target.is_dir());
+    assert!(nested.join("kept.txt").is_file());
+    fs::remove_dir_all(directory).unwrap();
+  }
+
+  #[test]
+  fn lua_remove_deletes_a_symbolic_link_without_following_it() {
+    let directory = file_test_directory().canonicalize().unwrap();
+    let target = directory.join("target");
+    let link = directory.join("link");
+    fs::create_dir(&target).unwrap();
+    fs::write(target.join("kept.txt"), "kept").unwrap();
+    if create_directory_link(&target, &link).is_err() {
+      fs::remove_dir_all(directory).unwrap();
+      return;
+    }
+
+    let relative = SafeRelativePath::parse("link").unwrap();
+    let removable =
+      resolve_sandbox_path(&directory, &relative, SandboxPathKind::Removable).unwrap();
+    assert_eq!(removable, link);
+    remove_lua_path(&removable, true).unwrap();
+    assert!(fs::symlink_metadata(&link).is_err());
+    assert!(target.join("kept.txt").is_file());
     fs::remove_dir_all(directory).unwrap();
   }
 

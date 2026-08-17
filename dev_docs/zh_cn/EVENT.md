@@ -253,7 +253,7 @@ error = {
 
 ### 5.2 `file`
 
-文件请求完成或失败时发送。当前公开文件 API 主要产生 `read_text`、`write_text` 和 `list_dir`；`read_bytes`、`write_bytes` 已保留在事件协议中，但当前文本文件 API 不会主动创建这两类请求。
+异步文件请求完成或失败时发送。当前公开文件 API 会产生 `read_text`、`write_text`、`list_dir`、`create_dir` 和 `remove`；`read_bytes`、`write_bytes` 已保留在事件协议中，但当前文本文件 API 不会主动创建这两类请求。同步的 `file.exists` 直接返回布尔值，不产生事件。
 
 ```lua
 {
@@ -272,7 +272,7 @@ error = {
 | `data` 字段 | 类型 | 出现条件 | 作用 |
 |---|---|---|---|
 | `request_id` | `integer` | 始终 | Session 内请求 ID。 |
-| `kind` | `string` | 始终 | `read_text`、`read_bytes`、`write_text`、`write_bytes` 或 `list_dir`。 |
+| `kind` | `string` | 始终 | `read_text`、`read_bytes`、`write_text`、`write_bytes`、`list_dir`、`create_dir` 或 `remove`。 |
 | `path` | `string` | 始终 | 调用方可见的虚拟相对路径，不是操作系统绝对路径。 |
 | `tip` | `string \| nil` | 请求传入 `event_tip` 时 | 调用方自定义的事件标记，原样返回以便区分请求。 |
 | `ok` | `boolean` | 始终 | 操作是否成功完成。 |
@@ -295,7 +295,37 @@ error = {
 | `path` | `string` | 相对于安全文件根目录的虚拟文件路径。 |
 | `file_type` | `string` | 不含点号的扩展名，例如 `rs`。 |
 
-写入成功不携带正文。`text`、`bytes`、`entries` 互斥。屏保只允许收到自身只读文件请求的结果。
+`write_text`、`write_bytes`、`create_dir` 和 `remove` 成功时只携带 `ok = true`，不携带正文。`text`、`bytes`、`entries` 互斥。屏保只允许收到自身只读文件请求的结果；创建目录与删除操作仅允许关闭安全模式的游戏发起。
+
+创建目录成功事件示例：
+
+```lua
+{
+  type = "file",
+  data = {
+    request_id = 5,
+    kind = "create_dir",
+    path = "save/slot-a",
+    tip = "create_slot",
+    ok = true,
+  },
+}
+```
+
+删除成功事件示例：
+
+```lua
+{
+  type = "file",
+  data = {
+    request_id = 6,
+    kind = "remove",
+    path = "save/slot-a",
+    tip = "remove_slot",
+    ok = true,
+  },
+}
+```
 
 ### 5.3 `image`
 

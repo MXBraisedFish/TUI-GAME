@@ -625,6 +625,8 @@ fn service_event_task_id(event: &EngineEvent) -> Option<TaskId> {
       | FileEvent::LuaReadTextFinished { task_id, .. }
       | FileEvent::LuaWriteTextFinished { task_id, .. }
       | FileEvent::LuaListDirFinished { task_id, .. }
+      | FileEvent::LuaCreateDirFinished { task_id, .. }
+      | FileEvent::LuaRemoveFinished { task_id, .. }
       | FileEvent::Failed { task_id, .. } => *task_id,
     }),
     EngineEvent::Image(event) => Some(match event {
@@ -680,6 +682,10 @@ fn translate_task_event(operation: &LuaTaskOperation, event: &EngineEvent) -> Op
               .collect(),
           )
         }
+        (LuaFileOperation::CreateDir, FileEvent::LuaCreateDirFinished { .. }) => {
+          LuaFileOutcome::DirectoryCreated
+        }
+        (LuaFileOperation::Remove, FileEvent::LuaRemoveFinished { .. }) => LuaFileOutcome::Removed,
         (_, FileEvent::Failed { error, .. }) => LuaFileOutcome::Failed(sanitize_io_error(error)),
         _ => LuaFileOutcome::Failed(LuaEventError::sanitized(LuaEventErrorCode::Internal)),
       };
@@ -1095,6 +1101,102 @@ mod tests {
   }
 
   #[test]
+  fn directory_service_results_translate_to_file_terminal_events() {
+    let game = token(LuaSessionKind::Game, 5);
+    let mut broker = LuaEventBroker::new();
+    broker.synchronize_sessions(Some(game), None);
+    for (task_id, request_id, kind, event) in [
+      (
+        TaskId(89),
+        4,
+        LuaFileOperation::CreateDir,
+        EngineEvent::File(FileEvent::LuaCreateDirFinished {
+          task_id: TaskId(89),
+          path: PathBuf::from(r"C:\private\created"),
+        }),
+      ),
+      (
+        TaskId(90),
+        5,
+        LuaFileOperation::Remove,
+        EngineEvent::File(FileEvent::LuaRemoveFinished {
+          task_id: TaskId(90),
+          path: PathBuf::from(r"C:\private\removed"),
+        }),
+      ),
+      (
+        TaskId(91),
+        6,
+        LuaFileOperation::Remove,
+        EngineEvent::File(FileEvent::Failed {
+          task_id: TaskId(91),
+          path: PathBuf::from(r"C:\private\non-empty"),
+          error: "directory is not empty".to_string(),
+        }),
+      ),
+    ] {
+      let route = if request_id == 6 {
+        LuaEventRoute::Callback(LuaEventCallbackId(7))
+      } else {
+        LuaEventRoute::HandleEvent
+      };
+      broker
+        .register_task(
+          task_id,
+          game,
+          LuaTaskOperation::File {
+            request_id,
+            kind,
+            virtual_path: format!("directory-{request_id}"),
+            event_tip: Some(format!("tip-{request_id}")),
+          },
+          route,
+        )
+        .unwrap();
+      broker.route_engine_event(8, &event).unwrap();
+    }
+
+    let events = broker.drain_frame(LuaSessionKind::Game);
+    assert!(matches!(
+      &events[0].event.data,
+      LuaEventData::File(LuaFileEvent {
+        request_id: 4,
+        kind: LuaFileOperation::CreateDir,
+        path,
+        tip: Some(tip),
+        outcome: LuaFileOutcome::DirectoryCreated,
+      }) if path == "directory-4" && tip == "tip-4"
+    ));
+    assert!(matches!(
+      &events[1].event.data,
+      LuaEventData::File(LuaFileEvent {
+        request_id: 5,
+        kind: LuaFileOperation::Remove,
+        path,
+        tip: Some(tip),
+        outcome: LuaFileOutcome::Removed,
+      }) if path == "directory-5" && tip == "tip-5"
+    ));
+    assert!(matches!(
+      &events[2].event.data,
+      LuaEventData::File(LuaFileEvent {
+        request_id: 6,
+        kind: LuaFileOperation::Remove,
+        path,
+        tip: Some(tip),
+        outcome: LuaFileOutcome::Failed(LuaEventError {
+          code: LuaEventErrorCode::Io,
+          message,
+        }),
+      }) if path == "directory-6" && tip == "tip-6" && message == "I/O operation failed"
+    ));
+    assert_eq!(
+      events[2].route,
+      LuaEventRoute::Callback(LuaEventCallbackId(7))
+    );
+  }
+
+  #[test]
   fn task_registration_rejects_unsafe_virtual_paths_and_screensaver_writes() {
     let game = token(LuaSessionKind::Game, 1);
     let screen = token(LuaSessionKind::Screensaver, 1);
@@ -1134,6 +1236,25 @@ mod tests {
         event_type: "file"
       })
     ));
+    for kind in [LuaFileOperation::CreateDir, LuaFileOperation::Remove] {
+      assert!(matches!(
+        broker.register_task(
+          TaskId(12),
+          screen,
+          LuaTaskOperation::File {
+            request_id: 3,
+            kind,
+            virtual_path: "storage/directory".to_string(),
+            event_tip: None,
+          },
+          LuaEventRoute::HandleEvent,
+        ),
+        Err(LuaEnqueueError::EventNotAllowed {
+          target: LuaSessionKind::Screensaver,
+          event_type: "file"
+        })
+      ));
+    }
   }
 
   #[test]
