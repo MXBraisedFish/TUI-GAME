@@ -2371,6 +2371,93 @@ mod tests {
   }
 
   #[test]
+  fn file_apis_share_current_directory_and_parent_traversal_rules() {
+    let id = TEST_ID.fetch_add(1, Ordering::Relaxed);
+    let package_root = std::env::temp_dir().join(format!(
+      "tui_game_lua_assets_root_{}_{}",
+      std::process::id(),
+      id
+    ));
+    let scripts_root = package_root.join("scripts");
+    let assets_root = package_root.join("assets");
+    fs::create_dir_all(&scripts_root).unwrap();
+    fs::create_dir_all(&assets_root).unwrap();
+    fs::write(assets_root.join("input.txt"), "input").unwrap();
+    let entry_path = scripts_root.join("main.lua");
+    fs::write(
+      &entry_path,
+      valid_script(
+        r#"
+          function Init(ctx)
+            file.list_dir{ path = ".", recursive = true }
+            file.read{ path = "./input.txt" }
+            file.write{ path = "./output.txt", text = "output" }
+            local empty = debug.pcall{
+              func = function() file.list_dir{ path = "" } end,
+            }
+            local traversal = debug.pcall{
+              func = function() file.list_dir{ path = "./folder/../" } end,
+            }
+            debug.assert{ value = not empty.ok and not traversal.ok }
+          end
+        "#,
+      ),
+    )
+    .unwrap();
+    let mut session = LuaSession::load_with_api(
+      LuaSessionSpec {
+        package_id: "test.assets_root".to_string(),
+        session_kind: LuaSessionKind::Game,
+        entry_path,
+        fixed_delta: Duration::from_secs_f64(1.0 / 60.0),
+        terminal_size: Size {
+          width: 120,
+          height: 40,
+        },
+        continue_data: None,
+        best_data: None,
+        save_game_enabled: false,
+        save_best_enabled: false,
+      },
+      LuaPolicy::default(),
+      LuaApiConfig {
+        safe_mode_enabled: false,
+        ..LuaApiConfig::default()
+      },
+    )
+    .unwrap();
+
+    let expected_root = assets_root.canonicalize().unwrap();
+    let requests = session.take_host_commands();
+    assert!(requests.iter().any(|command| matches!(
+      command,
+      LuaHostCommand::FileRequest {
+        task: crate::host_engine::services::FileTask::LuaListDir { path, recursive: true, .. },
+        virtual_path,
+        ..
+      } if path == &expected_root && virtual_path == "."
+    )));
+    assert!(requests.iter().any(|command| matches!(
+      command,
+      LuaHostCommand::FileRequest {
+        task: crate::host_engine::services::FileTask::LuaReadText { path, .. },
+        virtual_path,
+        ..
+      } if path == &expected_root.join("input.txt") && virtual_path == "input.txt"
+    )));
+    assert!(requests.iter().any(|command| matches!(
+      command,
+      LuaHostCommand::FileRequest {
+        task: crate::host_engine::services::FileTask::LuaWriteText { path, .. },
+        virtual_path,
+        ..
+      } if path == &expected_root.join("output.txt") && virtual_path == "output.txt"
+    )));
+
+    fs::remove_dir_all(package_root).unwrap();
+  }
+
+  #[test]
   fn safe_mode_lab_exercises_debug_logging_and_file_write_permissions() {
     let package_root =
       PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_package/game/safe_mode_lab");
@@ -2451,8 +2538,11 @@ mod tests {
         function Init(ctx)
           local first = loader.load("module")
           local second = loader.load{ path = "module.lua" }
-          debug.assert{ value = first.value == 1 and second.value == 1 }
-          debug.assert{ value = first.leaked == nil and second.leaked == nil }
+          local third = loader.load("./module")
+          debug.assert{ value = first.value == 1 and second.value == 1 and third.value == 1 }
+          debug.assert{
+            value = first.leaked == nil and second.leaked == nil and third.leaked == nil,
+          }
           debug.assert{ value = loader.load_execute("value") == 42 }
 
           local traversal_ok = debug.pcall{

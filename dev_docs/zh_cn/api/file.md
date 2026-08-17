@@ -76,7 +76,8 @@
 
 **可用于**
 
-- 编码/换行参数
+- 参数 `encoding`
+- 参数 `end_of_line`
 
 ### 调用
 
@@ -98,7 +99,7 @@ file.read { path = "file.txt", encoding = file.AUTO, end_of_line = file.AUTO }
 
 **可用于**
 
-- 换行参数
+- 参数 `file_type`
 
 ### 调用
 
@@ -120,7 +121,7 @@ file.list_dir { path = "dir/", file_type = file.ALL }
 
 **可用于**
 
-- 换行参数
+- 参数 `end_of_line`
 
 ### 调用
 
@@ -142,7 +143,7 @@ file.read { path = "file.txt", end_of_line = file.CR }
 
 **可用于**
 
-- 换行参数
+- 参数 `end_of_line`
 
 ### 调用
 
@@ -164,7 +165,7 @@ file.read { path = "file.txt", end_of_line = file.LF }
 
 **可用于**
 
-- 换行参数
+- 参数 `end_of_line`
 
 ### 调用
 
@@ -186,7 +187,7 @@ UTF-8 编码。
 
 **可用于**
 
-- 编码参数
+- 参数 `encoding`
 
 ### 调用
 
@@ -208,7 +209,7 @@ UTF-16 小端编码。
 
 **可用于**
 
-- 编码参数
+- 参数 `encoding`
 
 ### 调用
 
@@ -230,7 +231,7 @@ UTF-16 大端编码。
 
 **可用于**
 
-- 编码参数
+- 参数 `encoding`
 
 ### 调用
 
@@ -251,7 +252,7 @@ GBK 编码（简体中文）。
 
 **可用于**
 
-- 编码参数
+- 参数 `encoding`
 
 ### 调用
 
@@ -273,7 +274,7 @@ GB18030 编码（简体中文）。
 
 **可用于**
 
-- 编码参数
+- 参数 `encoding`
 
 ### 调用
 
@@ -295,7 +296,7 @@ BIG5 编码（繁体中文）。
 
 **可用于**
 
-- 编码参数
+- 参数 `encoding`
 
 ### 调用
 
@@ -317,7 +318,7 @@ Shift JIS 编码（日文）。
 
 **可用于**
 
-- 编码参数
+- 参数 `encoding`
 
 ### 调用
 
@@ -339,7 +340,7 @@ EUC-JP 编码（日文）。
 
 **可用于**
 
-- 编码参数
+- 参数 `encoding`
 
 ### 调用
 
@@ -361,7 +362,7 @@ ISO-2022-JP 编码（日文）。
 
 **可用于**
 
-- 编码参数
+- 参数 `encoding`
 
 ### 调用
 
@@ -383,7 +384,7 @@ EUC-KR 编码（韩文）。
 
 **可用于**
 
-- 编码参数
+- 参数 `encoding`
 
 ### 调用
 
@@ -405,7 +406,7 @@ Windows-874 编码（泰文）。
 
 **可用于**
 
-- 编码参数
+- 参数 `encoding`
 
 ### 调用
 
@@ -427,7 +428,7 @@ Windows-1250 编码（中欧）。
 
 **可用于**
 
-- 编码参数
+- 参数 `encoding`
 
 ### 调用
 
@@ -449,7 +450,7 @@ Windows-1251 编码（西里尔）。
 
 **可用于**
 
-- 编码参数
+- 参数 `encoding`
 
 ### 调用
 
@@ -471,7 +472,7 @@ Windows-1252 编码（西欧）。
 
 **可用于**
 
-- 编码参数
+- 参数 `encoding`
 
 ### 调用
 
@@ -493,7 +494,7 @@ Windows-1253 编码（希腊）。
 
 **可用于**
 
-- 编码参数
+- 参数 `encoding`
 
 ### 调用
 
@@ -515,7 +516,7 @@ Windows-1254 编码（土耳其）。
 
 **可用于**
 
-- 编码参数
+- 参数 `encoding`
 
 ### 调用
 
@@ -537,7 +538,7 @@ Windows-1255 编码（希伯来）。
 
 **可用于**
 
-- 编码参数
+- 参数 `encoding`
 
 ### 调用
 
@@ -559,7 +560,7 @@ Windows-1256 编码（阿拉伯）。
 
 **可用于**
 
-- 编码参数
+- 参数 `encoding`
 
 ### 调用
 
@@ -581,7 +582,7 @@ Windows-1257 编码（波罗的海）。
 
 **可用于**
 
-- 编码参数
+- 参数 `encoding`
 
 ### 调用
 
@@ -603,7 +604,7 @@ Windows-1258 编码（越南）。
 
 **可用于**
 
-- 编码参数
+- 参数 `encoding`
 
 ### 调用
 
@@ -625,7 +626,7 @@ ISO-8859-2 编码（中欧）。
 
 **可用于**
 
-- 编码参数
+- 参数 `encoding`
 
 ### 调用
 
@@ -647,7 +648,7 @@ ISO-8859-3 编码（南欧）。
 
 **可用于**
 
-- 编码参数
+- 参数 `encoding`
 
 ### 调用
 
@@ -669,7 +670,7 @@ ISO-8859-4 编码（北欧）。
 
 **可用于**
 
-- 编码参数
+- 参数 `encoding`
 
 ### 调用
 
@@ -691,7 +692,7 @@ ISO-8859-5 编码（西里尔）。
 
 **可用于**
 
-- 编码参数
+- 参数 `encoding`
 
 ### 调用
 
@@ -713,7 +714,7 @@ ISO-8859-6 编码（阿拉伯）。
 
 **可用于**
 
-- 编码参数
+- 参数 `encoding`
 
 ### 调用
 
@@ -735,7 +736,7 @@ ISO-8859-7 编码（希腊）。
 
 **可用于**
 
-- 编码参数
+- 参数 `encoding`
 
 ### 调用
 
@@ -757,7 +758,7 @@ ISO-8859-8 编码（希伯来）。
 
 **可用于**
 
-- 编码参数
+- 参数 `encoding`
 
 ### 调用
 
@@ -779,7 +780,7 @@ ISO-8859-8-I 编码（希伯来，逻辑顺序）。
 
 **可用于**
 
-- 编码参数
+- 参数 `encoding`
 
 ### 调用
 
@@ -801,7 +802,7 @@ ISO-8859-9 编码（土耳其）。
 
 **可用于**
 
-- 编码参数
+- 参数 `encoding`
 
 ### 调用
 
@@ -823,7 +824,7 @@ ISO-8859-10 编码（北欧）。
 
 **可用于**
 
-- 编码参数
+- 参数 `encoding`
 
 ### 调用
 
@@ -845,7 +846,7 @@ ISO-8859-11 编码（泰文）。
 
 **可用于**
 
-- 编码参数
+- 参数 `encoding`
 
 ### 调用
 
@@ -867,7 +868,7 @@ ISO-8859-13 编码（波罗的海）。
 
 **可用于**
 
-- 编码参数
+- 参数 `encoding`
 
 ### 调用
 
@@ -889,7 +890,7 @@ ISO-8859-14 编码（凯尔特）。
 
 **可用于**
 
-- 编码参数
+- 参数 `encoding`
 
 ### 调用
 
@@ -911,7 +912,7 @@ ISO-8859-15 编码（西欧）。
 
 **可用于**
 
-- 编码参数
+- 参数 `encoding`
 
 ### 调用
 
@@ -933,7 +934,7 @@ ISO-8859-16 编码（东南欧）。
 
 **可用于**
 
-- 编码参数
+- 参数 `encoding`
 
 ### 调用
 
@@ -955,7 +956,7 @@ KOI8-R 编码（俄文）。
 
 **可用于**
 
-- 编码参数
+- 参数 `encoding`
 
 ### 调用
 
@@ -977,7 +978,7 @@ KOI8-U 编码（乌克兰）。
 
 **可用于**
 
-- 编码参数
+- 参数 `encoding`
 
 ### 调用
 
@@ -999,7 +1000,7 @@ IBM866 编码（俄文）。
 
 **可用于**
 
-- 编码参数
+- 参数 `encoding`
 
 ### 调用
 
@@ -1021,7 +1022,7 @@ Macintosh 编码（西欧）。
 
 **可用于**
 
-- 编码参数
+- 参数 `encoding`
 
 ### 调用
 
@@ -1043,7 +1044,7 @@ x-mac-cyrillic 编码（西里尔）。
 
 **可用于**
 
-- 编码参数
+- 参数 `encoding`
 
 ### 调用
 
@@ -1074,11 +1075,11 @@ file.read{}
 
 ### 参数
 
-| 参数名           | 类型           | 必填  | 默认值           | 说明                 |
-| ------------- | ------------ | --- | ------------- | ------------------ |
+| 参数名        | 类型         | 必填 | 默认值        | 说明                      |
+| ------------- | ------------ | ---- | ------------- | ------------------------- |
 | `path`        | string       | 是   | -             | 相对 `assets/` 的文件路径 |
-| `encoding`    | const-file   | 否   | `"file.AUTO`  | 文本编码               |
-| `end_of_line` | const-file   | 否   | `"file.AUTO"` | 换行符规范              |
+| `encoding`    | const-file   | 否   | `"file.AUTO`  | 文本编码                  |
+| `end_of_line` | const-file   | 否   | `"file.AUTO"` | 换行符规范                |
 | `event_tip`   | string / nil | 否   | `nil`         | 自定义事件标记            |
 
 ### 返回
@@ -1088,6 +1089,9 @@ file.read{}
 ### 示例
 
 ```lua
+assets/
+- file.txt
+
 file.read { path = "file.txt" }
 
 function HandleEvent(event)
@@ -1118,7 +1122,7 @@ end
 
 ## `write`
 
-异步写入文本文件到 `assets/` 目录（允许创建新文件）。
+异步写入文本文件到 `assets/` 目录。
 
 > 需关闭安全模式
 > 仅游戏脚本
@@ -1132,13 +1136,13 @@ file.write{}
 
 ### 参数
 
-| 参数名           | 类型         | 必填  | 默认值         | 说明                 |
-| ------------- | ---------- | --- | ----------- | ------------------ |
-| `path`        | string     | 是   | -           | 相对 `assets/` 的文件路径 |
-| `text`        | string     | 是   | -           | 要写入的文本             |
-| `encoding`    | const-file | 否   | `file.AUTO` | 文本编码               |
-| `end_of_line` | const-file | 否   | `file.AUTO` | 换行符规范              |
-| `event_tip`   | string     | 否   | `nil`       | 事件提示文本             |
+| 参数名        | 类型         | 必填 | 默认值      | 说明                      |
+| ------------- | ------------ | ---- | ----------- | ------------------------- |
+| `path`        | string       | 是   | -           | 相对 `assets/` 的文件路径 |
+| `text`        | string       | 是   | -           | 要写入的文本              |
+| `encoding`    | const-file   | 否   | `file.AUTO` | 文本编码                  |
+| `end_of_line` | const-file   | 否   | `file.AUTO` | 换行符规范                |
+| `event_tip`   | string / nil | 否   | `nil`       | 事件提示文本              |
 
 ### 返回
 
@@ -1147,8 +1151,39 @@ file.write{}
 ### 示例
 
 ```lua
+assets/
+- file.txt
 
+file.write { path = "file.txt", text = "Hello Tui Game", event_tip = "Get!" }
+
+function HandleEvent(event)
+  if event.type == "file" then
+    debug.print { message = serialization.json_encode(event) }
+  end
+end
 ```
+
+输出：
+
+```json
+{
+  "type": "file",
+  "frame": X,
+  "sequence": X,
+  "data": {
+    "request_id": X,
+    "path": "file.txt",
+    "ok": true,
+    "kind": "write_text",
+    "tip": "Get!"
+  }
+}
+```
+
+### 额外补充
+
+- 该 API 会自动创建未创建的**文件**。
+- 该 API 不会自动补全未创建的**目录**，目录不存在会抛出错误。
 
 ---
 
@@ -1165,29 +1200,125 @@ file.list_dir{}
 
 ### 参数
 
-| 参数名      | 类型    | 必填 | 默认值  | 说明                      |
-| ----------- | ------- | ---- | ------- | ------------------------- |
-| `path`      | string  | 是   | -       | 相对 `assets/` 的目录路径 |
-| `recursive` | boolean | 否   | `false` | 是否递归子目录            |
-| `file_type` | string  | 否   | `nil`   | 仅匹配指定扩展名          |
-| `event_tip` | string  | 否   | `nil`   | 事件提示文本              |
+| 参数名      | 类型                | 必填 | 默认值     | 说明                      |
+| ----------- | ------------------- | ---- | ---------- | ------------------------- |
+| `path`      | string              | 是   | -          | 相对 `assets/` 的目录路径 |
+| `recursive` | boolean             | 否   | `false`    | 是否递归子目录            |
+| `file_type` | string / const-file | 否   | `file.ALL` | 仅匹配指定扩展名          |
+| `event_tip` | string / nil        | 否   | `nil`      | 事件提示文本              |
 
 ### 返回
 
-无直接返回值（异步）。完成后 `HandleEvent` 收到 `file` 事件：
-
-| 字段         | 类型         | 说明                                     |
-| ------------ | ------------ | ---------------------------------------- |
-| `request_id` | integer      | 请求标识                                 |
-| `kind`       | string       | 恒为 `"list_dir"`                        |
-| `path`       | string       | 请求的虚拟路径                           |
-| `tip`        | string / nil | 请求时传入的 `event_tip`                 |
-| `ok`         | boolean      | 是否成功                                 |
-| `entries`    | table        | 成功时的条目数组（`ok=true`）            |
-| `error`      | table        | 失败时含 `code`、`message`（`ok=false`） |
+事件返回，请查看⌊[事件结构](../EVENT.md)⌉文档⌊file⌉部分。
 
 ### 示例
 
 ```lua
+assets/
++ c/
+| + main.c
+| - game.c
++ js/
+| + data.json
+| - main.js
++ rust/
+| + src/
+| | - main.rs
+| - Cargo.toml
+- file.txt
 
+file.list_dir { path = ".", recursive = true }
+file.list_dir { path = "rust/" }
+file.list_dir { path = "js/", file_type = "json", event_tip = "Only Json" }
+
+function HandleEvent(event)
+  if event.type == "file" then
+    debug.print { message = serialization.json_encode(event) }
+  end
+end
 ```
+
+输出：
+
+```json
+{
+  "type": "file",
+  "sequence": X,
+  "frame": X,
+  "data": {
+    "request_id": X,
+    "ok": true,
+    "kind": "list_dir",
+    "path": ".",
+    "entries": [
+      {
+        "path": "c/game.c",
+        "file_type": "c"
+      },
+      {
+        "path": "c/main.c",
+        "file_type": "c"
+      },
+      {
+        "path": "file.txt",
+        "file_type": "txt"
+      },
+      {
+        "path": "js/data.json",
+        "file_type": "json"
+      },
+      {
+        "path": "js/main.js",
+        "file_type": "js"
+      },
+      {
+        "path": "rust/Cargo.toml",
+        "file_type": "toml"
+      },
+      {
+        "path": "rust/src/main.rs",
+        "file_type": "rs"
+      }
+    ],
+  }
+}
+
+{
+  "type": "file",
+  "frame": X,
+  "sequence": X,
+  "data": {
+    "request_id": X,
+    "ok": true,
+    "kind": "list_dir",
+    "path": "rust/",
+    "entries": [
+      {
+        "path": "Cargo.toml",
+        "file_type": "toml"
+      }
+    ],
+  }
+}
+
+{
+  "type": "file",
+  "frame": X,
+  "sequence": X,
+  "data": {
+    "request_id": X,
+    "ok": true,
+    "tip": "Only Json",
+    "kind": "list_dir",
+    "path": "js/",
+    "entries": [
+      {
+        "path": "data.json",
+        "file_type": "json"
+      }
+    ],
+  }
+}
+```
+
+

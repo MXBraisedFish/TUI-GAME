@@ -1,4 +1,7 @@
 use super::*;
+use crate::host_engine::services::lua::path::{
+  SafeRelativePath, SandboxPathKind, resolve_sandbox_path,
+};
 
 const LUA_API_LIBRARY_NAMES: [&str; 15] = [
   "base",
@@ -52,7 +55,7 @@ fn execute_loaded_module(
     return Err(args::message(method, "invalid module path"));
   }
   let scripts_root = state.borrow().context.scripts_root.clone();
-  let path = resolve_loader_path(&scripts_root, &virtual_path, method)?;
+  let (path, virtual_path) = resolve_loader_path(&scripts_root, &virtual_path, method)?;
   {
     let mut api = state.borrow_mut();
     if api.loader_stack.len() >= 16 {
@@ -114,33 +117,19 @@ fn execute_loaded_module(
   result
 }
 
-fn resolve_loader_path(root: &Path, input: &str, method: &str) -> mlua::Result<PathBuf> {
-  let mut relative = PathBuf::new();
-  for component in Path::new(input).components() {
-    match component {
-      Component::Normal(value) => relative.push(value),
-      _ => return Err(args::message(method, "module path must be relative")),
-    }
-  }
+fn resolve_loader_path(root: &Path, input: &str, method: &str) -> mlua::Result<(PathBuf, String)> {
+  let mut relative = SafeRelativePath::parse(input)
+    .map_err(|error| args::message(method, format!("unsafe module path: {error}")))?;
   if relative.extension().is_none() {
     relative.set_extension("lua");
   }
   if !relative
     .extension()
-    .and_then(|value| value.to_str())
     .is_some_and(|value| value.eq_ignore_ascii_case("lua"))
   {
     return Err(args::message(method, "module path must use .lua"));
   }
-  let root = root
-    .canonicalize()
-    .map_err(|_| args::message(method, "scripts root is unavailable"))?;
-  let candidate = root
-    .join(relative)
-    .canonicalize()
-    .map_err(|_| args::message(method, "module was not found"))?;
-  if !candidate.starts_with(&root) || !candidate.is_file() {
-    return Err(args::message(method, "module path escapes scripts root"));
-  }
-  Ok(candidate)
+  let path = resolve_sandbox_path(root, &relative, SandboxPathKind::File)
+    .map_err(|error| args::message(method, format!("unsafe module path: {error}")))?;
+  Ok((path, relative.virtual_path().to_string()))
 }

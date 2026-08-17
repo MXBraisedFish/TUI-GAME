@@ -1,4 +1,7 @@
 use super::*;
+use crate::host_engine::services::lua::path::{
+  SafeRelativePath, SandboxPathKind, resolve_sandbox_path,
+};
 
 pub(super) fn file(lua: &Lua, state: SharedApiState) -> mlua::Result<Table> {
   let source = lua.create_table()?;
@@ -59,14 +62,15 @@ pub(super) fn file(lua: &Lua, state: SharedApiState) -> mlua::Result<Table> {
         values,
         &["path", "encoding", "end_of_line", "event_tip"],
       )?;
-      let virtual_path = file_path(&table, method)?;
+      let relative_path = file_path(&table, method)?;
+      let virtual_path = relative_path.virtual_path().to_string();
       validate_file_eol(&table, method)?;
       let encoding = file_encoding(&table, method)?;
       let event_tip = file_tip(&table, method)?;
-      let path = resolve_asset_path(
+      let path = resolve_file_path(
         &read_state.borrow().context.assets_root,
-        &virtual_path,
-        AssetPathKind::File,
+        &relative_path,
+        SandboxPathKind::File,
         method,
       )?;
       enqueue_file_request(
@@ -92,7 +96,8 @@ pub(super) fn file(lua: &Lua, state: SharedApiState) -> mlua::Result<Table> {
         values,
         &["path", "text", "encoding", "end_of_line", "event_tip"],
       )?;
-      let virtual_path = file_path(&table, method)?;
+      let relative_path = file_path(&table, method)?;
+      let virtual_path = relative_path.virtual_path().to_string();
       let text = args::string(args::required(&table, method, "text")?, method, "text")?;
       if text.len() > args::MAX_API_STRING_BYTES || text.contains('\0') {
         return Err(args::message(
@@ -103,10 +108,10 @@ pub(super) fn file(lua: &Lua, state: SharedApiState) -> mlua::Result<Table> {
       let encoding = file_encoding(&table, method)?;
       let end_of_line = validate_file_eol(&table, method)?;
       let event_tip = file_tip(&table, method)?;
-      let path = resolve_asset_path(
+      let path = resolve_file_path(
         &write_state.borrow().context.assets_root,
-        &virtual_path,
-        AssetPathKind::WritableFile,
+        &relative_path,
+        SandboxPathKind::WritableFile,
         method,
       )?;
       enqueue_file_request(
@@ -137,7 +142,8 @@ pub(super) fn file(lua: &Lua, state: SharedApiState) -> mlua::Result<Table> {
         values,
         &["path", "recursive", "file_type", "event_tip"],
       )?;
-      let virtual_path = file_path(&table, method)?;
+      let relative_path = file_path(&table, method)?;
+      let virtual_path = relative_path.virtual_path().to_string();
       let recursive = match table.get::<Value>("recursive")? {
         Value::Nil => false,
         value => args::boolean(value, method, "recursive")?,
@@ -164,10 +170,10 @@ pub(super) fn file(lua: &Lua, state: SharedApiState) -> mlua::Result<Table> {
         }
       };
       let event_tip = file_tip(&table, method)?;
-      let path = resolve_asset_path(
+      let path = resolve_file_path(
         &list_state.borrow().context.assets_root,
-        &virtual_path,
-        AssetPathKind::Directory,
+        &relative_path,
+        SandboxPathKind::Directory,
         method,
       )?;
       enqueue_file_request(
@@ -187,13 +193,6 @@ pub(super) fn file(lua: &Lua, state: SharedApiState) -> mlua::Result<Table> {
   readonly::proxy(lua, source)
 }
 
-#[derive(Clone, Copy)]
-enum AssetPathKind {
-  File,
-  WritableFile,
-  Directory,
-}
-
 pub(super) fn file_permission(state: &SharedApiState, method: &'static str) -> bool {
   let mut state = state.borrow_mut();
   if state.context.session_kind == LuaSessionKind::Game && !state.context.safe_mode_enabled {
@@ -208,12 +207,10 @@ pub(super) fn file_permission(state: &SharedApiState, method: &'static str) -> b
   }
 }
 
-pub(super) fn file_path(table: &Table, method: &str) -> mlua::Result<String> {
+pub(super) fn file_path(table: &Table, method: &str) -> mlua::Result<SafeRelativePath> {
   let path = args::string(args::required(table, method, "path")?, method, "path")?;
-  if path.is_empty() || path.len() > 8192 || path.contains('\0') {
-    return Err(args::message(method, "invalid asset path"));
-  }
-  Ok(path.replace('\\', "/"))
+  SafeRelativePath::parse(&path)
+    .map_err(|error| args::message(method, format!("unsafe asset path: {error}")))
 }
 
 pub(super) fn file_encoding(table: &Table, method: &str) -> mlua::Result<String> {
@@ -256,53 +253,14 @@ pub(super) fn file_tip(table: &Table, method: &str) -> mlua::Result<Option<Strin
   }
 }
 
-fn resolve_asset_path(
+fn resolve_file_path(
   root: &Path,
-  input: &str,
-  kind: AssetPathKind,
+  relative: &SafeRelativePath,
+  kind: SandboxPathKind,
   method: &str,
 ) -> mlua::Result<PathBuf> {
-  let mut relative = PathBuf::new();
-  for component in Path::new(input).components() {
-    match component {
-      Component::Normal(value) => relative.push(value),
-      Component::CurDir => {}
-      _ => return Err(args::message(method, "asset path must be relative")),
-    }
-  }
-  let root = root
-    .canonicalize()
-    .map_err(|_| args::message(method, "assets root is unavailable"))?;
-  let candidate = root.join(relative);
-  let resolved = if candidate.exists() {
-    candidate
-      .canonicalize()
-      .map_err(|_| args::message(method, "asset path could not be resolved"))?
-  } else if matches!(kind, AssetPathKind::WritableFile) {
-    let parent = candidate
-      .parent()
-      .ok_or_else(|| args::message(method, "asset path has no parent"))?
-      .canonicalize()
-      .map_err(|_| args::message(method, "asset parent does not exist"))?;
-    if !parent.starts_with(&root) {
-      return Err(args::message(method, "asset path escapes assets root"));
-    }
-    candidate
-  } else {
-    return Err(args::message(method, "asset path was not found"));
-  };
-  if !resolved.starts_with(&root) {
-    return Err(args::message(method, "asset path escapes assets root"));
-  }
-  match kind {
-    AssetPathKind::File if !resolved.is_file() => {
-      Err(args::message(method, "asset path is not a file"))
-    }
-    AssetPathKind::Directory if !resolved.is_dir() => {
-      Err(args::message(method, "asset path is not a directory"))
-    }
-    _ => Ok(resolved),
-  }
+  resolve_sandbox_path(root, relative, kind)
+    .map_err(|error| args::message(method, format!("unsafe asset path: {error}")))
 }
 
 fn enqueue_file_request(

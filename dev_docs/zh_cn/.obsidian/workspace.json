@@ -83,12 +83,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "api/color.md",
+                "file": "api/file.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "color"
+              "title": "file"
             }
           }
         ],
@@ -258,11 +258,18 @@
   },
   "active": "2ab02da958db9679",
   "lastOpenFiles": [
+    "api/aaaatest.json",
+    "api/aaaatest.jsom",
+    "api/test.json",
+    "api/event.md",
+    "api/encoding.md",
+    "api/draw.md",
+    "api/debug.md",
+    "api/color.md",
     "api/char.md",
     "api/base.md",
     "api/align.md",
     "api/file.md",
-    "api/color.md",
     "image/color_hex_example.png",
     "image/color_rgb_example.png",
     "image/color_TRANSPARENT_example.png",
@@ -274,9 +281,6 @@
     "image/color_BRIGHT_YELLOW_example.png",
     "image/color_BRIGHT_GREEN_example.png",
     "api/string.md",
-    "api/draw.md",
-    "api/encoding.md",
-    "api/debug.md",
     "api/serialization.md",
     "API.md",
     "EVENT.md",
@@ -292,8 +296,6 @@
     "api/random.md",
     "api/measurement.md",
     "api/math.md",
-    "api/loader.md",
-    "api/i18n.md",
     "api",
     "库",
     "API.md.tmp.31024.45c5566c4009",

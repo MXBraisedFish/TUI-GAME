@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 use std::f64::consts::{E, PI};
 use std::fs;
 use std::ops::Range;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use mlua::{Function, Lua, MultiValue, Table, Value};

@@ -10,26 +10,27 @@
 
 ### 常量
 
-| 常量名 | 说明 | 索引 |
-| ----- | ---- | ---- |
-| `BLACK` | 黑色 | [BLACK](#BLACK) |
-| `RED` | 红色 | [RED](#RED) |
-| `GREEN` | 绿色 | [GREEN](#GREEN) |
-| `YELLOW` | 黄色 | [YELLOW](#YELLOW) |
-| `BLUE` | 蓝色 | [BLUE](#BLUE) |
-| `MAGENTA` | 品红 | [MAGENTA](#MAGENTA) |
-| `CYAN` | 青色 | [CYAN](#CYAN) |
-| `GRAY` / `GREY` | 灰色 | [GRAY / GREY](#GRAY--GREY) |
-| `BRIGHT_GRAY` / `BRIGHT_GREY` | 亮灰 | [BRIGHT_GRAY / BRIGHT_GREY](#BRIGHT_GRAY) |
-| `BRIGHT_RED` | 亮红 | [BRIGHT_RED](#BRIGHT_RED) |
-| `BRIGHT_GREEN` | 亮绿 | [BRIGHT_GREEN](#BRIGHT_GREEN) |
-| `BRIGHT_YELLOW` | 亮黄 | [BRIGHT_YELLOW](#BRIGHT_YELLOW) |
-| `BRIGHT_BLUE` | 亮蓝 | [BRIGHT_BLUE](#BRIGHT_BLUE) |
-| `BRIGHT_MAGENTA` | 亮品红 | [BRIGHT_MAGENTA](#BRIGHT_MAGENTA) |
-| `BRIGHT_CYAN` | 亮青 | [BRIGHT_CYAN](#BRIGHT_CYAN) |
-| `WHITE` | 白色 | [WHITE](#WHITE) |
-| `NONE` | 无颜色 | [NONE](#NONE) |
-| `TRANSPARENT` | 透明 | [TRANSPARENT](#TRANSPARENT) |
+
+| 常量名                           | 说明  | 索引                                        |
+| ----------------------------- | --- | ----------------------------------------- |
+| `BLACK`                       | 黑色  | [BLACK](#BLACK)                           |
+| `RED`                         | 红色  | [RED](#RED)                               |
+| `GREEN`                       | 绿色  | [GREEN](#GREEN)                           |
+| `YELLOW`                      | 黄色  | [YELLOW](#YELLOW)                         |
+| `BLUE`                        | 蓝色  | [BLUE](#BLUE)                             |
+| `MAGENTA`                     | 品红  | [MAGENTA](#MAGENTA)                       |
+| `CYAN`                        | 青色  | [CYAN](#CYAN)                             |
+| `GRAY` / `GREY`               | 灰色  | [GRAY / GREY](#GRAY)                      |
+| `BRIGHT_GRAY` / `BRIGHT_GREY` | 亮灰  | [BRIGHT_GRAY / BRIGHT_GREY](#BRIGHT_GRAY) |
+| `BRIGHT_RED`                  | 亮红  | [BRIGHT_RED](#BRIGHT_RED)                 |
+| `BRIGHT_GREEN`                | 亮绿  | [BRIGHT_GREEN](#BRIGHT_GREEN)             |
+| `BRIGHT_YELLOW`               | 亮黄  | [BRIGHT_YELLOW](#BRIGHT_YELLOW)           |
+| `BRIGHT_BLUE`                 | 亮蓝  | [BRIGHT_BLUE](#BRIGHT_BLUE)               |
+| `BRIGHT_MAGENTA`              | 亮品红 | [BRIGHT_MAGENTA](#BRIGHT_MAGENTA)         |
+| `BRIGHT_CYAN`                 | 亮青  | [BRIGHT_CYAN](#BRIGHT_CYAN)               |
+| `WHITE`                       | 白色  | [WHITE](#WHITE)                           |
+| `NONE`                        | 无颜色 | [NONE](#NONE)                             |
+| `TRANSPARENT`                 | 透明  | [TRANSPARENT](#TRANSPARENT)               |
 
 ### 方法
 

@@ -1091,6 +1091,27 @@ mod tests {
   }
 
   #[test]
+  fn lua_directory_recursion_is_limited_to_32_levels_below_the_root() {
+    let directory = file_test_directory();
+    let mut nested = directory.clone();
+    for _ in 0..32 {
+      nested.push("d");
+      fs::create_dir(&nested).unwrap();
+    }
+    fs::write(nested.join("allowed.txt"), "allowed").unwrap();
+    assert!(list_lua_files(&directory, true, None).is_ok());
+
+    nested.push("d");
+    fs::create_dir(&nested).unwrap();
+    fs::write(nested.join("too-deep.txt"), "too deep").unwrap();
+    assert_eq!(
+      list_lua_files(&directory, true, None).unwrap_err(),
+      "directory recursion exceeds 32 levels"
+    );
+    fs::remove_dir_all(directory).unwrap();
+  }
+
+  #[test]
   fn lua_text_write_is_strict_and_preserves_requested_eol() {
     let directory = file_test_directory();
     let path = directory.join("output.txt");

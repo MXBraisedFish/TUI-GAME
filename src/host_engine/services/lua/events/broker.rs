@@ -1,7 +1,4 @@
-use std::{
-  collections::{HashMap, HashSet, VecDeque},
-  path::{Component, Path},
-};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::host_engine::services::{
   AudioAsyncEvent, AudioErrorCode, AudioId, EngineEvent, FileEvent, ImageEvent, NetworkError,
@@ -10,6 +7,7 @@ use crate::host_engine::services::{
 };
 
 use super::super::LuaSessionKind;
+use super::super::path::SafeRelativePath;
 use super::{
   LuaAudioEvent, LuaAudioEventKind, LuaEventData, LuaEventError, LuaEventErrorCode, LuaFileEntry,
   LuaFileEvent, LuaFileOperation, LuaFileOutcome, LuaImageEvent, LuaImageOutcome, LuaNetworkBody,
@@ -614,12 +612,7 @@ impl Default for LuaEventBroker {
 }
 
 fn valid_virtual_path(path: &str) -> bool {
-  path == "."
-    || (!path.is_empty()
-      && !Path::new(path).is_absolute()
-      && Path::new(path)
-        .components()
-        .all(|component| matches!(component, Component::Normal(_))))
+  SafeRelativePath::is_normalized(path)
 }
 
 fn service_event_task_id(event: &EngineEvent) -> Option<TaskId> {
