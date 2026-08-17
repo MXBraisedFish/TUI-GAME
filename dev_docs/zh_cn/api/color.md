@@ -2,39 +2,43 @@
 
 ## 基本库说明
 
-`color` 提供颜色常量与 RGB/HEX 颜色构造方法。游戏与屏保会话均可使用。库表为只读。颜色常量以字符串形式供 `fg`（前景）/ `bg`（背景）等颜色参数使用。
+`color` 提供颜色常量与 RGB/HEX 颜色构造方法。
+
+---
 
 ## 目录
 
 ### 常量
 
-| 常量名                        | 说明   |
-| ----------------------------- | ------ |
-| `BLACK`                       | 黑色   |
-| `RED`                         | 红色   |
-| `GREEN`                       | 绿色   |
-| `YELLOW`                      | 黄色   |
-| `BLUE`                        | 蓝色   |
-| `MAGENTA`                     | 品红   |
-| `CYAN`                        | 青色   |
-| `GRAY` / `GREY`               | 灰色   |
-| `BRIGHT_GRAY` / `BRIGHT_GREY` | 亮灰   |
-| `BRIGHT_RED`                  | 亮红   |
-| `BRIGHT_GREEN`                | 亮绿   |
-| `BRIGHT_YELLOW`               | 亮黄   |
-| `BRIGHT_BLUE`                 | 亮蓝   |
-| `BRIGHT_MAGENTA`              | 亮品红 |
-| `BRIGHT_CYAN`                 | 亮青   |
-| `WHITE`                       | 白色   |
-| `NONE`                        | 无颜色 |
-| `TRANSPARENT`                 | 透明   |
+| 常量名 | 说明 | 索引 |
+| ----- | ---- | ---- |
+| `BLACK` | 黑色 | [BLACK](#BLACK) |
+| `RED` | 红色 | [RED](#RED) |
+| `GREEN` | 绿色 | [GREEN](#GREEN) |
+| `YELLOW` | 黄色 | [YELLOW](#YELLOW) |
+| `BLUE` | 蓝色 | [BLUE](#BLUE) |
+| `MAGENTA` | 品红 | [MAGENTA](#MAGENTA) |
+| `CYAN` | 青色 | [CYAN](#CYAN) |
+| `GRAY` / `GREY` | 灰色 | [GRAY / GREY](#GRAY) |
+| `BRIGHT_GRAY` / `BRIGHT_GREY` | 亮灰 | [BRIGHT_GRAY / BRIGHT_GREY](#BRIGHT_GRAY) |
+| `BRIGHT_RED` | 亮红 | [BRIGHT_RED](#BRIGHT_RED) |
+| `BRIGHT_GREEN` | 亮绿 | [BRIGHT_GREEN](#BRIGHT_GREEN) |
+| `BRIGHT_YELLOW` | 亮黄 | [BRIGHT_YELLOW](#BRIGHT_YELLOW) |
+| `BRIGHT_BLUE` | 亮蓝 | [BRIGHT_BLUE](#BRIGHT_BLUE) |
+| `BRIGHT_MAGENTA` | 亮品红 | [BRIGHT_MAGENTA](#BRIGHT_MAGENTA) |
+| `BRIGHT_CYAN` | 亮青 | [BRIGHT_CYAN](#BRIGHT_CYAN) |
+| `WHITE` | 白色 | [WHITE](#WHITE) |
+| `NONE` | 无颜色 | [NONE](#NONE) |
+| `TRANSPARENT` | 透明 | [TRANSPARENT](#TRANSPARENT) |
 
 ### 方法
 
-| 方法名 | 说明                         |
-| ------ | ---------------------------- |
-| `rgb`  | 构造 `rgb(r,g,b)` 颜色字符串 |
-| `hex`  | 构造 `#rrggbb` 颜色字符串    |
+| 方法名 | 说明 | 索引 |
+| ----- | ---- | ---- |
+| `rgb` | 构造 `rgb(r,g,b)` 颜色字符串 | [rgb](#rgb) |
+| `hex` | 构造 `#rrggbb` 颜色字符串 | [hex](#hex) |
+
+---
 
 ## 常量
 
@@ -311,7 +315,7 @@ draw.text { x = 3, y = 4, text = "BG", fg = color.WHITE, bg = color.TRANSPARENT 
 
 ---
 
-## `GRAY` / `GREY`
+## `GRAY` / `GREY` {#GRAY}
 
 灰色。
 
@@ -350,7 +354,7 @@ draw.text { x = 3, y = 4, text = "BG", fg = color.BLACK, bg = color.TRANSPARENT 
 
 ---
 
-## `BRIGHT_GRAY` / `BRIGHT_GREY`
+## `BRIGHT_GRAY` / `BRIGHT_GREY` {#BRIGHT_GRAY}
 
 亮灰。
 
