@@ -154,9 +154,9 @@ impl GameService {
     })
   }
 
-  pub fn set_terminal_size(&mut self, size: Size) {
+  pub fn set_base_size(&mut self, size: Size) {
     if let Some(session) = self.session.as_mut() {
-      session.set_terminal_size(size);
+      session.set_base_size(size);
     }
   }
 
@@ -308,7 +308,7 @@ mod tests {
         session_kind: LuaSessionKind::Game,
         entry_path,
         fixed_delta: Duration::from_secs_f64(1.0 / 60.0),
-        terminal_size: Size {
+        base_size: Size {
           width: 80,
           height: 24,
         },

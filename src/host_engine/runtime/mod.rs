@@ -1789,16 +1789,17 @@ fn dispatch_lua_events(
     (LuaSessionKind::Screensaver, screensaver_deliveries),
   ] {
     let mut deliveries = deliveries.into_iter();
-    while let Some(delivery) = deliveries.next() {
+    while let Some(mut delivery) = deliveries.next() {
       if let LuaEventData::Resize { width, height } = &delivery.event.data {
         let physical = crate::host_engine::services::Size {
           width: *width,
           height: *height,
         };
         let size = lua_session_base_size_for_physical(services, kind, physical);
+        replace_lua_resize_size(&mut delivery.event.data, size);
         match kind {
-          LuaSessionKind::Game => services.game.set_terminal_size(size),
-          LuaSessionKind::Screensaver => services.screensaver.set_terminal_size(size),
+          LuaSessionKind::Game => services.game.set_base_size(size),
+          LuaSessionKind::Screensaver => services.screensaver.set_base_size(size),
         }
       }
       let result = match kind {
@@ -1924,8 +1925,8 @@ fn update_lua_sessions(
 ) {
   let game_size = lua_session_base_size(services, LuaSessionKind::Game);
   let screensaver_size = lua_session_base_size(services, LuaSessionKind::Screensaver);
-  services.game.set_terminal_size(game_size);
-  services.screensaver.set_terminal_size(screensaver_size);
+  services.game.set_base_size(game_size);
+  services.screensaver.set_base_size(screensaver_size);
 
   if services.game.is_active()
     && let Err(error) = services.game.advance(frame_delta)
@@ -1988,6 +1989,13 @@ fn lua_session_base_size_for_physical(
       services.storage.display_settings_profile().top_toolbar,
     ),
     LuaSessionKind::Screensaver => physical,
+  }
+}
+
+fn replace_lua_resize_size(data: &mut LuaEventData, size: Size) {
+  if let LuaEventData::Resize { width, height } = data {
+    *width = size.width;
+    *height = size.height;
   }
 }
 
@@ -2577,7 +2585,7 @@ fn toggle_screensaver(
     session_kind: LuaSessionKind::Screensaver,
     entry_path,
     fixed_delta: Duration::from_secs_f64(1.0 / 60.0),
-    terminal_size: lua_session_base_size(services, LuaSessionKind::Screensaver),
+    base_size: lua_session_base_size(services, LuaSessionKind::Screensaver),
     continue_data: None,
     best_data: None,
     save_game_enabled: false,
@@ -3311,7 +3319,7 @@ mod tests {
 
   use super::{
     AutoRecordingRuntime, format_lua_fault_message, has_pressed_action, queue_lua_system_event,
-    sequential_screensaver_index,
+    replace_lua_resize_size, sequential_screensaver_index,
   };
   use crate::host_engine::services::{
     AutoRecordingMode, InputActionEvent, InputEventType, KeyState, LuaErrorStage, LuaEventBroker,
@@ -3428,5 +3436,29 @@ mod tests {
       events[0].event.data,
       LuaEventData::Mouse { x: 2, y: 4, .. }
     ));
+  }
+
+  #[test]
+  fn lua_resize_event_exposes_the_session_base_size() {
+    let mut data = LuaEventData::Resize {
+      width: 160,
+      height: 50,
+    };
+
+    replace_lua_resize_size(
+      &mut data,
+      crate::host_engine::services::Size {
+        width: 120,
+        height: 40,
+      },
+    );
+
+    assert_eq!(
+      data,
+      LuaEventData::Resize {
+        width: 120,
+        height: 40,
+      }
+    );
   }
 }

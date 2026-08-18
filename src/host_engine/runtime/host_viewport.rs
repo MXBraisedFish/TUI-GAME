@@ -56,11 +56,25 @@ fn refresh_host_areas(host_objects: &mut HostObjectPool, physical: Size, top_too
 }
 
 pub(super) fn developer_size(physical: Size, top_toolbar: bool) -> Size {
-  let reserved_height = u16::from(top_toolbar && physical.height > 0)
-    .saturating_add(u16::from(top_toolbar && physical.height > 1));
+  let reserved = reserved_size(top_toolbar);
   Size {
-    width: physical.width,
-    height: physical.height.saturating_sub(reserved_height),
+    width: physical.width.saturating_sub(reserved.width),
+    height: physical.height.saturating_sub(reserved.height),
+  }
+}
+
+pub(super) fn required_physical_size(required_base: (u32, u32), top_toolbar: bool) -> (u32, u32) {
+  let reserved = reserved_size(top_toolbar);
+  (
+    required_base.0.saturating_add(u32::from(reserved.width)),
+    required_base.1.saturating_add(u32::from(reserved.height)),
+  )
+}
+
+fn reserved_size(top_toolbar: bool) -> Size {
+  Size {
+    width: 0,
+    height: if top_toolbar { 2 } else { 0 },
   }
 }
 
@@ -167,5 +181,11 @@ mod tests {
         height: 40,
       }
     );
+  }
+
+  #[test]
+  fn required_physical_size_adds_the_host_reserved_area() {
+    assert_eq!(required_physical_size((30, 40), true), (30, 42));
+    assert_eq!(required_physical_size((30, 40), false), (30, 40));
   }
 }

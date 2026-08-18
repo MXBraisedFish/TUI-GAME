@@ -62,7 +62,7 @@ pub struct LuaApiContext {
   pub assets_root: PathBuf,
   pub debug_enabled: bool,
   pub safe_mode_enabled: bool,
-  pub terminal_size: Size,
+  pub base_size: Size,
   pub key_actions: HashMap<String, Vec<Vec<String>>>,
   pub key_default_actions: HashMap<String, Vec<Vec<String>>>,
   pub language_code: String,

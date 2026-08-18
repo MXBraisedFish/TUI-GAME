@@ -233,12 +233,12 @@ pub(super) fn draw_target_size(
   target: LuaDrawTarget,
 ) -> mlua::Result<crate::host_engine::services::Size> {
   if target == LuaDrawTarget::Base {
-    return Ok(state.borrow().context.terminal_size);
+    return Ok(state.borrow().context.base_size);
   }
   let LuaDrawTarget::Slice(id) = target else {
     unreachable!();
   };
-  let base = state.borrow().context.terminal_size;
+  let base = state.borrow().context.base_size;
   let objects = state
     .borrow()
     .objects

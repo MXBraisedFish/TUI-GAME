@@ -162,7 +162,7 @@ fn start_game(
     session_kind: crate::host_engine::services::LuaSessionKind::Game,
     entry_path: entry_path.clone(),
     fixed_delta: std::time::Duration::from_secs_f64(1.0 / 60.0),
-    terminal_size: lua_session_base_size(services, LuaSessionKind::Game),
+    base_size: lua_session_base_size(services, LuaSessionKind::Game),
     continue_data,
     best_data,
     save_game_enabled: game.save,

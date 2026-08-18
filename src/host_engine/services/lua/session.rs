@@ -14,7 +14,7 @@ use mlua::{
 };
 use serde_json::{Map as JsonMap, Number as JsonNumber, Value as JsonValue};
 
-use crate::host_engine::services::Size;
+use crate::host_engine::services::{HOST_API_VERSION, Size};
 
 use super::api::{
   self, LuaApiConfig, LuaApiContext, LuaCallPhase, LuaDrawCommand, LuaHostCommand, SharedApiState,
@@ -78,7 +78,7 @@ pub struct LuaSessionSpec {
   pub session_kind: LuaSessionKind,
   pub entry_path: PathBuf,
   pub fixed_delta: Duration,
-  pub terminal_size: Size,
+  pub base_size: Size,
   pub continue_data: Option<JsonValue>,
   pub best_data: Option<JsonValue>,
   pub save_game_enabled: bool,
@@ -168,7 +168,7 @@ pub struct LuaSession {
   session_kind: LuaSessionKind,
   entry_path: PathBuf,
   fixed_delta: Duration,
-  terminal_size: Size,
+  base_size: Size,
   state: LuaSessionState,
   last_stats: LuaExecutionStats,
   objects: SharedLuaObjectPool,
@@ -225,7 +225,7 @@ impl LuaSession {
         debug_enabled: api_config.debug_enabled,
         safe_mode_enabled: spec.session_kind == LuaSessionKind::Screensaver
           || api_config.safe_mode_enabled,
-        terminal_size: spec.terminal_size,
+        base_size: spec.base_size,
         key_actions: api_config.key_actions,
         key_default_actions: api_config.key_default_actions,
         language_code: api_config.language_code,
@@ -265,7 +265,7 @@ impl LuaSession {
       session_kind: spec.session_kind,
       entry_path: spec.entry_path,
       fixed_delta: spec.fixed_delta,
-      terminal_size: spec.terminal_size,
+      base_size: spec.base_size,
       state: LuaSessionState::Loading,
       last_stats: LuaExecutionStats::default(),
       objects,
@@ -303,13 +303,13 @@ impl LuaSession {
     &self.entry_path
   }
 
-  pub fn terminal_size(&self) -> Size {
-    self.terminal_size
+  pub fn base_size(&self) -> Size {
+    self.base_size
   }
 
-  pub fn set_terminal_size(&mut self, size: Size) {
-    self.terminal_size = size;
-    self.api_state.borrow_mut().context.terminal_size = size;
+  pub fn set_base_size(&mut self, size: Size) {
+    self.base_size = size;
+    self.api_state.borrow_mut().context.base_size = size;
   }
 
   pub fn configure_api(
@@ -501,38 +501,45 @@ impl LuaSession {
       .lua
       .create_table()
       .map_err(|error| self.error(LuaErrorStage::Callback, Some("Init"), error))?;
-    let terminal = self
+    let base = self
       .lua
       .create_table()
       .map_err(|error| self.error(LuaErrorStage::Callback, Some("Init"), error))?;
-    terminal
-      .set("width", self.terminal_size.width)
-      .and_then(|_| terminal.set("height", self.terminal_size.height))
+    base
+      .set("width", self.base_size.width)
+      .and_then(|_| base.set("height", self.base_size.height))
       .map_err(|error| self.error(LuaErrorStage::Callback, Some("Init"), error))?;
 
     context
       .set("package_id", self.package_id.as_str())
       .and_then(|_| context.set("package_type", self.session_kind.as_str()))
-      .and_then(|_| context.set("fixed_delta", self.fixed_delta.as_secs_f64()))
-      .and_then(|_| context.set("terminal", terminal))
-      .and_then(|_| context.set("api_version", 1_u32))
+      .and_then(|_| context.set("base", base))
+      .and_then(|_| {
+        context.set(
+          "start_mode",
+          if continue_data.is_some() {
+            "continue"
+          } else {
+            "new"
+          },
+        )
+      })
+      .and_then(|_| context.set("api_version", HOST_API_VERSION))
       .map_err(|error| self.error(LuaErrorStage::Callback, Some("Init"), error))?;
-    let continue_value = match continue_data {
-      Some(value) => json_to_lua(&self.lua, value)
-        .map_err(|error| self.error(LuaErrorStage::Callback, Some("Init"), error))?,
-      None => Value::Nil,
-    };
-    context
-      .set("continue_data", continue_value)
-      .map_err(|error| self.error(LuaErrorStage::Callback, Some("Init"), error))?;
-    let best_value = match best_data {
-      Some(value) => json_to_lua(&self.lua, value)
-        .map_err(|error| self.error(LuaErrorStage::Callback, Some("Init"), error))?,
-      None => Value::Nil,
-    };
-    context
-      .set("best_data", best_value)
-      .map_err(|error| self.error(LuaErrorStage::Callback, Some("Init"), error))?;
+    if let Some(value) = best_data {
+      let value = json_to_lua(&self.lua, value)
+        .map_err(|error| self.error(LuaErrorStage::Callback, Some("Init"), error))?;
+      context
+        .set("best_data", value)
+        .map_err(|error| self.error(LuaErrorStage::Callback, Some("Init"), error))?;
+    }
+    if let Some(value) = continue_data {
+      let value = json_to_lua(&self.lua, value)
+        .map_err(|error| self.error(LuaErrorStage::Callback, Some("Init"), error))?;
+      context
+        .set("continue_data", value)
+        .map_err(|error| self.error(LuaErrorStage::Callback, Some("Init"), error))?;
+    }
     Ok(context)
   }
 
@@ -1545,7 +1552,7 @@ mod tests {
       session_kind: kind,
       entry_path: script_path(source),
       fixed_delta: Duration::from_secs_f64(1.0 / 60.0),
-      terminal_size: Size {
+      base_size: Size {
         width: 120,
         height: 40,
       },
@@ -1814,7 +1821,7 @@ mod tests {
       "#,
     );
     let mut session_spec = spec(&source, LuaSessionKind::Game);
-    session_spec.terminal_size = Size {
+    session_spec.base_size = Size {
       width: 120,
       height: 38,
     };
@@ -2552,7 +2559,7 @@ mod tests {
         session_kind: LuaSessionKind::Game,
         entry_path,
         fixed_delta: Duration::from_secs_f64(1.0 / 60.0),
-        terminal_size: Size {
+        base_size: Size {
           width: 120,
           height: 40,
         },
@@ -2658,7 +2665,7 @@ mod tests {
       session_kind: LuaSessionKind::Game,
       entry_path: entry_path.clone(),
       fixed_delta: Duration::from_secs_f64(1.0 / 60.0),
-      terminal_size: Size {
+      base_size: Size {
         width: 120,
         height: 40,
       },
@@ -3049,9 +3056,11 @@ mod tests {
           calls = calls,
           package_id = context.package_id,
           package_type = context.package_type,
-          fixed_delta = context.fixed_delta,
-          terminal_width = context.terminal.width,
-          terminal_height = context.terminal.height,
+          base_width = context.base.width,
+          base_height = context.base.height,
+          start_mode = context.start_mode,
+          has_fixed_delta = context.fixed_delta ~= nil,
+          has_terminal = context.terminal ~= nil,
           api_version = context.api_version,
           continue_level = context.continue_data.level,
           best_score = context.best_data.score,
@@ -3101,8 +3110,11 @@ mod tests {
     );
     assert_eq!(save["package_id"], "test.package");
     assert_eq!(save["package_type"], "game");
-    assert_eq!(save["terminal_width"], 120);
-    assert_eq!(save["terminal_height"], 40);
+    assert_eq!(save["base_width"], 120);
+    assert_eq!(save["base_height"], 40);
+    assert_eq!(save["start_mode"], "continue");
+    assert_eq!(save["has_fixed_delta"], false);
+    assert_eq!(save["has_terminal"], false);
     assert_eq!(save["api_version"], 1);
     assert_eq!(save["continue_level"], 4);
     assert_eq!(save["best_score"], 12);
@@ -3114,6 +3126,35 @@ mod tests {
     assert_eq!(save["event_state"], "pressed");
     assert_eq!(save["draw_width"], 100);
     assert_eq!(save["draw_height"], 30);
+  }
+
+  #[test]
+  fn init_context_uses_new_mode_and_omits_missing_optional_data() {
+    let source = valid_script(
+      r#"
+        function SaveGame()
+          return {
+            start_mode = init_ctx.start_mode,
+            base_width = init_ctx.base.width,
+            base_height = init_ctx.base.height,
+            has_best_data = init_ctx.best_data ~= nil,
+            has_continue_data = init_ctx.continue_data ~= nil,
+            has_terminal = init_ctx.terminal ~= nil,
+            has_fixed_delta = init_ctx.fixed_delta ~= nil,
+          }
+        end
+      "#,
+    );
+    let mut session =
+      LuaSession::load(spec(&source, LuaSessionKind::Game), LuaPolicy::default()).unwrap();
+    let save = session.save_game().unwrap().unwrap();
+    assert_eq!(save["start_mode"], "new");
+    assert_eq!(save["base_width"], 120);
+    assert_eq!(save["base_height"], 40);
+    assert_eq!(save["has_best_data"], false);
+    assert_eq!(save["has_continue_data"], false);
+    assert_eq!(save["has_terminal"], false);
+    assert_eq!(save["has_fixed_delta"], false);
   }
 
   #[test]
@@ -3271,7 +3312,7 @@ mod tests {
             session_kind,
             entry_path,
             fixed_delta: Duration::from_secs_f64(1.0 / 60.0),
-            terminal_size: Size {
+            base_size: Size {
               width: 120,
               height: 40,
             },
@@ -3344,7 +3385,7 @@ mod tests {
         session_kind: LuaSessionKind::Game,
         entry_path: path,
         fixed_delta: Duration::from_secs_f64(1.0 / 60.0),
-        terminal_size: Size {
+        base_size: Size {
           width: 80,
           height: 24,
         },
@@ -3381,7 +3422,7 @@ mod tests {
         session_kind: LuaSessionKind::Game,
         entry_path: text_path,
         fixed_delta: Duration::from_secs_f64(1.0 / 60.0),
-        terminal_size: Size {
+        base_size: Size {
           width: 80,
           height: 24,
         },

@@ -3,8 +3,8 @@ local width = 80
 local height = 24
 
 function Init(ctx)
-  width = ctx.terminal.width
-  height = ctx.terminal.height
+  width = ctx.base.width
+  height = ctx.base.height
   for index = 1, 32 do
     stars[index] = {
       x = random.randint{ min = 0, max = width - 1 },

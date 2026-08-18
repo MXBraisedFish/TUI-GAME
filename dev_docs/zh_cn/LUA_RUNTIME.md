@@ -31,12 +31,15 @@ function SaveBest() return nil end
 ctx = {
   package_id = "example.game",
   package_type = "game", -- 或 "screensaver"
-  fixed_delta = 1 / 60,
-  terminal = { width = 120, height = 40 },
+  base = { width = 120, height = 40 },
+  start_mode = "new", -- 或 "continue"
+  best_data = nil,
+  continue_data = nil,
   api_version = 1,
-  continue_data = nil
 }
 ```
+
+`best_data` 和 `continue_data` 不存在时，对应字段不会出现在 `ctx` 中。Lua 不会获得物理终端宽高；尺寸查询仅限当前 Base 画布和脚本持有的切片图层。
 
 `draw` 当前只提供 `width` 和 `height`，尚未提供绘制函数。
 

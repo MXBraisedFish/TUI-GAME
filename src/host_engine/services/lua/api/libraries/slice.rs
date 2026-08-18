@@ -219,13 +219,13 @@ fn install_queries(lua: &Lua, source: &Table, state: SharedApiState) -> mlua::Re
             0 => service.configured_rect(objects.ui(), id).map(|rect| {
               i64::from(resolve_length(
                 rect.width,
-                state.borrow().context.terminal_size.width,
+                state.borrow().context.base_size.width,
               ))
             }),
             1 => service.configured_rect(objects.ui(), id).map(|rect| {
               i64::from(resolve_length(
                 rect.height,
-                state.borrow().context.terminal_size.height,
+                state.borrow().context.base_size.height,
               ))
             }),
             _ => service.layer(objects.ui(), id).map(i64::from),
@@ -296,7 +296,7 @@ fn install_queries(lua: &Lua, source: &Table, state: SharedApiState) -> mlua::Re
 }
 
 fn info_value(lua: &Lua, state: &SharedApiState, method: &str, id: SliceId) -> mlua::Result<Value> {
-  let size = state.borrow().context.terminal_size;
+  let size = state.borrow().context.base_size;
   with_pool(state, method, |objects| {
     let service = SliceService::new();
     let Some(rect) = service.configured_rect(objects.ui(), id) else {

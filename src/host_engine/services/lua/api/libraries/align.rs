@@ -116,11 +116,11 @@ pub(super) fn align(lua: &Lua, state: SharedApiState) -> mlua::Result<Table> {
         method,
         "vertical_align",
       )?;
-      let terminal = draw_target_size(&state, method, target)?;
+      let target_size = draw_target_size(&state, method, target)?;
       let x = resolve_alignment_axis(
         method,
         width,
-        terminal.width as i64,
+        target_size.width as i64,
         &horizontal,
         args::optional_integer(&table, method, "relative_x", None)?,
         args::optional_integer(&table, method, "offset_x", Some(0))?.unwrap(),
@@ -129,7 +129,7 @@ pub(super) fn align(lua: &Lua, state: SharedApiState) -> mlua::Result<Table> {
       let y = resolve_alignment_axis(
         method,
         height,
-        terminal.height as i64,
+        target_size.height as i64,
         &vertical,
         args::optional_integer(&table, method, "relative_y", None)?,
         args::optional_integer(&table, method, "offset_y", Some(0))?.unwrap(),

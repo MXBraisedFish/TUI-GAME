@@ -286,6 +286,7 @@
   },
   "active": "8171b89a049079c2",
   "lastOpenFiles": [
+    "CALLBACK.md",
     "api/encoding.md",
     "api/i18n.md",
     "I18N.md",
@@ -324,7 +325,6 @@
     "LANGUAGE.md",
     "api/utf8.md",
     "api/slice.md",
-    "api/random.md",
     "api",
     "库",
     "API.md.tmp.31024.45c5566c4009",
