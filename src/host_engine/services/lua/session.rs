@@ -228,6 +228,8 @@ impl LuaSession {
         terminal_size: spec.terminal_size,
         key_actions: api_config.key_actions,
         key_default_actions: api_config.key_default_actions,
+        language_code: api_config.language_code,
+        missing_i18n_template: api_config.missing_i18n_template,
       },
       Rc::downgrade(&objects),
     )
@@ -362,6 +364,9 @@ impl LuaSession {
   }
 
   pub fn dispatch_event(&mut self, delivery: &LuaEventDelivery) -> Result<(), LuaSessionError> {
+    if let super::LuaEventData::I18n(event) = &delivery.event.data {
+      api::apply_i18n_event(&self.api_state, event);
+    }
     match delivery.route {
       LuaEventRoute::HandleEvent => self.handle_event(&delivery.event),
       LuaEventRoute::Callback(callback) => self.invoke_event_callback(callback, &delivery.event),
@@ -937,7 +942,8 @@ impl Callback {
       Self::Update => LuaCallPhase::Update,
       Self::UpdateFrame => LuaCallPhase::UpdateFrame,
       Self::Render => LuaCallPhase::Render,
-      Self::SaveGame | Self::SaveBest => LuaCallPhase::Save,
+      Self::SaveGame => LuaCallPhase::SaveGame,
+      Self::SaveBest => LuaCallPhase::SaveBest,
     }
   }
 }
@@ -1619,6 +1625,75 @@ mod tests {
   }
 
   #[test]
+  fn i18n_api_loads_asynchronously_and_applies_data_before_handle_event() {
+    let source = valid_script(
+      r#"
+        function Init(ctx)
+          system_language = i18n.get_language_code()
+          i18n.create{}
+          i18n.create{ language_code = "ignored" }
+        end
+        function HandleEvent(event)
+          if event.type == "i18n" and event.data.ok then
+            translated = i18n.get_value{ namespace = "menu", key = "title" }
+            missing = i18n.get_value{ namespace = "menu", key = "missing" }
+          end
+        end
+      "#,
+    );
+    let mut session = LuaSession::load_with_api(
+      spec(&source, LuaSessionKind::Game),
+      LuaPolicy::default(),
+      LuaApiConfig {
+        language_code: "zh_cn".to_string(),
+        missing_i18n_template: "[缺少：{value:missing_key}]".to_string(),
+        ..LuaApiConfig::default()
+      },
+    )
+    .unwrap();
+    assert_eq!(
+      session.environment_value("system_language"),
+      Value::String(session.lua.create_string("zh_cn").unwrap())
+    );
+    let commands = session.take_host_commands();
+    assert_eq!(
+      commands
+        .iter()
+        .filter(|command| matches!(command, LuaHostCommand::I18nRequest { .. }))
+        .count(),
+      1
+    );
+
+    let delivery = LuaEventDelivery {
+      event: LuaRuntimeEvent {
+        sequence: 1,
+        frame: 1,
+        data: LuaEventData::I18n(super::super::LuaI18nEvent {
+          kind: super::super::LuaI18nEventKind::Created,
+          ok: true,
+          message: "i18n instance created".to_string(),
+          language_code: "zh_cn".to_string(),
+          callback_language_code: "en_us".to_string(),
+          namespaces: Some(HashMap::from([(
+            "menu".to_string(),
+            HashMap::from([("title".to_string(), "标题".to_string())]),
+          )])),
+        }),
+      },
+      route: LuaEventRoute::HandleEvent,
+    };
+    session.dispatch_event(&delivery).unwrap();
+    assert_eq!(
+      session.environment_value("translated"),
+      Value::String(session.lua.create_string("标题").unwrap())
+    );
+    assert_eq!(
+      session.environment_value("missing"),
+      Value::String(session.lua.create_string("[缺少：menu.missing]").unwrap())
+    );
+  }
+
+  #[test]
   fn sandbox_exposes_only_host_libraries_and_hides_native_globals() {
     let session = LuaSession::load(
       spec(&valid_script(""), LuaSessionKind::Game),
@@ -1645,6 +1720,7 @@ mod tests {
       "slice",
       "serialization",
       "encoding",
+      "i18n",
       "ipairs",
       "pairs",
       "next",
@@ -2217,30 +2293,76 @@ mod tests {
   }
 
   #[test]
-  fn save_callbacks_cannot_enqueue_recursive_save_commands() {
+  fn game_commands_enforce_callback_reentrancy_boundaries() {
     let source = valid_script(
       r#"
+        function Init(ctx)
+          local result = debug.pcall{ func = function() game.exit_game() end }
+          debug.assert{ value = not result.ok }
+        end
         function SaveGame()
-          game.save_game()
+          local save = debug.pcall{ func = function() game.save_game() end }
+          local exit = debug.pcall{ func = function() game.exit_game() end }
+          debug.assert{ value = not save.ok and not exit.ok }
+          game.save_best()
           return { saved = true }
+        end
+        function SaveBest()
+          local save = debug.pcall{ func = function() game.save_best() end }
+          local exit = debug.pcall{ func = function() game.exit_game() end }
+          debug.assert{ value = not save.ok and not exit.ok }
+          game.save_game()
+          return { best_string = "best" }
+        end
+        function Update(dt)
+          game.exit_game()
         end
       "#,
     );
     let mut session =
       LuaSession::load(spec(&source, LuaSessionKind::Game), LuaPolicy::default()).unwrap();
     assert_eq!(session.save_game().unwrap().unwrap()["saved"], true);
-    let commands = session.take_host_commands();
-    assert!(commands.iter().any(|command| matches!(
-      command,
-      LuaHostCommand::Ignored {
-        method: "game.save_game",
-        ..
-      }
-    )));
+    let save_game_commands = session.take_host_commands();
     assert!(
-      !commands
+      !save_game_commands
         .iter()
         .any(|command| matches!(command, LuaHostCommand::SaveGame))
+    );
+    assert!(
+      !save_game_commands
+        .iter()
+        .any(|command| matches!(command, LuaHostCommand::ExitGame))
+    );
+    assert!(
+      save_game_commands
+        .iter()
+        .any(|command| matches!(command, LuaHostCommand::SaveBest))
+    );
+
+    assert_eq!(session.save_best().unwrap().unwrap()["best_string"], "best");
+    let save_best_commands = session.take_host_commands();
+    assert!(
+      !save_best_commands
+        .iter()
+        .any(|command| matches!(command, LuaHostCommand::SaveBest))
+    );
+    assert!(
+      !save_best_commands
+        .iter()
+        .any(|command| matches!(command, LuaHostCommand::ExitGame))
+    );
+    assert!(
+      save_best_commands
+        .iter()
+        .any(|command| matches!(command, LuaHostCommand::SaveGame))
+    );
+
+    session.update().unwrap();
+    assert!(
+      session
+        .take_host_commands()
+        .iter()
+        .any(|command| matches!(command, LuaHostCommand::ExitGame))
     );
   }
 
@@ -2303,6 +2425,7 @@ mod tests {
         safe_mode_enabled: false,
         key_actions: HashMap::new(),
         key_default_actions: HashMap::new(),
+        ..LuaApiConfig::default()
       },
     )
     .unwrap();
@@ -2387,18 +2510,28 @@ mod tests {
     fs::create_dir_all(&scripts_root).unwrap();
     fs::create_dir_all(&assets_root).unwrap();
     fs::write(assets_root.join("input.txt"), "input").unwrap();
+    fs::write(assets_root.join("input.bin"), [0x00, 0xff, 0x7f]).unwrap();
     let entry_path = scripts_root.join("main.lua");
     fs::write(
       &entry_path,
       valid_script(
         r#"
           function Init(ctx)
+            debug.assert{ value = file.read_byte == nil }
+            debug.assert{ value = file.write_byte == nil }
             debug.assert{ value = file.exists(".") }
             debug.assert{ value = file.exists{ path = "./input.txt" } }
             debug.assert{ value = not file.exists("./missing.txt") }
             file.list_dir{ path = ".", recursive = true }
             file.read{ path = "./input.txt" }
+            file.read{ path = "./input.bin", byte = true, event_tip = "read-binary" }
             file.write{ path = "./output.txt", text = "output" }
+            file.write{
+              path = "./output.bin",
+              text = "a\0\255b",
+              byte = true,
+              event_tip = "write-binary",
+            }
             file.create_dir{ path = "./created/nested/leaf", event_tip = "created" }
             file.remove{ path = "./input.txt", event_tip = "removed" }
             local empty = debug.pcall{
@@ -2457,10 +2590,35 @@ mod tests {
     assert!(requests.iter().any(|command| matches!(
       command,
       LuaHostCommand::FileRequest {
+        task: crate::host_engine::services::FileTask::LuaReadBytes { path },
+        operation: LuaFileOperation::ReadBytes,
+        virtual_path,
+        event_tip: Some(event_tip),
+        ..
+      } if path == &expected_root.join("input.bin")
+        && virtual_path == "input.bin"
+        && event_tip == "read-binary"
+    )));
+    assert!(requests.iter().any(|command| matches!(
+      command,
+      LuaHostCommand::FileRequest {
         task: crate::host_engine::services::FileTask::LuaWriteText { path, .. },
         virtual_path,
         ..
       } if path == &expected_root.join("output.txt") && virtual_path == "output.txt"
+    )));
+    assert!(requests.iter().any(|command| matches!(
+      command,
+      LuaHostCommand::FileRequest {
+        task: crate::host_engine::services::FileTask::LuaWriteBytes { path, bytes },
+        operation: LuaFileOperation::WriteBytes,
+        virtual_path,
+        event_tip: Some(event_tip),
+        ..
+      } if path == &expected_root.join("output.bin")
+        && bytes == b"a\0\xffb"
+        && virtual_path == "output.bin"
+        && event_tip == "write-binary"
     )));
     assert!(requests.iter().any(|command| matches!(
       command,

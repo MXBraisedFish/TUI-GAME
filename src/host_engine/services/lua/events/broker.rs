@@ -10,9 +10,9 @@ use super::super::LuaSessionKind;
 use super::super::path::SafeRelativePath;
 use super::{
   LuaAudioEvent, LuaAudioEventKind, LuaEventData, LuaEventError, LuaEventErrorCode, LuaFileEntry,
-  LuaFileEvent, LuaFileOperation, LuaFileOutcome, LuaImageEvent, LuaImageOutcome, LuaNetworkBody,
-  LuaNetworkEvent, LuaNetworkOutcome, LuaRuntimeEvent, LuaTimerEvent, LuaTimerEventKind,
-  LuaTimerKind, sanitize_io_error, sanitize_network_error,
+  LuaFileEvent, LuaFileOperation, LuaFileOutcome, LuaI18nEvent, LuaI18nEventKind, LuaImageEvent,
+  LuaImageOutcome, LuaNetworkBody, LuaNetworkEvent, LuaNetworkOutcome, LuaRuntimeEvent,
+  LuaTimerEvent, LuaTimerEventKind, LuaTimerKind, sanitize_io_error, sanitize_network_error,
 };
 
 pub const MAX_LUA_EVENTS_PER_FRAME: usize = 128;
@@ -48,6 +48,11 @@ pub enum LuaTaskOperation {
     kind: LuaFileOperation,
     virtual_path: String,
     event_tip: Option<String>,
+  },
+  I18n {
+    kind: LuaI18nEventKind,
+    language_code: String,
+    callback_language_code: String,
   },
   ImageConvert {
     request_id: u64,
@@ -627,6 +632,7 @@ fn service_event_task_id(event: &EngineEvent) -> Option<TaskId> {
       | FileEvent::LuaListDirFinished { task_id, .. }
       | FileEvent::LuaCreateDirFinished { task_id, .. }
       | FileEvent::LuaRemoveFinished { task_id, .. }
+      | FileEvent::LuaI18nFinished { task_id, .. }
       | FileEvent::Failed { task_id, .. } => *task_id,
     }),
     EngineEvent::Image(event) => Some(match event {
@@ -645,6 +651,49 @@ fn service_event_task_id(event: &EngineEvent) -> Option<TaskId> {
 
 fn translate_task_event(operation: &LuaTaskOperation, event: &EngineEvent) -> Option<LuaEventData> {
   match (operation, event) {
+    (
+      LuaTaskOperation::I18n {
+        kind,
+        language_code: _,
+        callback_language_code: _,
+      },
+      EngineEvent::File(FileEvent::LuaI18nFinished {
+        language_code: actual_language_code,
+        callback_language_code: actual_callback_language_code,
+        namespaces,
+        ..
+      }),
+    ) => Some(LuaEventData::I18n(LuaI18nEvent {
+      kind: *kind,
+      ok: true,
+      message: match kind {
+        LuaI18nEventKind::Created => "i18n instance created",
+        LuaI18nEventKind::Reloaded => "i18n instance reloaded",
+      }
+      .to_string(),
+      language_code: actual_language_code.clone(),
+      callback_language_code: actual_callback_language_code.clone(),
+      namespaces: Some(namespaces.clone()),
+    })),
+    (
+      LuaTaskOperation::I18n {
+        kind,
+        language_code,
+        callback_language_code,
+      },
+      EngineEvent::File(FileEvent::Failed { .. }),
+    ) => Some(LuaEventData::I18n(LuaI18nEvent {
+      kind: *kind,
+      ok: false,
+      message: match kind {
+        LuaI18nEventKind::Created => "failed to create i18n instance",
+        LuaI18nEventKind::Reloaded => "failed to reload i18n instance",
+      }
+      .to_string(),
+      language_code: language_code.clone(),
+      callback_language_code: callback_language_code.clone(),
+      namespaces: None,
+    })),
     (
       LuaTaskOperation::File {
         request_id,
@@ -1614,5 +1663,48 @@ mod tests {
       ),
       Err(LuaEnqueueError::StaleTaskCompletion(TaskId(1)))
     ));
+  }
+
+  #[test]
+  fn i18n_task_completion_is_owned_and_exposes_no_host_path() {
+    let game = token(LuaSessionKind::Game, 1);
+    let mut broker = LuaEventBroker::new();
+    broker.synchronize_sessions(Some(game), None);
+    broker
+      .register_task(
+        TaskId(41),
+        game,
+        LuaTaskOperation::I18n {
+          kind: LuaI18nEventKind::Created,
+          language_code: "zh_cn".to_string(),
+          callback_language_code: "en_us".to_string(),
+        },
+        LuaEventRoute::HandleEvent,
+      )
+      .unwrap();
+    broker
+      .route_engine_event(
+        9,
+        &EngineEvent::File(FileEvent::LuaI18nFinished {
+          task_id: TaskId(41),
+          language_code: "zh_cn".to_string(),
+          callback_language_code: "en_us".to_string(),
+          namespaces: HashMap::from([(
+            "menu".to_string(),
+            HashMap::from([("title".to_string(), "标题".to_string())]),
+          )]),
+        }),
+      )
+      .unwrap();
+
+    let events = broker.drain_frame(LuaSessionKind::Game);
+    assert_eq!(events.len(), 1);
+    let LuaEventData::I18n(event) = &events[0].event.data else {
+      panic!("expected i18n event");
+    };
+    assert!(event.ok);
+    assert_eq!(event.kind, LuaI18nEventKind::Created);
+    assert_eq!(event.language_code, "zh_cn");
+    assert_eq!(event.namespaces.as_ref().unwrap()["menu"]["title"], "标题");
   }
 }

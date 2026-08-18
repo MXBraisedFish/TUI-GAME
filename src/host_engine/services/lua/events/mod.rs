@@ -240,6 +240,32 @@ pub struct LuaFileEvent {
   pub outcome: LuaFileOutcome,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LuaI18nEventKind {
+  Created,
+  Reloaded,
+}
+
+impl LuaI18nEventKind {
+  pub fn as_str(self) -> &'static str {
+    match self {
+      Self::Created => "created",
+      Self::Reloaded => "reloaded",
+    }
+  }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LuaI18nEvent {
+  pub kind: LuaI18nEventKind,
+  pub ok: bool,
+  pub message: String,
+  pub language_code: String,
+  pub callback_language_code: String,
+  pub(crate) namespaces:
+    Option<std::collections::HashMap<String, std::collections::HashMap<String, String>>>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum LuaImageOutcome {
   Converted(String),
@@ -374,6 +400,7 @@ pub enum LuaEventData {
   Timer(LuaTimerEvent),
   Animation(LuaAnimationEvent),
   File(LuaFileEvent),
+  I18n(LuaI18nEvent),
   Image(LuaImageEvent),
   Network(LuaNetworkEvent),
   Audio(LuaAudioEvent),
@@ -396,6 +423,7 @@ impl LuaEventData {
       Self::Timer(_) => "timer",
       Self::Animation(_) => "animation",
       Self::File(_) => "file",
+      Self::I18n(_) => "i18n",
       Self::Image(_) => "image",
       Self::Network(_) => "network",
       Self::Audio(_) => "audio",
@@ -431,7 +459,7 @@ impl LuaEventData {
         event.kind,
         LuaAnimationEventKind::Finished | LuaAnimationEventKind::Cancelled
       ),
-      Self::File(_) | Self::Image(_) | Self::Network(_) => true,
+      Self::File(_) | Self::I18n(_) | Self::Image(_) | Self::Network(_) => true,
       _ => false,
     }
   }
@@ -494,6 +522,7 @@ impl LuaEventData {
         | Self::Focus { .. }
         | Self::Timer(_)
         | Self::Animation(_)
+        | Self::I18n(_)
         | Self::Image(_)
         | Self::Network(_) => true,
         Self::Audio(_) => true,
@@ -575,6 +604,16 @@ impl LuaEventData {
             data.set("error", error_table(lua, error)?)?;
           }
         }
+      }
+      Self::I18n(event) => {
+        data.set("kind", event.kind.as_str())?;
+        data.set("ok", event.ok)?;
+        data.set("message", event.message.as_str())?;
+        data.set("language_code", event.language_code.as_str())?;
+        data.set(
+          "callback_language_code",
+          event.callback_language_code.as_str(),
+        )?;
       }
       Self::Image(event) => {
         data.set("request_id", event.request_id)?;

@@ -10,24 +10,24 @@
 
 ### 常量
 
-| 常量名              | 说明     | 索引                                    |
-| ------------------- | -------- | --------------------------------------- |
-| `AUTO`              | 自动对齐 | [AUTO](#AUTO)                           |
-| `LEFT`              | 左对齐   | [LEFT](#LEFT)                           |
-| `HORIZONTAL_CENTER` | 水平居中 | [HORIZONTAL_CENTER](#HORIZONTAL_CENTER) |
-| `RIGHT`             | 右对齐   | [RIGHT](#RIGHT)                         |
-| `TOP`               | 顶部对齐 | [TOP](#TOP)                             |
-| `VERTICAL_CENTER`   | 垂直居中 | [VERTICAL_CENTER](#VERTICAL_CENTER)     |
-| `BOTTOM`            | 底部对齐 | [BOTTOM](#BOTTOM)                       |
-| `CENTER`            | 双向居中 | [CENTER](#CENTER)                       |
+| 常量名              | 说明         | 索引                                    |
+| ------------------- | ------------ | --------------------------------------- |
+| `AUTO`              | 自动对齐模式 | [AUTO](#AUTO)                           |
+| `LEFT`              | 左对齐模式   | [LEFT](#LEFT)                           |
+| `HORIZONTAL_CENTER` | 水平居中模式 | [HORIZONTAL_CENTER](#HORIZONTAL_CENTER) |
+| `RIGHT`             | 右对齐模式   | [RIGHT](#RIGHT)                         |
+| `TOP`               | 顶部对齐模式 | [TOP](#TOP)                             |
+| `VERTICAL_CENTER`   | 垂直居中模式 | [VERTICAL_CENTER](#VERTICAL_CENTER)     |
+| `BOTTOM`            | 底部对齐模式 | [BOTTOM](#BOTTOM)                       |
+| `CENTER`            | 双向居中模式 | [CENTER](#CENTER)                       |
 
 ### 方法
 
-| 方法名         | 说明               | 索引                          |
-| -------------- | ------------------ | ----------------------------- |
-| `resolve_x`    | 计算水平坐标       | [resolve_x](#resolve_x)       |
-| `resolve_y`    | 计算垂直坐标       | [resolve_y](#resolve_y)       |
-| `resolve_rect` | 计算矩形左上角坐标 | [resolve_rect](#resolve_rect) |
+| 方法名         | 说明                                                                                         | 索引                          |
+| -------------- | -------------------------------------------------------------------------------------------- | ----------------------------- |
+| `resolve_x`    | 根据元素宽度与水平对齐方式，计算文本左边缘的 x 坐标                                          | [resolve_x](#resolve_x)       |
+| `resolve_y`    | 根据元素高度与垂直对齐方式，计算文本上边缘的 y 坐标                                          | [resolve_y](#resolve_y)       |
+| `resolve_rect` | 根据元素宽度与高度、水平对齐方式和垂直对齐方式，计算文本左边缘的 x 坐标、文本上边缘的 y 坐标 | [resolve_rect](#resolve_rect) |
 
 ---
 
@@ -289,8 +289,8 @@ align.resolve_x{}
 
 直接返回一个值。
 
-| 类型      | 说明       |
-| ------- | -------- |
+| 类型    | 说明             |
+| ------- | ---------------- |
 | integer | 绘制起始水平坐标 |
 
 ### 示例
@@ -337,8 +337,8 @@ align.resolve_y{}
 
 直接返回一个值。
 
-| 类型      | 说明       |
-| ------- | -------- |
+| 类型    | 说明             |
+| ------- | ---------------- |
 | integer | 绘制起始垂直坐标 |
 
 ### 示例
@@ -389,10 +389,10 @@ align.resolve_rect{}
 
 返回一个结果表。
 
-| 字段  | 类型      | 说明       |
-| --- | ------- | -------- |
-| `x` | integer | 绘制起始水平坐标 |
-| `y` | integer | 绘制起始垂直坐标 |
+| 字段 | 类型    | 说明             |
+| ---- | ------- | ---------------- |
+| `x`  | integer | 绘制起始水平坐标 |
+| `y`  | integer | 绘制起始垂直坐标 |
 
 ### 示例
 

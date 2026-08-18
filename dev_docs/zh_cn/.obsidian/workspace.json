@@ -22,6 +22,34 @@
             }
           },
           {
+            "id": "8171b89a049079c2",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "I18N.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "I18N"
+            }
+          },
+          {
+            "id": "48c1b1bb5b4b320e",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "api/i18n.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "i18n"
+            }
+          },
+          {
             "id": "af54fb1e8941dee2",
             "type": "leaf",
             "state": {
@@ -83,16 +111,16 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "api/file.md",
+                "file": "API.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "file"
+              "title": "API"
             }
           }
         ],
-        "currentTab": 5
+        "currentTab": 1
       }
     ],
     "direction": "vertical"
@@ -256,20 +284,27 @@
       "bases:新建数据库": false
     }
   },
-  "active": "2ab02da958db9679",
+  "active": "8171b89a049079c2",
   "lastOpenFiles": [
+    "api/encoding.md",
+    "api/i18n.md",
+    "I18N.md",
+    "库.md",
+    "api/table.md",
+    "api/base.md",
+    "API.md",
+    "api/file.md",
+    "api/game.md",
+    "package字段.md",
     "api/aaaatest.json",
     "api/aaaatest.jsom",
     "api/test.json",
     "api/event.md",
-    "api/encoding.md",
     "api/draw.md",
     "api/debug.md",
     "api/color.md",
     "api/char.md",
-    "api/base.md",
     "api/align.md",
-    "api/file.md",
     "image/color_hex_example.png",
     "image/color_rgb_example.png",
     "image/color_TRANSPARENT_example.png",
@@ -282,20 +317,14 @@
     "image/color_BRIGHT_GREEN_example.png",
     "api/string.md",
     "api/serialization.md",
-    "API.md",
     "EVENT.md",
-    "api/game.md",
     "LUA_RUNTIME.md",
     "BOSS.md",
     "GAME.md",
     "LANGUAGE.md",
-    "package字段.md",
     "api/utf8.md",
-    "api/table.md",
     "api/slice.md",
     "api/random.md",
-    "api/measurement.md",
-    "api/math.md",
     "api",
     "库",
     "API.md.tmp.31024.45c5566c4009",

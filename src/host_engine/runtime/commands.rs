@@ -147,6 +147,10 @@ fn start_game(
     safe_mode_enabled,
     key_actions,
     key_default_actions,
+    language_code: services.i18n.current_language_code().to_string(),
+    missing_i18n_template: services
+      .i18n
+      .get_runtime_text("language_warning", "language_warning.missing"),
   };
   let best_data = services
     .storage

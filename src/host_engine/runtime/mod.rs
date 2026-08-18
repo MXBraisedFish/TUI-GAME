@@ -2076,6 +2076,39 @@ fn apply_lua_host_commands(
           );
         }
       }
+      LuaHostCommand::I18nRequest {
+        task,
+        kind: event_kind,
+        language_code,
+        callback_language_code,
+      } => {
+        let token = match kind {
+          LuaSessionKind::Game => services.game.session_token(),
+          LuaSessionKind::Screensaver => services.screensaver.session_token(),
+        };
+        let Some(token) = token else {
+          continue;
+        };
+        let task_id = services.async_runtime.submit(EngineTask::File(task));
+        if let Err(error) = router.register_task(
+          task_id,
+          token,
+          LuaTaskOperation::I18n {
+            kind: event_kind,
+            language_code,
+            callback_language_code,
+          },
+          LuaEventRoute::HandleEvent,
+        ) {
+          services.async_runtime.cancel_task(task_id);
+          log_lua_session_message(
+            services,
+            kind,
+            "warn",
+            format!("Lua i18n request rejected: {error:?}"),
+          );
+        }
+      }
       LuaHostCommand::ExitGame if kind == LuaSessionKind::Game => {
         let result = services.game.stop(true);
         persist_game_stop_data(services, &result);
@@ -2555,6 +2588,10 @@ fn toggle_screensaver(
     safe_mode_enabled: true,
     key_actions: entry.key_actions.clone(),
     key_default_actions: entry.key_default_actions.clone(),
+    language_code: services.i18n.current_language_code().to_string(),
+    missing_i18n_template: services
+      .i18n
+      .get_runtime_text("language_warning", "language_warning.missing"),
   };
   let session_log = services
     .log

@@ -12,6 +12,7 @@ use mlua::{Lua, Table};
 
 use super::LuaSessionKind;
 use super::object_pool::WeakLuaObjectPool;
+use super::{LuaI18nEvent, LuaI18nEventKind};
 use crate::host_engine::services::{
   BorderStyle, DrawTextParams, FileTask, LuaFileOperation, RandomGeneratorId, Size, SliceId,
   TextColor,
@@ -25,7 +26,8 @@ pub enum LuaCallPhase {
   Update,
   UpdateFrame,
   Render,
-  Save,
+  SaveGame,
+  SaveBest,
   Idle,
 }
 
@@ -35,6 +37,8 @@ pub struct LuaApiConfig {
   pub safe_mode_enabled: bool,
   pub key_actions: HashMap<String, Vec<Vec<String>>>,
   pub key_default_actions: HashMap<String, Vec<Vec<String>>>,
+  pub language_code: String,
+  pub missing_i18n_template: String,
 }
 
 impl Default for LuaApiConfig {
@@ -44,6 +48,8 @@ impl Default for LuaApiConfig {
       safe_mode_enabled: true,
       key_actions: HashMap::new(),
       key_default_actions: HashMap::new(),
+      language_code: "en_us".to_string(),
+      missing_i18n_template: "[Missing i18n Key: {value:missing_key}]".to_string(),
     }
   }
 }
@@ -59,6 +65,8 @@ pub struct LuaApiContext {
   pub terminal_size: Size,
   pub key_actions: HashMap<String, Vec<Vec<String>>>,
   pub key_default_actions: HashMap<String, Vec<Vec<String>>>,
+  pub language_code: String,
+  pub missing_i18n_template: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -134,6 +142,12 @@ pub enum LuaHostCommand {
     virtual_path: String,
     event_tip: Option<String>,
   },
+  I18nRequest {
+    task: FileTask,
+    kind: LuaI18nEventKind,
+    language_code: String,
+    callback_language_code: String,
+  },
   Draw(LuaDrawCommand),
 }
 
@@ -148,6 +162,7 @@ pub(crate) struct LuaApiState {
   pub loader_stack: Vec<PathBuf>,
   pub loader_source_bytes: usize,
   pub next_file_request_id: u64,
+  pub i18n: LuaI18nState,
   pub direct_random_id: Option<RandomGeneratorId>,
   pub ignored_methods: HashSet<&'static str>,
   pub fatal_budget_exceeded: bool,
@@ -155,6 +170,15 @@ pub(crate) struct LuaApiState {
   pub debug_log_window_started: Instant,
   pub debug_log_count: u32,
   pub debug_log_dropped: u32,
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct LuaI18nState {
+  pub created: bool,
+  pub loading: bool,
+  pub language_code: Option<String>,
+  pub callback_language_code: Option<String>,
+  pub namespaces: HashMap<String, HashMap<String, String>>,
 }
 
 pub(crate) type SharedApiState = Rc<RefCell<LuaApiState>>;
@@ -174,6 +198,7 @@ pub(crate) fn build_environment(
     loader_stack: Vec::new(),
     loader_source_bytes: 0,
     next_file_request_id: 1,
+    i18n: LuaI18nState::default(),
     direct_random_id: None,
     ignored_methods: HashSet::new(),
     fatal_budget_exceeded: false,
@@ -185,4 +210,19 @@ pub(crate) fn build_environment(
   let environment = lua.create_table()?;
   libraries::install(lua, &environment, state.clone())?;
   Ok((environment, state))
+}
+
+pub(crate) fn apply_i18n_event(state: &SharedApiState, event: &LuaI18nEvent) {
+  let mut state = state.borrow_mut();
+  state.i18n.loading = false;
+  if event.ok {
+    state.i18n.created = true;
+    state.i18n.language_code = Some(event.language_code.clone());
+    state.i18n.callback_language_code = Some(event.callback_language_code.clone());
+    if let Some(namespaces) = &event.namespaces {
+      state.i18n.namespaces = namespaces.clone();
+    }
+  } else if event.kind == LuaI18nEventKind::Created {
+    state.i18n.created = false;
+  }
 }

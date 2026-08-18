@@ -24,13 +24,24 @@ pub(super) fn game(lua: &Lua, state: SharedApiState) -> mlua::Result<Table> {
         drop(api);
         args::no_args(method, values)?;
         let mut api = state.borrow_mut();
-        if api.phase == LuaCallPhase::Save
-          && matches!(command, LuaHostCommand::SaveGame | LuaHostCommand::SaveBest)
-        {
-          ignore_once(&mut api, method, "recursive save request was ignored")
-        } else {
-          push_host_command(&mut api, command.clone())
+        let invalid_state = match command {
+          LuaHostCommand::ExitGame => match api.phase {
+            LuaCallPhase::Init => Some("Init"),
+            LuaCallPhase::SaveGame => Some("SaveGame"),
+            LuaCallPhase::SaveBest => Some("SaveBest"),
+            _ => None,
+          },
+          LuaHostCommand::SaveGame if api.phase == LuaCallPhase::SaveGame => Some("SaveGame"),
+          LuaHostCommand::SaveBest if api.phase == LuaCallPhase::SaveBest => Some("SaveBest"),
+          _ => None,
+        };
+        if let Some(callback) = invalid_state {
+          return Err(args::message(
+            method,
+            format!("invalid_state: {method} cannot be called during {callback}"),
+          ));
         }
+        push_host_command(&mut api, command.clone());
         Ok(())
       })?,
     )?;

@@ -46,7 +46,7 @@
 | `overlay_started`、`overlay_stopped` | 是 | 否 | 只通知游戏 Session。 |
 | `timer`、`animation` | 是 | 是 | 只能收到本 Session 所创建对象的事件。 |
 | `file` | 是 | 只读 | 只能收到本 Session 登记的请求结果；屏保不接收写入和目录请求。 |
-| `image`、`network`、`audio` | 是 | 是 | 只能收到本 Session 登记的请求或对象事件；API 权限仍可能拒绝创建请求。 |
+| `i18n`、`image`、`network`、`audio` | 是 | 是 | 只能收到本 Session 登记的请求或对象事件；API 权限仍可能拒绝创建请求。 |
 | 交互组件事件 | 是 | 否 | 只能收到本 Session 所创建组件的事件。 |
 
 任意覆盖屏处于栈内时，游戏仍可更新，并继续接收非交互事件，但不会接收动作、鼠标或组件交互事件。屏保本身也不接收键盘、鼠标和交互组件事件。
@@ -253,7 +253,7 @@ error = {
 
 ### 5.2 `file`
 
-异步文件请求完成或失败时发送。当前公开文件 API 会产生 `read_text`、`write_text`、`list_dir`、`create_dir` 和 `remove`；`read_bytes`、`write_bytes` 已保留在事件协议中，但当前文本文件 API 不会主动创建这两类请求。同步的 `file.exists` 直接返回布尔值，不产生事件。
+异步文件请求完成或失败时发送。`file.read` 和 `file.write` 默认产生 `read_text`、`write_text`；传入 `byte = true` 时产生 `read_bytes`、`write_bytes`。其他公开文件 API 会产生 `list_dir`、`create_dir` 和 `remove`。同步的 `file.exists` 直接返回布尔值，不产生事件。
 
 ```lua
 {
@@ -385,6 +385,37 @@ GET 或 POST 请求产生唯一终态结果。HTTP 4xx/5xx 是成功收到的 HT
 | `error` | `table \| nil` | `ok == false` | 通用错误表；取消会使用 `cancelled`。 |
 
 `text` 与 `bytes` 互斥。URL、响应头和错误在进入 Lua 前会经过安全过滤。
+
+### 5.5 `i18n`
+
+调用 `i18n.create{}` 或 `i18n.reload{}` 后，在包语言文件异步加载结束时发送。该事件只投递给发起请求的游戏或屏保 Session。事件进入 `HandleEvent` 前，宿主已经提交成功加载的语言数据，因此可在处理该事件时立即调用 `i18n.get_value{}`。
+
+```lua
+{
+  type = "i18n",
+  data = {
+    kind = "created",
+    ok = true,
+    message = "i18n instance created",
+    language_code = "zh_cn",
+    callback_language_code = "en_us",
+  },
+}
+```
+
+| `data` 字段 | 类型 | 出现条件 | 作用 |
+|---|---|---|---|
+| `kind` | `string` | 始终 | `created` 表示 `create` 请求结束，`reloaded` 表示 `reload` 请求结束。 |
+| `ok` | `boolean` | 始终 | 本次语言加载是否成功。 |
+| `message` | `string` | 始终 | 已净化的加载结果说明，不包含绝对路径、系统错误或宿主任务 ID。 |
+| `language_code` | `string` | 始终 | 成功时为实际加载的主语言代码；主语言不存在而使用备用语言时为备用语言代码。失败时为本次请求的主语言代码。 |
+| `callback_language_code` | `string` | 始终 | 本次请求使用的备用语言代码。 |
+
+- 包语言文件只从 `assets/language/<language_code>/*.json` 读取，不递归扫描子目录。
+- 每个命名空间 JSON 必须是单层对象，并且所有值都必须是字符串。
+- 主语言成功加载后，缺失的命名空间和键由备用语言补齐；已有主语言值不会被覆盖。
+- 两种语言都没有某个键时，`i18n.get_value{}` 使用宿主当前语言的 `language_warning.missing` 文本生成最终缺失提示。
+- 加载失败不会把内部文件路径或解析细节暴露给事件。`reload` 失败时继续保留上一次成功加载的数据。
 
 ## 6. 音频事件
 
@@ -535,6 +566,7 @@ animation
 file
 image
 network
+i18n
 audio
 hit_area
 hyperlink

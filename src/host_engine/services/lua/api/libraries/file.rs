@@ -60,12 +60,11 @@ pub(super) fn file(lua: &Lua, state: SharedApiState) -> mlua::Result<Table> {
       let table = args::named(
         method,
         values,
-        &["path", "encoding", "end_of_line", "event_tip"],
+        &["path", "encoding", "end_of_line", "byte", "event_tip"],
       )?;
       let relative_path = file_path(&table, method)?;
       let virtual_path = relative_path.virtual_path().to_string();
-      validate_file_eol(&table, method)?;
-      let encoding = file_encoding(&table, method)?;
+      let byte = file_byte_mode(&table, method)?;
       let event_tip = file_tip(&table, method)?;
       let path = resolve_file_path(
         &read_state.borrow().context.assets_root,
@@ -73,13 +72,17 @@ pub(super) fn file(lua: &Lua, state: SharedApiState) -> mlua::Result<Table> {
         SandboxPathKind::File,
         method,
       )?;
-      enqueue_file_request(
-        &read_state,
-        FileTask::LuaReadText { path, encoding },
-        LuaFileOperation::ReadText,
-        virtual_path,
-        event_tip,
-      );
+      let (task, operation) = if byte {
+        (FileTask::LuaReadBytes { path }, LuaFileOperation::ReadBytes)
+      } else {
+        validate_file_eol(&table, method)?;
+        let encoding = file_encoding(&table, method)?;
+        (
+          FileTask::LuaReadText { path, encoding },
+          LuaFileOperation::ReadText,
+        )
+      };
+      enqueue_file_request(&read_state, task, operation, virtual_path, event_tip);
       Ok(())
     })?,
   )?;
@@ -94,19 +97,18 @@ pub(super) fn file(lua: &Lua, state: SharedApiState) -> mlua::Result<Table> {
       let table = args::named(
         method,
         values,
-        &["path", "text", "encoding", "end_of_line", "event_tip"],
+        &[
+          "path",
+          "text",
+          "encoding",
+          "end_of_line",
+          "byte",
+          "event_tip",
+        ],
       )?;
       let relative_path = file_path(&table, method)?;
       let virtual_path = relative_path.virtual_path().to_string();
-      let text = args::string(args::required(&table, method, "text")?, method, "text")?;
-      if text.len() > args::MAX_API_STRING_BYTES || text.contains('\0') {
-        return Err(args::message(
-          method,
-          "text must be at most 1 MiB and contain no NUL",
-        ));
-      }
-      let encoding = file_encoding(&table, method)?;
-      let end_of_line = validate_file_eol(&table, method)?;
+      let byte = file_byte_mode(&table, method)?;
       let event_tip = file_tip(&table, method)?;
       let path = resolve_file_path(
         &write_state.borrow().context.assets_root,
@@ -114,18 +116,31 @@ pub(super) fn file(lua: &Lua, state: SharedApiState) -> mlua::Result<Table> {
         SandboxPathKind::WritableFile,
         method,
       )?;
-      enqueue_file_request(
-        &write_state,
-        FileTask::LuaWriteText {
-          path,
-          text,
-          encoding,
-          end_of_line,
-        },
-        LuaFileOperation::WriteText,
-        virtual_path,
-        event_tip,
-      );
+      let content = args::required(&table, method, "text")?;
+      let (task, operation) = if byte {
+        let bytes = file_bytes(content, method)?;
+        (
+          FileTask::LuaWriteBytes { path, bytes },
+          LuaFileOperation::WriteBytes,
+        )
+      } else {
+        let text = args::string(content, method, "text")?;
+        if text.contains('\0') {
+          return Err(args::message(method, "text must contain no NUL"));
+        }
+        let encoding = file_encoding(&table, method)?;
+        let end_of_line = validate_file_eol(&table, method)?;
+        (
+          FileTask::LuaWriteText {
+            path,
+            text,
+            encoding,
+            end_of_line,
+          },
+          LuaFileOperation::WriteText,
+        )
+      };
+      enqueue_file_request(&write_state, task, operation, virtual_path, event_tip);
       Ok(())
     })?,
   )?;
@@ -327,6 +342,23 @@ fn validate_file_eol(table: &Table, method: &str) -> mlua::Result<String> {
     return Err(args::message(method, "unsupported end_of_line value"));
   }
   Ok(value)
+}
+
+fn file_byte_mode(table: &Table, method: &str) -> mlua::Result<bool> {
+  match table.get::<Value>("byte")? {
+    Value::Nil => Ok(false),
+    value => args::boolean(value, method, "byte"),
+  }
+}
+
+fn file_bytes(value: Value, method: &str) -> mlua::Result<Vec<u8>> {
+  let Value::String(value) = value else {
+    return Err(args::invalid(method, "text", "string", &value));
+  };
+  if value.as_bytes().len() > args::MAX_API_STRING_BYTES {
+    return Err(args::message(method, "parameter 'text' exceeds 1 MiB"));
+  }
+  Ok(value.as_bytes().to_vec())
 }
 
 pub(super) fn file_tip(table: &Table, method: &str) -> mlua::Result<Option<String>> {

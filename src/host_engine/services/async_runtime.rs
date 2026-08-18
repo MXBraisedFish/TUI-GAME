@@ -22,7 +22,7 @@ use super::{
   image::{ImageConvertParams, ImageService},
   input::{KeyEvent, SystemEvent},
   log::LogSource,
-  lua::path::{SafeRelativePath, SandboxPathKind, resolve_sandbox_path},
+  lua::path::{SafeRelativePath, SandboxPathError, SandboxPathKind, resolve_sandbox_path},
   network::{NetworkEvent, NetworkTask},
   package::{self, PackageAsyncEvent, PackageTask},
   recording::{self, RecordingAsyncEvent, RecordingTask},
@@ -96,11 +96,18 @@ pub enum FileTask {
     path: PathBuf,
     encoding: String,
   },
+  LuaReadBytes {
+    path: PathBuf,
+  },
   LuaWriteText {
     path: PathBuf,
     text: String,
     encoding: String,
     end_of_line: String,
+  },
+  LuaWriteBytes {
+    path: PathBuf,
+    bytes: Vec<u8>,
   },
   LuaListDir {
     path: PathBuf,
@@ -117,6 +124,11 @@ pub enum FileTask {
     path: PathBuf,
     virtual_path: String,
     recursive: bool,
+  },
+  LuaLoadI18n {
+    assets_root: PathBuf,
+    language_code: String,
+    callback_language_code: String,
   },
 }
 
@@ -167,6 +179,12 @@ pub enum FileEvent {
   LuaRemoveFinished {
     task_id: TaskId,
     path: PathBuf,
+  },
+  LuaI18nFinished {
+    task_id: TaskId,
+    language_code: String,
+    callback_language_code: String,
+    namespaces: HashMap<String, HashMap<String, String>>,
   },
   Failed {
     task_id: TaskId,
@@ -507,13 +525,16 @@ fn write_target(task: &EngineTask) -> Option<PathBuf> {
     EngineTask::File(FileTask::WriteText { path, .. })
     | EngineTask::File(FileTask::WriteBytes { path, .. })
     | EngineTask::File(FileTask::LuaWriteText { path, .. })
+    | EngineTask::File(FileTask::LuaWriteBytes { path, .. })
     | EngineTask::File(FileTask::LuaCreateDir { path, .. })
     | EngineTask::File(FileTask::LuaRemove { path, .. }) => Some(path.clone()),
     EngineTask::File(
       FileTask::ReadText { .. }
       | FileTask::ReadBytes { .. }
       | FileTask::LuaReadText { .. }
-      | FileTask::LuaListDir { .. },
+      | FileTask::LuaReadBytes { .. }
+      | FileTask::LuaListDir { .. }
+      | FileTask::LuaLoadI18n { .. },
     ) => None,
   }
 }
@@ -646,6 +667,20 @@ fn run_file_task(
         Err(error)
       }
     },
+    FileTask::LuaReadBytes { path } => match read_lua_bytes(&path) {
+      Ok(bytes) => {
+        let _ = event_tx.send(EngineEvent::File(FileEvent::ReadBytesFinished {
+          task_id,
+          path,
+          bytes,
+        }));
+        Ok(())
+      }
+      Err(error) => {
+        send_file_error(event_tx, task_id, path, error.clone());
+        Err(error)
+      }
+    },
     FileTask::LuaWriteText {
       path,
       text,
@@ -664,6 +699,26 @@ fn run_file_task(
         Err(error)
       }
     },
+    FileTask::LuaWriteBytes { path, bytes } => {
+      let result = if bytes.len() > LUA_FILE_LIMIT {
+        Err("file exceeds 1 MiB".to_string())
+      } else {
+        atomic_write(&path, &bytes, true).map_err(|error| error.to_string())
+      };
+      match result {
+        Ok(()) => {
+          let _ = event_tx.send(EngineEvent::File(FileEvent::WriteBytesFinished {
+            task_id,
+            path,
+          }));
+          Ok(())
+        }
+        Err(error) => {
+          send_file_error(event_tx, task_id, path, error.clone());
+          Err(error)
+        }
+      }
+    }
     FileTask::LuaListDir {
       path,
       recursive,
@@ -728,12 +783,170 @@ fn run_file_task(
         Err(error)
       }
     },
+    FileTask::LuaLoadI18n {
+      assets_root,
+      language_code,
+      callback_language_code,
+    } => match load_lua_i18n(&assets_root, &language_code, &callback_language_code) {
+      Ok((language_code, namespaces)) => {
+        let _ = event_tx.send(EngineEvent::File(FileEvent::LuaI18nFinished {
+          task_id,
+          language_code,
+          callback_language_code,
+          namespaces,
+        }));
+        Ok(())
+      }
+      Err(error) => {
+        send_file_error(event_tx, task_id, assets_root, error.clone());
+        Err(error)
+      }
+    },
   }
 }
 
 const LUA_FILE_LIMIT: usize = 1024 * 1024;
 const LUA_DIRECTORY_LIMIT: usize = 4096;
 const LUA_DIRECTORY_DEPTH_LIMIT: usize = 32;
+const LUA_I18N_NAMESPACE_LIMIT: usize = 256;
+const LUA_I18N_TOTAL_LIMIT: usize = 4 * 1024 * 1024;
+
+fn load_lua_i18n(
+  assets_root: &Path,
+  language_code: &str,
+  callback_language_code: &str,
+) -> Result<(String, HashMap<String, HashMap<String, String>>), String> {
+  validate_lua_language_code(language_code)?;
+  validate_lua_language_code(callback_language_code)?;
+
+  let primary = load_lua_language(assets_root, language_code)?;
+  let fallback = if callback_language_code == language_code {
+    None
+  } else {
+    load_lua_language(assets_root, callback_language_code)?
+  };
+
+  let (actual_language, mut namespaces) = match (primary, fallback.as_ref()) {
+    (Some(primary), _) => (language_code.to_string(), primary),
+    (None, Some(fallback)) => (callback_language_code.to_string(), fallback.clone()),
+    (None, None) => return Err("no valid i18n language files were found".to_string()),
+  };
+
+  if actual_language == language_code {
+    if let Some(fallback) = fallback {
+      for (namespace, values) in fallback {
+        let target = namespaces.entry(namespace).or_default();
+        for (key, value) in values {
+          target.entry(key).or_insert(value);
+        }
+      }
+    }
+  }
+  Ok((actual_language, namespaces))
+}
+
+fn validate_lua_language_code(language_code: &str) -> Result<(), String> {
+  if language_code.is_empty()
+    || language_code.len() > 64
+    || !language_code
+      .bytes()
+      .all(|value| value.is_ascii_alphanumeric() || matches!(value, b'.' | b'_' | b'-'))
+  {
+    return Err("invalid i18n language code".to_string());
+  }
+  Ok(())
+}
+
+fn load_lua_language(
+  assets_root: &Path,
+  language_code: &str,
+) -> Result<Option<HashMap<String, HashMap<String, String>>>, String> {
+  let relative = SafeRelativePath::parse(&format!("language/{language_code}"))
+    .map_err(|_| "invalid i18n language path".to_string())?;
+  let directory = match resolve_sandbox_path(assets_root, &relative, SandboxPathKind::Directory) {
+    Ok(path) => path,
+    Err(SandboxPathError::NotFound) => return Ok(None),
+    Err(error) => return Err(format!("unsafe i18n language path: {error}")),
+  };
+  let canonical_directory = directory
+    .canonicalize()
+    .map_err(|_| "i18n language directory is unavailable".to_string())?;
+  let mut paths = Vec::new();
+  for entry in fs::read_dir(&canonical_directory)
+    .map_err(|_| "i18n language directory could not be read".to_string())?
+  {
+    let entry = entry.map_err(|_| "i18n language entry could not be read".to_string())?;
+    let path = entry.path();
+    let metadata = fs::symlink_metadata(&path)
+      .map_err(|_| "i18n language entry metadata could not be read".to_string())?;
+    if metadata.is_dir() {
+      continue;
+    }
+    let resolved = path
+      .canonicalize()
+      .map_err(|_| "i18n language file could not be resolved".to_string())?;
+    if !resolved.starts_with(&canonical_directory) || !resolved.is_file() {
+      return Err("i18n language file escapes its language directory".to_string());
+    }
+    if resolved
+      .extension()
+      .and_then(|value| value.to_str())
+      .is_some_and(|value| value.eq_ignore_ascii_case("json"))
+    {
+      paths.push(resolved);
+    }
+  }
+  paths.sort();
+  if paths.len() > LUA_I18N_NAMESPACE_LIMIT {
+    return Err("i18n language exceeds 256 namespaces".to_string());
+  }
+
+  let mut total_bytes = 0usize;
+  let mut namespaces = HashMap::new();
+  for path in paths {
+    let namespace = path
+      .file_stem()
+      .and_then(|value| value.to_str())
+      .ok_or_else(|| "i18n namespace is not valid UTF-8".to_string())?;
+    if namespace.is_empty()
+      || namespace.len() > 128
+      || !namespace
+        .bytes()
+        .all(|value| value.is_ascii_alphanumeric() || matches!(value, b'.' | b'_' | b'-'))
+    {
+      return Err("invalid i18n namespace name".to_string());
+    }
+    let size = fs::metadata(&path)
+      .map_err(|_| "i18n language file metadata could not be read".to_string())?
+      .len() as usize;
+    if size > LUA_FILE_LIMIT {
+      return Err("i18n namespace exceeds 1 MiB".to_string());
+    }
+    total_bytes = total_bytes.saturating_add(size);
+    if total_bytes > LUA_I18N_TOTAL_LIMIT {
+      return Err("i18n language exceeds 4 MiB".to_string());
+    }
+    let bytes = fs::read(&path).map_err(|_| "i18n language file could not be read".to_string())?;
+    let _: &str = std::str::from_utf8(&bytes)
+      .map_err(|_| "i18n language file is not valid UTF-8".to_string())?;
+    let values: HashMap<String, String> = serde_json::from_slice(&bytes)
+      .map_err(|_| "i18n namespace must be a flat string object".to_string())?;
+    namespaces.insert(namespace.to_string(), values);
+  }
+  Ok((!namespaces.is_empty()).then_some(namespaces))
+}
+
+fn read_lua_bytes(path: &Path) -> Result<Vec<u8>, String> {
+  let size = fs::metadata(path).map_err(|error| error.to_string())?.len();
+  if size > LUA_FILE_LIMIT as u64 {
+    return Err("file exceeds 1 MiB".to_string());
+  }
+  let bytes = fs::read(path).map_err(|error| error.to_string())?;
+  if bytes.len() > LUA_FILE_LIMIT {
+    return Err("file exceeds 1 MiB".to_string());
+  }
+  Ok(bytes)
+}
 
 fn revalidate_lua_path(
   root: &Path,
@@ -1195,6 +1408,62 @@ mod tests {
   }
 
   #[test]
+  fn lua_i18n_merges_fallback_keys_without_overwriting_primary_values() {
+    let root = file_test_directory();
+    let primary = root.join("language/zh_cn");
+    let fallback = root.join("language/en_us");
+    fs::create_dir_all(&primary).unwrap();
+    fs::create_dir_all(&fallback).unwrap();
+    fs::write(
+      primary.join("menu.json"),
+      r#"{"title":"标题","primary":"主语言"}"#,
+    )
+    .unwrap();
+    fs::write(
+      fallback.join("menu.json"),
+      r#"{"title":"Title","fallback":"Fallback"}"#,
+    )
+    .unwrap();
+    fs::write(fallback.join("extra.json"), r#"{"value":"Extra"}"#).unwrap();
+
+    let (actual, namespaces) = load_lua_i18n(&root, "zh_cn", "en_us").unwrap();
+    assert_eq!(actual, "zh_cn");
+    assert_eq!(namespaces["menu"]["title"], "标题");
+    assert_eq!(namespaces["menu"]["fallback"], "Fallback");
+    assert_eq!(namespaces["extra"]["value"], "Extra");
+    fs::remove_dir_all(root).unwrap();
+  }
+
+  #[test]
+  fn lua_i18n_uses_fallback_language_when_primary_directory_is_missing() {
+    let root = file_test_directory();
+    let fallback = root.join("language/en_us");
+    fs::create_dir_all(&fallback).unwrap();
+    fs::write(fallback.join("menu.json"), r#"{"title":"Title"}"#).unwrap();
+
+    let (actual, namespaces) = load_lua_i18n(&root, "missing", "en_us").unwrap();
+    assert_eq!(actual, "en_us");
+    assert_eq!(namespaces["menu"]["title"], "Title");
+    fs::remove_dir_all(root).unwrap();
+  }
+
+  #[test]
+  fn lua_i18n_rejects_nested_values_and_unsafe_language_codes() {
+    let root = file_test_directory();
+    let language = root.join("language/en_us");
+    fs::create_dir_all(&language).unwrap();
+    fs::write(language.join("bad.json"), r#"{"nested":{"value":"no"}}"#).unwrap();
+
+    assert!(
+      load_lua_i18n(&root, "en_us", "en_us")
+        .unwrap_err()
+        .contains("flat string object")
+    );
+    assert!(load_lua_i18n(&root, "../secret", "en_us").is_err());
+    fs::remove_dir_all(root).unwrap();
+  }
+
+  #[test]
   fn failed_file_task_emits_task_failed() {
     let runtime = AsyncRuntime::with_worker_count(1);
     let task_id = runtime.submit(EngineTask::File(FileTask::ReadText {
@@ -1234,6 +1503,97 @@ mod tests {
     let invalid = directory.join("invalid.txt");
     fs::write(&invalid, [0xff, 0xfe, 0xfd]).unwrap();
     assert!(read_lua_text(&invalid, "utf-8").is_err());
+    fs::remove_dir_all(directory).unwrap();
+  }
+
+  #[test]
+  fn lua_byte_tasks_preserve_binary_data_and_enforce_the_file_limit() {
+    let directory = file_test_directory();
+    let input = directory.join("input.bin");
+    let output = directory.join("output.bin");
+    let oversized_input = directory.join("oversized-input.bin");
+    let protected_output = directory.join("protected-output.bin");
+    let bytes = vec![0x00, 0xff, b'\r', b'\n', 0x7f];
+    fs::write(&input, &bytes).unwrap();
+    fs::write(&oversized_input, vec![0u8; LUA_FILE_LIMIT + 1]).unwrap();
+    fs::write(&protected_output, b"keep").unwrap();
+    let (event_tx, event_rx) = unbounded();
+
+    run_file_task(
+      TaskId(1),
+      FileTask::LuaReadBytes {
+        path: input.clone(),
+      },
+      &event_tx,
+    )
+    .unwrap();
+    assert!(matches!(
+      event_rx.recv().unwrap(),
+      EngineEvent::File(FileEvent::ReadBytesFinished {
+        task_id: TaskId(1),
+        path,
+        bytes: found,
+      }) if path == input && found == bytes
+    ));
+
+    run_file_task(
+      TaskId(2),
+      FileTask::LuaWriteBytes {
+        path: output.clone(),
+        bytes: bytes.clone(),
+      },
+      &event_tx,
+    )
+    .unwrap();
+    assert_eq!(fs::read(&output).unwrap(), bytes);
+    assert!(matches!(
+      event_rx.recv().unwrap(),
+      EngineEvent::File(FileEvent::WriteBytesFinished {
+        task_id: TaskId(2),
+        path,
+      }) if path == output
+    ));
+
+    assert!(
+      run_file_task(
+        TaskId(3),
+        FileTask::LuaReadBytes {
+          path: oversized_input.clone(),
+        },
+        &event_tx,
+      )
+      .is_err()
+    );
+    assert!(matches!(
+      event_rx.recv().unwrap(),
+      EngineEvent::File(FileEvent::Failed {
+        task_id: TaskId(3),
+        path,
+        ..
+      }) if path == oversized_input
+    ));
+
+    assert!(
+      run_file_task(
+        TaskId(4),
+        FileTask::LuaWriteBytes {
+          path: protected_output.clone(),
+          bytes: vec![0u8; LUA_FILE_LIMIT + 1],
+        },
+        &event_tx,
+      )
+      .is_err()
+    );
+    assert_eq!(fs::read(&protected_output).unwrap(), b"keep");
+    assert!(matches!(
+      event_rx.recv().unwrap(),
+      EngineEvent::File(FileEvent::Failed {
+        task_id: TaskId(4),
+        path,
+        ..
+      }) if path == protected_output
+    ));
+
     fs::remove_dir_all(directory).unwrap();
   }
 

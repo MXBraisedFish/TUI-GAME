@@ -12,7 +12,7 @@
 
 | 方法名          | 说明                                      | 索引                            |
 | --------------- | ----------------------------------------- | ------------------------------- |
-| `base64_encode` | 将字符串或二进制数据编码为 Base64 字符串  | [base64_encode](#base64_encode) |
+| `base64_encode` | 将字符串数据编码为 Base64 字符串          | [base64_encode](#base64_encode) |
 | `base64_decode` | 将 Base64 字符串解码为原始字符串          | [base64_decode](#base64_decode) |
 | `url_encode`    | 将字符串编码为 URL 安全格式（百分号编码） | [url_encode](#url_encode)       |
 | `url_decode`    | 将 URL 编码字符串解码为原始字符串         | [url_decode](#url_decode)       |
