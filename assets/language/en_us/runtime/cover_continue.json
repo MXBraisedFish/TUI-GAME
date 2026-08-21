@@ -1,0 +1,6 @@
+{
+  "cover_continue.title": "Overwrite Save Warning",
+  "cover_continue.tip": "Starting a new game will clear the save data for the current game, {value:continue_game}.\nThe existing save will be overwritten even if the new game does not support saving.",
+  "cover_continue.start": "{key:start} Start New Game",
+  "cover_continue.back": "{key:back} Back to Game List"
+}

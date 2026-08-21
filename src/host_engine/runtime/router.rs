@@ -1,6 +1,7 @@
 use super::*;
 use crate::host_engine::services::{
-  KeyState, MouseEvent, SystemEvent, TerminalKeyCode, UiEvent, UiObjectPool, UiObjectPoolOwner,
+  HitAreaEvent, KeyState, MouseEvent, SystemEvent, TerminalKeyCode, UiEvent, UiObjectPool,
+  UiObjectPoolOwner,
 };
 
 pub(super) fn current_objects_mut<'a>(
@@ -101,6 +102,7 @@ pub(super) fn deactivate_hidden_pools(
   window_size_ui: &mut WindowSizeWarningUi,
   safe_mode_warning_ui: &mut SafeModeWarningUi,
   clear_warning_ui: &mut ClearWarningUi,
+  cover_continue_ui: &mut CoverContinueUi,
   export_settings_ui: &mut ExportSettingsUi,
   _screenshot_capture_ui: &mut ScreenshotCaptureUi,
   export_loading_ui: &mut ExportLoadingUi,
@@ -230,6 +232,14 @@ pub(super) fn deactivate_hidden_pools(
       .text_input
       .deactivate_pool(clear_warning_ui.objects_mut());
     services.hit_area.deactivate(clear_warning_ui.objects_mut());
+  }
+  if world.state.current_overlay_kind() != Some(OverlayKind::CoverContinue) {
+    services
+      .text_input
+      .deactivate_pool(cover_continue_ui.objects_mut());
+    services
+      .hit_area
+      .deactivate(cover_continue_ui.objects_mut());
   }
   if world.state.current_overlay_kind() != Some(OverlayKind::ExportSettings) {
     services
@@ -397,6 +407,7 @@ pub(super) fn route_input_events(
   window_size_ui: &mut WindowSizeWarningUi,
   safe_mode_warning_ui: &mut SafeModeWarningUi,
   clear_warning_ui: &mut ClearWarningUi,
+  cover_continue_ui: &mut CoverContinueUi,
   export_settings_ui: &mut ExportSettingsUi,
   _screenshot_capture_ui: &mut ScreenshotCaptureUi,
   export_loading_ui: &mut ExportLoadingUi,
@@ -420,6 +431,9 @@ pub(super) fn route_input_events(
       }
       Some(OverlayKind::ClearWarning) => {
         route_clear_warning_overlay_events(services, world, clear_warning_ui);
+      }
+      Some(OverlayKind::CoverContinue) => {
+        route_cover_continue_overlay_events(services, world, cover_continue_ui);
       }
       Some(OverlayKind::ExportSettings) => {
         route_export_settings_overlay_events(
@@ -905,6 +919,49 @@ fn route_clear_warning_overlay_events(
   }
 }
 
+fn route_cover_continue_overlay_events(
+  services: &mut EngineServices,
+  world: &mut RuntimeWorld,
+  cover_continue_ui: &mut CoverContinueUi,
+) {
+  while let Some(event) = services.input.next_action_event() {
+    if handle_host_key_action(event.action.as_str(), event.state, world) {
+      if world.is_stopped() {
+        return;
+      }
+      continue;
+    }
+    if let Some(command) = cover_continue_ui.handle_event(&UiEvent::Action(event)) {
+      apply_cover_continue_command(command, cover_continue_ui, services, world);
+      return;
+    }
+  }
+  for system_event in services.input.drain_system_events() {
+    match system_event {
+      SystemEvent::Mouse(mouse) => {
+        services.hit_area.route_mouse_event(
+          cover_continue_ui.objects_mut(),
+          &mut services.text_input,
+          &services.canvas,
+          mouse,
+        );
+      }
+      SystemEvent::Focus(focus) if !focus.gained => {
+        services
+          .hit_area
+          .focus_lost(cover_continue_ui.objects_mut());
+      }
+      _ => {}
+    }
+    while let Some(event) = cover_continue_ui.objects_mut().pop_event() {
+      if let Some(command) = cover_continue_ui.handle_event(&event) {
+        apply_cover_continue_command(command, cover_continue_ui, services, world);
+        return;
+      }
+    }
+  }
+}
+
 fn route_component_mouse(
   services: &mut EngineServices,
   world: &RuntimeWorld,
@@ -1146,6 +1203,16 @@ fn route_input_event(
   language_loading_ui: &mut LanguageLoadingUi,
   language_loading: &mut LanguageLoadingRuntime,
 ) {
+  if matches!(
+    event,
+    UiEvent::Action(action) if action.state == KeyState::Pressed
+  ) || matches!(
+    event,
+    UiEvent::HitArea(HitAreaEvent::Click { .. } | HitAreaEvent::Press { .. })
+  ) {
+    services.popup.dismiss(PopupDismissEvent::UiInput);
+  }
+
   if let UiEvent::Action(action) = event {
     if handle_host_key_action(action.action.as_str(), action.state, world) {
       return;

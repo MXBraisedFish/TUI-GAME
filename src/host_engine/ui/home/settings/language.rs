@@ -42,6 +42,7 @@ pub struct LanguageSelectUi {
   registry: Vec<LanguageRegistryEntry>,
   runtime_cache: HashMap<String, HashMap<String, String>>,
   active_code: String,
+  first_selection: bool,
 
   columns: Cell<usize>,
   per_page: Cell<usize>,
@@ -74,10 +75,12 @@ impl RuntimeObjectPoolOwner for LanguageSelectUi {
 }
 
 /// 语言选择页面的命令。
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum LanguageSelectCommand {
   Confirm(String),
+  ConfirmAndApply(String),
   Back,
+  Exit,
 }
 
 impl LanguageSelectUi {
@@ -90,13 +93,24 @@ impl LanguageSelectUi {
   ) -> Self {
     registry.sort_by(|a, b| a.name.cmp(&b.name));
 
-    let active_code = storage
-      .read_language_code(log)
-      .unwrap_or_else(|| storage.default_language_code().to_string());
+    let stored_code = storage.read_language_code(log);
+    let first_selection = stored_code
+      .as_deref()
+      .is_none_or(|code| !registry.iter().any(|entry| entry.code == code));
+    let active_code = if first_selection {
+      String::new()
+    } else {
+      stored_code.unwrap_or_default()
+    };
 
     let selected_index = registry
       .iter()
       .position(|e| e.code == active_code)
+      .or_else(|| {
+        registry
+          .iter()
+          .position(|entry| entry.code == storage.default_language_code())
+      })
       .unwrap_or(0);
 
     let runtime_cache = Self::preload_runtime_cache(storage, log, &registry);
@@ -114,6 +128,7 @@ impl LanguageSelectUi {
       registry,
       runtime_cache,
       active_code,
+      first_selection,
       columns: Cell::new(4),
       per_page: Cell::new(12),
       objects,
@@ -123,6 +138,10 @@ impl LanguageSelectUi {
       flip_backward_area,
       cell_areas,
     }
+  }
+
+  pub fn is_first_selection(&self) -> bool {
+    self.first_selection
   }
 
   fn preload_runtime_cache(
@@ -245,14 +264,12 @@ impl LanguageSelectUi {
       }) => {
         let index = self.cell_areas.iter().position(|area| area == id)?;
         self.selected_index = index;
-        let code = self.registry[index].code.clone();
-        self.active_code = code.clone();
-        Some(LanguageSelectCommand::Confirm(code))
+        self.confirm_focused()
       }
       UiEvent::HitArea(HitAreaEvent::Press {
         button: MouseButton::Right,
         ..
-      }) => Some(LanguageSelectCommand::Back),
+      }) => Some(self.back_command()),
       UiEvent::Action(event) if event.state == KeyState::Pressed => match event.action.as_str() {
         "language_select.focus_up" => {
           self.focus_up();
@@ -272,15 +289,48 @@ impl LanguageSelectUi {
         }
         "language_select.flip_forward" => self.flip_page(false),
         "language_select.flip_backward" => self.flip_page(true),
-        "language_select.confirm" => {
-          let code = self.registry[self.selected_index].code.clone();
-          self.active_code = code.clone();
-          Some(LanguageSelectCommand::Confirm(code))
-        }
-        "language_select.back" => Some(LanguageSelectCommand::Back),
+        "language_select.confirm" => self.confirm_focused(),
+        "language_select.back" => Some(self.back_command()),
         _ => None,
       },
       _ => None,
+    }
+  }
+
+  fn confirm_focused(&mut self) -> Option<LanguageSelectCommand> {
+    let code = self.registry.get(self.selected_index)?.code.clone();
+    if self.first_selection && self.active_code == code {
+      return Some(LanguageSelectCommand::ConfirmAndApply(code));
+    }
+    self.active_code = code.clone();
+    Some(LanguageSelectCommand::Confirm(code))
+  }
+
+  fn back_command(&self) -> LanguageSelectCommand {
+    if self.first_selection {
+      LanguageSelectCommand::Exit
+    } else {
+      LanguageSelectCommand::Back
+    }
+  }
+
+  fn confirm_hint_key(&self) -> &'static str {
+    let focused_code = self
+      .registry
+      .get(self.selected_index)
+      .map(|entry| &entry.code);
+    if self.first_selection && focused_code == Some(&self.active_code) {
+      "language.action.confirm.two"
+    } else {
+      "language.action.confirm"
+    }
+  }
+
+  fn back_hint_key(&self) -> &'static str {
+    if self.first_selection {
+      "language.action.exit"
+    } else {
+      "language.action.back"
     }
   }
 
@@ -422,8 +472,8 @@ impl LanguageSelectUi {
       "{}  {}  {}  {}",
       self.get_text("language.action.focus"),
       self.get_text("language.action.flip"),
-      self.get_text("language.action.confirm"),
-      self.get_text("language.action.back"),
+      self.get_text(self.confirm_hint_key()),
+      self.get_text(self.back_hint_key()),
     );
     let hint_w = layout.get_text_width(&hint, Some(&key_params));
     let hint_x =
@@ -598,8 +648,6 @@ impl LanguageSelectUi {
 
       let fg = if is_active {
         TextColor::Terminal(TerminalColor::BrightGreen)
-      } else if is_focused {
-        TextColor::Terminal(TerminalColor::BrightCyan)
       } else {
         TextColor::Terminal(TerminalColor::White)
       };
@@ -698,8 +746,8 @@ impl LanguageSelectUi {
       "{}  {}  {}  {}",
       self.get_text("language.action.focus"),
       self.get_text("language.action.flip"),
-      self.get_text("language.action.confirm"),
-      self.get_text("language.action.back"),
+      self.get_text(self.confirm_hint_key()),
+      self.get_text(self.back_hint_key()),
     );
     render.draw_host_text(
       canvas,
@@ -711,5 +759,82 @@ impl LanguageSelectUi {
         ..Default::default()
       },
     );
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use std::fs;
+
+  fn test_ui(saved_code: Option<&str>) -> LanguageSelectUi {
+    let root = std::env::temp_dir().join(format!(
+      "tg_language_select_{}_{}",
+      saved_code.unwrap_or("missing"),
+      std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(root.join("data/profiles")).unwrap();
+    for code in ["en_us", "zh_cn"] {
+      let dir = root.join(format!("assets/language/{code}/runtime"));
+      fs::create_dir_all(&dir).unwrap();
+      fs::write(dir.join("language.json"), "{}").unwrap();
+    }
+    let storage = StorageService::from_root_for_test(root);
+    if let Some(code) = saved_code {
+      storage.write_language_code(code).unwrap();
+    }
+    LanguageSelectUi::init(
+      vec![
+        LanguageRegistryEntry {
+          code: "en_us".to_string(),
+          name: "English".to_string(),
+          direction: "ltr".to_string(),
+        },
+        LanguageRegistryEntry {
+          code: "zh_cn".to_string(),
+          name: "简体中文".to_string(),
+          direction: "ltr".to_string(),
+        },
+      ],
+      &storage,
+      &mut LogService::new(),
+      &HitAreaService::new(),
+    )
+  }
+
+  #[test]
+  fn first_selection_requires_second_confirmation_and_exits_on_back() {
+    let mut ui = test_ui(None);
+    assert!(ui.is_first_selection());
+    assert_eq!(ui.back_command(), LanguageSelectCommand::Exit);
+    assert_eq!(ui.confirm_hint_key(), "language.action.confirm");
+
+    assert_eq!(
+      ui.confirm_focused(),
+      Some(LanguageSelectCommand::Confirm("en_us".to_string()))
+    );
+    assert_eq!(ui.confirm_hint_key(), "language.action.confirm.two");
+    assert_eq!(
+      ui.confirm_focused(),
+      Some(LanguageSelectCommand::ConfirmAndApply("en_us".to_string()))
+    );
+  }
+
+  #[test]
+  fn settings_entry_keeps_existing_back_and_confirm_behavior() {
+    let mut ui = test_ui(Some("zh_cn"));
+    assert!(!ui.is_first_selection());
+    assert_eq!(ui.back_command(), LanguageSelectCommand::Back);
+    assert_eq!(
+      ui.confirm_focused(),
+      Some(LanguageSelectCommand::Confirm("zh_cn".to_string()))
+    );
+  }
+
+  #[test]
+  fn unknown_saved_language_is_treated_as_first_selection() {
+    let ui = test_ui(Some("unknown"));
+    assert!(ui.is_first_selection());
   }
 }

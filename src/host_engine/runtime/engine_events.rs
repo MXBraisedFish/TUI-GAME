@@ -1,7 +1,7 @@
 use super::*;
 use crate::host_engine::services::{
-  AudioAsyncEvent, EngineEvent, ExportAsyncEvent, NetworkEvent, ScreenshotAsyncEvent,
-  VideoAsyncEvent,
+  AudioAsyncEvent, EngineEvent, ExportAsyncEvent, GameSaveCapabilities, NetworkEvent,
+  ScreenshotAsyncEvent, VideoAsyncEvent,
 };
 
 pub(super) struct RuntimeEngineEvents {
@@ -49,6 +49,28 @@ pub(super) fn drain_engine_events(
           .handle_async_event(event, &mut services.log);
         if matches!(event, PackageEvent::ScanFinished { .. }) {
           synchronize_key_bindings_profile(services);
+          let games = services
+            .package
+            .games()
+            .into_iter()
+            .filter_map(|package| {
+              let game = package.game.as_ref()?;
+              Some(GameSaveCapabilities {
+                package_id: package.id.clone(),
+                save_enabled: game.save,
+                score_enabled: game.score.as_ref().is_some_and(|score| score.enabled),
+              })
+            })
+            .collect::<Vec<_>>();
+          if let Err(error) = services
+            .storage
+            .reconcile_game_save_capabilities(&games, &mut services.log)
+          {
+            services.log.error(
+              LogSource::Storage,
+              format!("Failed to reconcile game save capabilities: {error}"),
+            );
+          }
         }
         if matches!(event, PackageEvent::WatchChanged { .. }) {
           let _ = services.package.request_rescan(&services.async_runtime);

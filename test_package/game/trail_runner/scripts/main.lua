@@ -2,8 +2,12 @@ local player = { x = 8, y = 6 }
 local score = 0
 local best_score = 0
 local elapsed = 0
+local width = 80
+local height = 24
 
 function Init(ctx)
+  width = ctx.base.width
+  height = ctx.base.height
   if ctx.continue_data ~= nil then
     player.x = ctx.continue_data.x or player.x
     player.y = ctx.continue_data.y or player.y
@@ -16,6 +20,11 @@ function Init(ctx)
 end
 
 function HandleEvent(event)
+  if event.type == "resize" then
+    width = event.data.width
+    height = event.data.height
+    return
+  end
   if event.type ~= "action" or event.data.state ~= "pressed" then
     return
   end
@@ -40,9 +49,7 @@ end
 function UpdateFrame(dt, alpha)
 end
 
-function Render(surface)
-  local width = surface.width
-  local height = surface.height
+function Render()
   player.x = math.min{ values = { player.x, width - 2 } }
   player.y = math.min{ values = { player.y, height - 2 } }
   draw.fill_rect{ x = 0, y = 0, width = width, height = height, char = " ", bg = "black" }

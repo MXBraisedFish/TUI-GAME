@@ -28,6 +28,7 @@ const RUNTIME_NAMESPACES: &[&str] = &[
   "storage_management_clear",
   "storage_management_export",
   "clear_warning",
+  "cover_continue",
   "log",
   "log_info",
   "export_settings",

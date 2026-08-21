@@ -5,5 +5,7 @@
   "language.action.focus": "{key:language.focus_up}/{key:language.focus_down}/{key:language.focus_left}/{key:language.right} Select",
   "language.action.flip": "{key:language.flip_forward}/{key:language.flip_backward} Page",
   "language.action.confirm": "{key:language.confirm} Confirm",
-  "language.action.back": "{key:language.back} Back"
+  "language.action.confirm.two": "{key:language.confirm} Confirm Again & Apply",
+  "language.action.back": "{key:language.back} Back & Apply",
+  "language.action.exit": "{key:language.back} Quit"
 }

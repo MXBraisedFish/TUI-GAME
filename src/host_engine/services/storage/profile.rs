@@ -918,6 +918,11 @@ impl StorageService {
     atomic_write(&self.profile_terminal_path(), json.as_bytes(), true)
   }
 
+  /// 清空已保存的终端能力检测结果，使下次启动重新进入能力检测流程。
+  pub fn reset_terminal_profile(&self, log: &mut LogService) -> std::io::Result<()> {
+    self.write_terminal_profile(&TerminalProfile::default(), log)
+  }
+
   /// 检查终端配置文件是否已填写完整。
   pub fn is_terminal_profile_complete(&self, log: &mut LogService) -> bool {
     self
@@ -1220,6 +1225,36 @@ mod tests {
     assert_eq!(
       storage.read_package_state_or_default(&mut log),
       PackageStateProfile::default()
+    );
+  }
+
+  #[test]
+  fn reset_terminal_profile_clears_only_capability_results() {
+    let storage = temp_storage("reset_terminal_profile");
+    let mut log = LogService::new();
+    storage.write_language_code("zh_cn").unwrap();
+    storage
+      .write_terminal_profile(
+        &TerminalProfile {
+          unicode: Some(true),
+          color: Some("truecolor".to_string()),
+          mouse: Some(true),
+        },
+        &mut log,
+      )
+      .unwrap();
+    assert!(storage.is_terminal_profile_complete(&mut log));
+
+    storage.reset_terminal_profile(&mut log).unwrap();
+
+    let profile = storage.read_terminal_profile(&mut log).unwrap();
+    assert!(profile.unicode.is_none());
+    assert!(profile.color.is_none());
+    assert!(profile.mouse.is_none());
+    assert!(!profile.is_complete());
+    assert_eq!(
+      storage.read_language_code(&mut log).as_deref(),
+      Some("zh_cn")
     );
   }
 

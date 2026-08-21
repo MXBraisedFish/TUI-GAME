@@ -33,6 +33,8 @@ pub use settings::toolbar_custom::ToolbarCustomCommand;
 pub use settings::{SettingsUi, SettingsUiCommand};
 
 use std::time::Duration;
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
 use crate::host_engine::services::{
   ActionMapEntry, AnimationService, CanvasService, DisplayLogoMode, DrawTextParams, HOST_VERSION,
@@ -97,6 +99,7 @@ pub(crate) struct HomeLayout {
 /// 首页 UI：包含 Logo 展示、菜单导航和操作提示。
 pub struct HomeUi {
   selected_index: usize,
+  continue_game_name: Option<String>,
   objects: UiObjectPool,
   runtime_objects: RuntimeObjectPool,
   menu_areas: [HitAreaId; HOME_MENU_LEN],
@@ -157,6 +160,7 @@ impl HomeUi {
     );
     Self {
       selected_index: 0,
+      continue_game_name: None,
       menu_areas: std::array::from_fn(|_| hit_area.create(&mut objects, HitAreaOptions::default())),
       objects,
       runtime_objects,
@@ -223,7 +227,7 @@ impl HomeUi {
         ..
       }) => {
         self.selected_index = self.menu_areas.iter().position(|area| area == id)?;
-        Some(self.confirm_selected())
+        self.confirm_selected()
       }
       UiEvent::Action(event) if event.state == KeyState::Pressed => match event.action.as_str() {
         "home.focus_exit" => {
@@ -237,7 +241,9 @@ impl HomeUi {
         }
 
         "home.focus_continue_game" => {
-          self.selected_index = 1;
+          if self.continue_game_name.is_some() {
+            self.selected_index = 1;
+          }
           None
         }
 
@@ -261,7 +267,7 @@ impl HomeUi {
           None
         }
 
-        "home.confirm" => Some(self.confirm_selected()),
+        "home.confirm" => self.confirm_selected(),
 
         _ => None,
       },
@@ -293,43 +299,78 @@ impl HomeUi {
     let positions = self.compute_positions(layout, i18n);
     self.draw_content(render, canvas, &positions, i18n);
     for (id, rect) in self.menu_areas.into_iter().zip(positions.menu_item_rects) {
+      let rect = if id == self.menu_areas[1] && self.continue_game_name.is_none() {
+        Rect::default()
+      } else {
+        rect
+      };
       hit_area.render_host(&mut self.objects, id, rect, canvas);
     }
   }
 
+  pub fn set_continue_game_name(&mut self, name: Option<String>) {
+    self.continue_game_name = name.map(|name| truncate_visible(&name, 6));
+    if self.continue_game_name.is_none() && self.selected_index == 1 {
+      self.selected_index = 0;
+    }
+  }
+
   fn focus_previous(&mut self) {
-    if self.selected_index == 0 {
-      self.selected_index = HOME_MENU_LEN - 1;
-    } else {
-      self.selected_index -= 1;
+    loop {
+      self.selected_index = if self.selected_index == 0 {
+        HOME_MENU_LEN - 1
+      } else {
+        self.selected_index - 1
+      };
+      if self.selected_index != 1 || self.continue_game_name.is_some() {
+        break;
+      }
     }
   }
 
   fn focus_next(&mut self) {
-    self.selected_index = (self.selected_index + 1) % HOME_MENU_LEN;
+    loop {
+      self.selected_index = (self.selected_index + 1) % HOME_MENU_LEN;
+      if self.selected_index != 1 || self.continue_game_name.is_some() {
+        break;
+      }
+    }
   }
 
-  fn confirm_selected(&self) -> HomeUiCommand {
+  fn confirm_selected(&self) -> Option<HomeUiCommand> {
     match self.selected_index {
-      0 => HomeUiCommand::StartGame,
-      1 => HomeUiCommand::ContinueGame,
-      2 => HomeUiCommand::OpenSettings,
-      3 => HomeUiCommand::OpenAbout,
-      _ => HomeUiCommand::Exit,
+      0 => Some(HomeUiCommand::StartGame),
+      1 if self.continue_game_name.is_some() => Some(HomeUiCommand::ContinueGame),
+      1 => None,
+      2 => Some(HomeUiCommand::OpenSettings),
+      3 => Some(HomeUiCommand::OpenAbout),
+      _ => Some(HomeUiCommand::Exit),
     }
   }
 
   fn menu_items(&self, i18n: &I18nService) -> [String; HOME_MENU_LEN] {
     let labels = [
       i18n.get_runtime_text("home", "home.game_list"),
-      i18n.get_runtime_text("home", "home.countinue"),
+      self
+        .continue_game_name
+        .as_ref()
+        .map(|name| {
+          format!(
+            "{} - {}",
+            i18n.get_runtime_text("home", "home.countinue"),
+            name
+          )
+        })
+        .unwrap_or_else(|| i18n.get_runtime_text("home", "home.countinue")),
       i18n.get_runtime_text("home", "home.settings"),
       i18n.get_runtime_text("home", "home.about"),
       i18n.get_runtime_text("home", "home.exit"),
     ];
 
     std::array::from_fn(|i| {
-      if i == self.selected_index {
+      if i == 1 && self.continue_game_name.is_none() {
+        format!("f%<fg:bright_black>{}</fg>", labels[i])
+      } else if i == self.selected_index {
         let fg = if i >= 4 { "bright_red" } else { "bright_cyan" };
         format!("f%<fg:{}>❯ {} ❮</fg>", fg, labels[i])
       } else {
@@ -489,5 +530,83 @@ impl HomeUi {
         ..Default::default()
       },
     );
+  }
+}
+
+fn truncate_visible(text: &str, max_width: usize) -> String {
+  if UnicodeWidthStr::width(text) <= max_width {
+    return text.to_string();
+  }
+
+  const ELLIPSIS: &str = "...";
+  let ellipsis_width = UnicodeWidthStr::width(ELLIPSIS);
+  if max_width <= ellipsis_width {
+    return ELLIPSIS.chars().take(max_width).collect();
+  }
+
+  let mut result = String::new();
+  let mut width = 0;
+  for grapheme in UnicodeSegmentation::graphemes(text, true) {
+    let grapheme_width = UnicodeWidthStr::width(grapheme);
+    if width + grapheme_width + ellipsis_width > max_width {
+      break;
+    }
+    result.push_str(grapheme);
+    width += grapheme_width;
+  }
+  result.push_str(ELLIPSIS);
+  result
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::host_engine::services::{InputActionEvent, InputEventType};
+
+  fn action(name: &str) -> UiEvent {
+    UiEvent::Action(InputActionEvent {
+      event_type: InputEventType::Keyboard,
+      action: name.to_string(),
+      state: KeyState::Pressed,
+    })
+  }
+
+  fn home() -> HomeUi {
+    HomeUi::init(
+      &HitAreaService::new(),
+      &AnimationService::new(),
+      &RandomService::new(),
+      DisplayLogoMode::Classic,
+      1,
+    )
+  }
+
+  #[test]
+  fn unavailable_continue_game_is_skipped_and_cannot_be_confirmed() {
+    let mut ui = home();
+    ui.handle_event(&action("home.focus_continue_game"));
+    assert_eq!(ui.selected_index, 0);
+
+    ui.handle_event(&action("home.focus_down"));
+    assert_eq!(ui.selected_index, 2);
+    ui.handle_event(&action("home.focus_up"));
+    assert_eq!(ui.selected_index, 0);
+  }
+
+  #[test]
+  fn available_continue_game_can_be_selected_and_is_width_limited() {
+    let mut ui = home();
+    ui.set_continue_game_name(Some("继续游戏名称".to_string()));
+    assert_eq!(ui.continue_game_name.as_deref(), Some("继..."));
+
+    ui.handle_event(&action("home.focus_continue_game"));
+    assert_eq!(ui.selected_index, 1);
+    assert_eq!(
+      ui.handle_event(&action("home.confirm")),
+      Some(HomeUiCommand::ContinueGame)
+    );
+
+    ui.set_continue_game_name(None);
+    assert_eq!(ui.selected_index, 0);
   }
 }

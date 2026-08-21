@@ -395,6 +395,10 @@ pub(super) fn load_safe_mode_warning_action_map(services: &mut EngineServices) {
   );
 }
 
+pub(super) fn load_cover_continue_action_map(services: &mut EngineServices) {
+  load_action_map(services, &CoverContinueUi::action_map(), "CoverContinueUi");
+}
+
 pub(super) fn load_screenshot_capture_action_map(services: &mut EngineServices) {
   load_action_map(
     services,
@@ -507,7 +511,7 @@ fn load_mods_action_map(services: &mut EngineServices) {
   load_action_map(services, &ModsUi::action_map(), "ModsUi");
 }
 
-fn load_game_list_action_map(services: &mut EngineServices) {
+pub(super) fn load_game_list_action_map(services: &mut EngineServices) {
   load_action_map(services, &GameListUi::action_map(), "GameListUi");
 }
 

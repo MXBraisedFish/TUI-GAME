@@ -14,6 +14,7 @@
     "description": "Official truecolor capability test package.",
     "author": "TUI Game"
   },
+  "runtime": { "min_width": 0, "min_height": 0 },
   "game": {
     "name": "f%<fg:#8FC7FF>Truecolor</fg> Official Demo",
     "detail": "Official source package with truecolor requirement.",
@@ -21,6 +22,8 @@
     "mouse": true,
     "truecolor": true,
     "high_privilege": false,
-    "save": false
+    "save": false,
+    "language": ["en_us"],
+    "actions": {}
   }
 }

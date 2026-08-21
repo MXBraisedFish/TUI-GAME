@@ -239,6 +239,19 @@ impl HostMachineState {
     }
   }
 
+  pub fn push_cover_continue_overlay(&mut self) {
+    if let Some(runtime) = self.runtime_mut() {
+      runtime.overlays_mut().push(OverlayState {
+        kind: OverlayKind::CoverContinue,
+        logic: super::OverlayLogicState,
+        render: super::OverlayRenderState {
+          required_width: 0,
+          required_height: 0,
+        },
+      });
+    }
+  }
+
   pub fn push_export_settings_overlay(&mut self) {
     if let Some(runtime) = self.runtime_mut() {
       runtime.overlays_mut().push(OverlayState {

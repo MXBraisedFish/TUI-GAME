@@ -1,8 +1,12 @@
 local status = "Press P to request an asset write"
 local probes = 0
 local best_probes = 0
+local width = 80
+local height = 24
 
 function Init(ctx)
+  width = ctx.base.width
+  height = ctx.base.height
   if ctx.continue_data ~= nil then
     probes = ctx.continue_data.probes or 0
   end
@@ -13,7 +17,10 @@ function Init(ctx)
 end
 
 function HandleEvent(event)
-  if event.type == "action" and event.data.state == "pressed" then
+  if event.type == "resize" then
+    width = event.data.width
+    height = event.data.height
+  elseif event.type == "action" and event.data.state == "pressed" then
     if event.data.action == "write_probe" then
       probes = probes + 1
       status = "Write requested; wait for the file event"
@@ -44,11 +51,11 @@ end
 function UpdateFrame(dt, alpha)
 end
 
-function Render(surface)
-  draw.fill_rect{ x = 0, y = 0, width = surface.width, height = surface.height, char = " ", bg = "black" }
-  draw.stroke_rect{ x = 0, y = 0, width = surface.width, height = surface.height, fg = "bright_red" }
+function Render()
+  draw.fill_rect{ x = 0, y = 0, width = width, height = height, char = " ", bg = "black" }
+  draw.stroke_rect{ x = 0, y = 0, width = width, height = height, fg = "bright_red" }
   draw.text{ x = 2, y = 1, text = "Safe Mode Lab", fg = "bright_red" }
-  draw.text{ x = 2, y = 4, text = status, fg = "bright_gray", max_width = surface.width - 4 }
+  draw.text{ x = 2, y = 4, text = status, fg = "bright_gray", max_width = width - 4 }
   draw.text{ x = 2, y = 7, text = "Probe count: " .. base.tostring(probes), fg = "bright_yellow" }
 end
 

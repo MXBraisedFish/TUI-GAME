@@ -8,6 +8,7 @@ pub struct RuntimeWorld {
   pub state: HostMachineState,
   pub temporary_safe_mode_disabled: HashSet<PackageId>,
   pub safe_mode_warning_all: bool,
+  pub pending_new_game: Option<PackageId>,
 }
 
 impl RuntimeWorld {
@@ -17,6 +18,7 @@ impl RuntimeWorld {
       state: HostMachineState::new(),
       temporary_safe_mode_disabled: HashSet::new(),
       safe_mode_warning_all: false,
+      pending_new_game: None,
     }
   }
 

@@ -413,33 +413,8 @@ impl LuaSession {
     )
   }
 
-  pub fn render(&mut self, size: Size) -> Result<(), LuaSessionError> {
-    let draw_context = self
-      .lua
-      .create_table()
-      .map_err(|error| self.error(LuaErrorStage::Callback, Some("Render"), error))?;
-    draw_context
-      .set("width", size.width)
-      .and_then(|_| draw_context.set("height", size.height))
-      .map_err(|error| self.error(LuaErrorStage::Callback, Some("Render"), error))?;
-    let environment: Table = self
-      .lua
-      .registry_value(&self.environment)
-      .map_err(|error| self.error(LuaErrorStage::Callback, Some("Render"), error))?;
-    let draw_library: Table = environment
-      .get("draw")
-      .map_err(|error| self.error(LuaErrorStage::Callback, Some("Render"), error))?;
-    for name in ["text", "fill_rect", "stroke_rect", "erase_rect", "render"] {
-      let value = draw_library
-        .get::<Value>(name)
-        .map_err(|error| self.error(LuaErrorStage::Callback, Some("Render"), error))?;
-      draw_context
-        .set(name, value)
-        .map_err(|error| self.error(LuaErrorStage::Callback, Some("Render"), error))?;
-    }
-    let draw = super::api::readonly::proxy(&self.lua, draw_context)
-      .map_err(|error| self.error(LuaErrorStage::Callback, Some("Render"), error))?;
-    self.invoke_hot(Callback::Render, draw, LuaBudgetKind::Render)
+  pub fn render(&mut self) -> Result<(), LuaSessionError> {
+    self.invoke_hot(Callback::Render, (), LuaBudgetKind::Render)
   }
 
   pub fn take_host_commands(&mut self) -> Vec<LuaHostCommand> {
@@ -704,6 +679,24 @@ impl LuaSession {
     if self.session_kind != LuaSessionKind::Game {
       return Ok(None);
     }
+    if self.state != LuaSessionState::Running {
+      return Err(self.error(
+        LuaErrorStage::Callback,
+        Some(callback.name()),
+        format!("session is {:?}", self.state),
+      ));
+    }
+    let result = self.invoke_save_inner(callback);
+    if result.is_err() {
+      self.mark_faulted();
+    }
+    result
+  }
+
+  fn invoke_save_inner(
+    &mut self,
+    callback: Callback,
+  ) -> Result<Option<JsonValue>, LuaSessionError> {
     let Some(key) = self.callback_key(callback) else {
       return Ok(None);
     };
@@ -740,6 +733,13 @@ impl LuaSession {
         LuaErrorStage::SaveValidation,
         Some(callback.name()),
         "callback must return a serializable value",
+      ));
+    }
+    if callback == Callback::SaveBest && !matches!(value, Value::Table(_)) {
+      return Err(self.error(
+        LuaErrorStage::SaveValidation,
+        Some(callback.name()),
+        "callback must return a serializable table containing string field 'best_string'",
       ));
     }
     let mut seen = HashSet::new();
@@ -1570,7 +1570,7 @@ mod tests {
         function HandleEvent(event) last_event = event end
         function Update(dt) last_update = dt end
         function UpdateFrame(dt, alpha) last_frame = {{ dt, alpha }} end
-        function Render(draw) last_draw = draw end
+        function Render() render_called = true end
         {extra}
       "##
     )
@@ -1867,7 +1867,7 @@ mod tests {
             value = measurement.get_text_width{ text = "f%{key_default:jump}" } == 4,
           }
         end
-        function Render(draw_context)
+        function Render()
           draw.text{ x = 1, y = 1, text = "ordinary" }
           draw.text{ x = 1, y = 2, text = "f%{key:jump}" }
           draw.text{ x = 1, y = 3, text = "f%{key_default:jump}" }
@@ -1890,12 +1890,7 @@ mod tests {
       },
     )
     .unwrap();
-    session
-      .render(Size {
-        width: 120,
-        height: 40,
-      })
-      .unwrap();
+    session.render().unwrap();
     let commands = session.take_draw_commands();
     let params = commands
       .iter()
@@ -1976,7 +1971,7 @@ mod tests {
           debug.assert{ value = encoding.hex_decode(encoding.hex_encode("abc")) == "abc" }
         end
 
-        function Render(draw)
+        function Render()
           draw.fill_rect{
             x = -2,
             y = 1,
@@ -1990,12 +1985,7 @@ mod tests {
     );
     let mut session =
       LuaSession::load(spec(&source, LuaSessionKind::Game), LuaPolicy::default()).unwrap();
-    session
-      .render(Size {
-        width: 120,
-        height: 40,
-      })
-      .unwrap();
+    session.render().unwrap();
 
     let commands = session.take_draw_commands();
     assert!(commands.iter().any(|command| matches!(
@@ -2054,7 +2044,7 @@ mod tests {
         function Update(dt)
           draw.erase_rect{ x = 3, y = 2, width = 8, height = 2 }
         end
-        function Render(draw_context)
+        function Render()
           local ok = debug.pcall{ func = function() draw.render() end }
           debug.assert{ value = not ok.ok }
           draw.text{ x = 1, y = 1, text = "render" }
@@ -2067,10 +2057,7 @@ mod tests {
       .update()
       .expect("drawing during Update must be accepted");
     session
-      .render(Size {
-        width: 120,
-        height: 40,
-      })
+      .render()
       .expect("ordinary drawing during Render must remain valid");
 
     let commands = session.take_draw_commands();
@@ -2820,6 +2807,71 @@ mod tests {
   }
 
   #[test]
+  fn save_game_accepts_serializable_scalar_and_table_values() {
+    for (expression, expected) in [
+      ("true", JsonValue::Bool(true)),
+      ("42", JsonValue::from(42)),
+      ("3.5", JsonValue::from(3.5)),
+      (r#""continue""#, JsonValue::from("continue")),
+      (
+        "{ level = 3, values = { 1, 2 } }",
+        serde_json::json!({ "level": 3, "values": [1, 2] }),
+      ),
+    ] {
+      let source = valid_script(&format!("function SaveGame() return {expression} end"));
+      let mut session =
+        LuaSession::load(spec(&source, LuaSessionKind::Game), LuaPolicy::default()).unwrap();
+      assert_eq!(session.save_game().unwrap(), Some(expected));
+    }
+  }
+
+  #[test]
+  fn save_callbacks_reject_non_serializable_values_and_non_table_best() {
+    let invalid_game_source = valid_script(
+      r#"
+        function SaveGame()
+          return function() end
+        end
+      "#,
+    );
+    let mut game_session = LuaSession::load(
+      spec(&invalid_game_source, LuaSessionKind::Game),
+      LuaPolicy::default(),
+    )
+    .unwrap();
+
+    let save_game_error = game_session.save_game().unwrap_err();
+    assert_eq!(save_game_error.stage, LuaErrorStage::SaveValidation);
+    assert!(
+      save_game_error
+        .message
+        .contains("unsupported Lua type 'function'")
+    );
+    assert_eq!(game_session.state(), LuaSessionState::Faulted);
+
+    let invalid_best_source = valid_script(
+      r#"
+        function SaveBest()
+          return "best"
+        end
+      "#,
+    );
+    let mut best_session = LuaSession::load(
+      spec(&invalid_best_source, LuaSessionKind::Game),
+      LuaPolicy::default(),
+    )
+    .unwrap();
+    let save_best_error = best_session.save_best().unwrap_err();
+    assert_eq!(save_best_error.stage, LuaErrorStage::SaveValidation);
+    assert!(
+      save_best_error
+        .message
+        .contains("must return a serializable table")
+    );
+    assert_eq!(best_session.state(), LuaSessionState::Faulted);
+  }
+
+  #[test]
   fn enabled_save_callbacks_are_required_and_best_needs_best_string() {
     let source = valid_script("");
     let mut game_save_spec = spec(&source, LuaSessionKind::Game);
@@ -3000,7 +3052,7 @@ mod tests {
   fn ascii_text_rendering_stays_within_the_callback_budget() {
     let source = valid_script(
       r#"
-        function Render(draw_context)
+        function Render()
           local x = 0
           local y = 0
           for item in ipairs(char.ASCII) do
@@ -3016,12 +3068,7 @@ mod tests {
     );
     let mut session =
       LuaSession::load(spec(&source, LuaSessionKind::Game), LuaPolicy::default()).unwrap();
-    session
-      .render(Size {
-        width: 120,
-        height: 40,
-      })
-      .unwrap();
+    session.render().unwrap();
     assert!(session.take_draw_commands().len() >= 90);
   }
 
@@ -3031,7 +3078,7 @@ mod tests {
       local calls = {}
       local context = nil
       local event_value = nil
-      local draw_value = nil
+      local render_argument = false
 
       function Init(ctx)
         context = ctx
@@ -3047,8 +3094,8 @@ mod tests {
       function UpdateFrame(dt, alpha)
         calls[#calls + 1] = "UpdateFrame"
       end
-      function Render(draw)
-        draw_value = draw
+      function Render(value)
+        render_argument = value ~= nil
         calls[#calls + 1] = "Render"
       end
       function SaveGame()
@@ -3070,8 +3117,7 @@ mod tests {
           event_frame = event_value.frame,
           event_action = event_value.data.action,
           event_state = event_value.data.state,
-          draw_width = draw_value.width,
-          draw_height = draw_value.height
+          render_argument = render_argument
         }
       end
     "#;
@@ -3096,12 +3142,7 @@ mod tests {
     session
       .update_frame(Duration::from_millis(16), 0.5)
       .unwrap();
-    session
-      .render(Size {
-        width: 100,
-        height: 30,
-      })
-      .unwrap();
+    session.render().unwrap();
 
     let save = session.save_game().unwrap().unwrap();
     assert_eq!(
@@ -3124,8 +3165,7 @@ mod tests {
     assert_eq!(save["event_frame"], 15);
     assert_eq!(save["event_action"], "jump");
     assert_eq!(save["event_state"], "pressed");
-    assert_eq!(save["draw_width"], 100);
-    assert_eq!(save["draw_height"], 30);
+    assert_eq!(save["render_argument"], false);
   }
 
   #[test]
@@ -3342,10 +3382,7 @@ mod tests {
           .update_frame(Duration::from_millis(16), 0.5)
           .unwrap_or_else(|error| panic!("{package_id} UpdateFrame failed: {error}"));
         session
-          .render(Size {
-            width: 100,
-            height: 30,
-          })
+          .render()
           .unwrap_or_else(|error| panic!("{package_id} Render failed: {error}"));
 
         if session_kind == LuaSessionKind::Game {

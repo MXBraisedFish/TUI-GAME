@@ -14,6 +14,7 @@
     "description": "Official arcade test package.",
     "author": "TUI Game"
   },
+  "runtime": { "min_width": 0, "min_height": 0 },
   "game": {
     "name": "f%<fg:bright_green>Official</fg> Arcade",
     "detail": "Official source package used to test game list source label.",
@@ -21,6 +22,8 @@
     "mouse": false,
     "truecolor": false,
     "high_privilege": false,
-    "save": false
+    "save": false,
+    "language": ["en_us"],
+    "actions": {}
   }
 }

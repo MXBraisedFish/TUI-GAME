@@ -13,7 +13,7 @@ function Init(ctx) end
 function HandleEvent(event) end
 function Update(dt) end
 function UpdateFrame(dt, alpha) end
-function Render(draw) end
+function Render() end
 ```
 
 游戏可以额外实现：

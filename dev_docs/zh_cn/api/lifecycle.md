@@ -14,11 +14,11 @@
 | ------------- | ------------ |
 | `Init`        | 初始化       |
 | `HandleEvent` | 事件处理     |
-| `Update`      | 物理更新     |
+| `Update`      | 物理帧更新   |
 | `UpdateFrame` | 帧更新       |
 | `Render`      | 绘制         |
 | `SaveGame`    | 保存游戏数据 |
-| `SaveBest`    | 保存最佳成绩 |
+| `SaveBest`    | 保存最佳记录 |
 
 ---
 
@@ -26,7 +26,7 @@
 
 ## `Init`
 
-初始化
+初始化游戏或屏保。
 
 ### 调用
 
@@ -35,121 +35,250 @@ function Init(ctx)
 end
 ```
 
-### 参数结构
+### 参数
 
-| 字段            | 类型    | 说明             |
-| --------------- | ------- | ---------------- |
-| `package_id`    | string  | 模组包 ID        |
-| `package_type`  | string  | 模组包类型       |
-| `base`          | table   | 基础画布状态信息 |
-| `base.width`    | integer | 基础画布宽度     |
-| `base.height`   | integer | 基础画布高度     |
-| `api_version`   | integer | API 版本         |
-| `continue_data` | any     | 继续游戏数据     |
+`ctx` 为初始化上下文表。
 
-事件返回，请查看⌊[事件结构](../EVENT.md)⌉文档⌊i18n⌉部分。
+| 字段            | 类型    | 说明                 |
+| --------------- | ------- | -------------------- |
+| `package_id`    | string  | 模组包 ID            |
+| `package_type`  | string  | 模组包类型           |
+| `base`          | table   | 基础切片图层状态信息 |
+| `base.width`    | integer | 基础切片图层宽度     |
+| `base.height`   | integer | 基础切片图层高度     |
+| `api_version`   | integer | API 版本             |
+| `start_mdoe`    | string  | 游戏启动模式         |
+| `continue_data` | any     | 继续游戏数据         |
+| `best_data`     | table   | 最佳记录数据         |
+
+**额外说明**
+
+- 字段 `package_type` 为 "game" 或 "screensaver"。
+- 字段 `api_version` 当前为 1。
+- 字段 `start_mode` 为 "new" 或 "continue"。
+- 字段 `continue_data` 仅在玩家"继续游戏"时提供，其内容来自此前 `SaveGame` 保存的数据。
+- 字段 `best_data` 的内容来自此前 `SaveBest` 保存的数据。
+
+### 返回
+
+无。
 
 ### 示例
 
 ```lua
-i18n.create {}
+function Init(ctx)
+  debug.print { message = serialization.json_encode(ctx) }
+  -- 初始化逻辑
+end
+```
 
+输出：
+
+> X 为占位符
+
+```json
+{
+  "package_id": "test",
+  "package_type": "game",
+  "base": {
+    "width": X,
+    "height": X
+  },
+  "api_version": 1,
+  "start_mode": "new",
+  "best_data": {
+    "best_string": "string",
+    "score": X
+  }
+}
+```
+
+---
+
+## `HandleEvent`
+
+事件处理。
+
+### 调用
+
+```lua
 function HandleEvent(event)
-  if event.type == "i18n" then
+end
+```
+
+### 参数
+
+`event` 为事件上下文表。
+
+| 字段       | 类型    | 说明         |
+| ---------- | ------- | ------------ |
+| `type`     | string  | 事件类型     |
+| `sequence` | integer | 事件全局序号 |
+| `frame`    | integer | 系统帧序号   |
+| `data`     | table   | 事件数据     |
+
+**额外说明**
+
+- 字段 `sequence` 事件全局序号，部分事件会被系统全局处理，脚本收到的序号不保证连续。
+- 字段 `frame` 为运行时系统帧序号，不代表该脚本自身处理事件的次数。
+- 字段 `type` 和字段 `data` 的具体结构请查看⌊[事件结构](../EVENT.md)⌉文档。
+
+### 返回
+
+无。
+
+### 示例
+
+```lua
+function HandleEvent(event)
+  if event.type == "action" then
     debug.print { message = serialization.json_encode(event) }
+    -- 事件处理逻辑
   end
 end
 ```
 
 输出：
 
+> X 为占位符
+
 ```json
 {
-  "type": "i18n",
+  "type": "type",
   "frame": X,
   "sequence": X,
   "data": {
-    "kind": "created",
-    "ok": true,
-    "language_code": "zh_cn",
-    "callback_language_code": "en_us",
-    "message": "i18n instance created",
-  },
+    X
+  }
 }
 ```
 
-### 额外补充
-
-- 该 API 为创建**单例**，每个脚本环境仅存在一个实例对象，若已经存在时重复调用，忽视请求。
-- `i18n` 库 API 的使用要求**特殊**的资源目录结构，请查看⌊[国际化语言](../I18N.md)⌉文档。
-
 ---
 
-## `get_value`
+## `Update`
 
-获取指定命名空间下的键值。
+物理帧更新，固定步长调用。
 
 ### 调用
 
 ```lua
--- 表参数
-i18n.get_value{}
+function Update(dt)
+end
 ```
 
 ### 参数
 
-| 参数名      | 类型   | 必填 | 默认值 | 说明         |
-| ----------- | ------ | ---- | ------ | ------------ |
-| `namespace` | string | 是   | -      | 命名空间名称 |
-| `key`       | string | 是   | -      | 键名         |
+`dt` 为物理帧时间差，单位 `秒`。
+
+| 类型   | 说明         |
+| ------ | ------------ |
+| number | 物理帧时间差 |
+
+**额外说明**
+
+- 物理帧更新间隔固定为 1/60 秒。
+- 系统会根据实际帧间隔来计算 `Update` 调用次数，每帧最多调用 8 次。
 
 ### 返回
 
-直接返回一个值。
-
-| 类型   | 说明 |
-| ------ | ---- |
-| string | 键值 |
+无。
 
 ### 示例
 
 ```lua
-assets/
-- language/
-  + zh_cn/
-  | - test.json: { "title": "标题" }
-  - en_us/
-    - test.json: { "title": "Title", "setting": "Setting" }
-
-v1 = i18n.get_value { namespace = "test", key = "title" }
-debug.print { message = v1 }
-
-v2 = i18n.get_value { namespace = "test", key = "setting" }
-debug.print { message = v2 }
-
-v3 = i18n.get_value { namespace = "test", key = "start" }
-debug.print { message = v3 }
+function Update(dt)
+  debug.print { message = serialization.json_encode(dt) }
+  -- 物理帧更新逻辑
+end
 ```
 
 输出：
 
 ```text
-标题
-Setting
-[缺少 i18n 键：test.start]
+0.016666667
+0.016666667
+0.016666667
+...
 ```
 
 ---
 
-## `get_language_code`
+## `UpdateFrame`
 
-获取当前系统所设置的语言代码。
+帧更新，随着系统帧调用。
 
 ### 调用
 
 ```lua
--- 单参数
-i18n.get_language_code()
+function UpdateFrame(dt, alpha)
+end
+```
+
+### 参数
+
+`dt` 为帧更新时间差，单位 `秒`。
+
+| 类型   | 说明         |
+| ------ | ------------ |
+| number | 物理帧时间差 |
+
+`alpha` 当前显示帧在最近两次次固定 `Update` 前后两个状态之间的差值比例，百分比。
+
+| 类型   | 说明     |
+| ------ | -------- |
+| number | 差值比例 |
+
+**额外说明**
+
+- 帧更新随系统帧调用，实际调用频率受游戏帧率设置、系统帧设置和玩家设备性能影响。
+
+### 返回
+
+无。
+
+### 示例
+
+```lua
+function Update(dt)
+  debug.print { message = tostring(dt) }
+  debug.print { message = tostring(alpha) }
+  debug.print { message = "" }
+  -- 帧更新逻辑
+end
+```
+
+输出：
+
+> 数字均为示例，不代表实际运行值。
+
+```text
+0.0170336
+0.02201597955968041
+
+0.0501579
+0.03148991937020162
+
+0.0169854
+0.05061389898772202
+
+...
+```
+
+---
+
+## `SaveGame`
+
+保存游戏数据，供玩家"继续游戏"后传递初始化数据。
+
+> 仅游戏脚本可用。
+> 仅 `package.json` 中 `game.save` 为 `true` 时可用。
+
+### 调用
+
+```lua
+function SaveGame()
+  return value
+end
 ```
 
 ### 参数
@@ -158,77 +287,84 @@ i18n.get_language_code()
 
 ### 返回
 
-直接返回一个值。
+需要保存的游戏数据。
 
-| 类型   | 说明                 |
-| ------ | -------------------- |
-| string | 系统所设置的语言代码 |
+| 类型 | 说明     |
+| ---- | -------- |
+| any  | 游戏数据 |
 
-### 示例
+**额外说明**
 
-```lua
-i18n.get_language_code()
-```
-
-输出：
-
-```text
-zh_cn
-```
-
----
-
-## `reload`
-
-重新加载当前语言。
-
-### 调用
-
-```lua
--- 表参数
-i18n.reload{}
-```
-
-### 参数
-
-| 参数名                   | 类型   | 必填 | 默认值               | 说明       |
-| ------------------------ | ------ | ---- | -------------------- | ---------- |
-| `language_code`          | string | 否   | 系统所设置的语言代码 | 首选项语言 |
-| `callback_language_code` | string | 否   | `"en_us"`            | 备用语言   |
-
-### 返回
-
-事件返回，请查看⌊[事件结构](../EVENT.md)⌉文档⌊i18n⌉部分。
+- 尽管返回值为任意类型，但必须返回一个可序列化的值，例如 `Function` 类型就不可以。
+- 仅返回一个值。
 
 ### 示例
 
 ```lua
-i18n.reload {}
+function Init(ctx)
+  debug.print { message = serialization.json_encode(ctx) }
+  -- 初始化逻辑
+end
 
-function HandleEvent(event)
-  if event.type == "i18n" then
-    debug.print { message = serialization.json_encode(event) }
-  end
+function SaveGame()
+  -- 保存前的数据处理
+  coin = 10
+  return coin
 end
 ```
 
 输出：
 
+> X 为占位符
+
 ```json
 {
-  "type": "i18n",
-  "frame": X,
-  "sequence": X,
-  "data": {
-    "kind": "created",
-    "ok": true,
-    "language_code": "zh_cn",
-    "callback_language_code": "en_us",
-    "message": "i18n instance created",
+  "package_id": "test",
+  "package_type": "game",
+  "base": {
+    "width": X,
+    "height": X
   },
+  "api_version": 1,
+  "start_mode": "new",
+  "best_data": {
+    "best_string": "string",
+    "score": X
+  }
 }
 ```
 
-### 额外补充
+---
 
-- 该 API 在实例未创建时忽视请求。
+## `Render`
+
+绘制当前画面。
+
+### 调用
+
+```lua
+function Render()
+end
+```
+
+### 参数
+
+无。
+
+### 返回
+
+无。
+
+### 示例
+
+```lua
+function Render()
+  draw.text { x = 0, y = 1, text = "Hello Tui Game", fg = color.BRIGHT_BLUE, bold = true }
+end
+```
+
+输出：
+
+![lifecycle.Render示例](../image/lifecycle_Render_example.png)
+
+---

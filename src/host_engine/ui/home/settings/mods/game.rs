@@ -583,10 +583,17 @@ impl GamePackageUi {
       canvas,
     );
 
+    let viewport = layout.developer_viewport_rect();
+    let info_scroll_rect = Rect {
+      x: positions.right_inner.x.saturating_sub(viewport.x),
+      y: positions.right_inner.y.saturating_sub(viewport.y),
+      width: positions.right_inner.width,
+      height: positions.right_inner.height,
+    };
     scroll_box.set_rect(
       &mut self.objects,
       self.info_scroll,
-      positions.right_inner,
+      info_scroll_rect,
       layout,
     );
     let info_content_height = self.info_content_height(layout, positions.right_inner.width);
@@ -1568,6 +1575,31 @@ impl GamePackageUi {
       },
     );
     y += 1;
+    let language_supported = entry
+      .supported_languages
+      .iter()
+      .any(|language| language.eq_ignore_ascii_case(i18n.current_language_code()));
+    self.draw_info_status(
+      canvas,
+      rect,
+      scroll_y,
+      y,
+      i18n.get_runtime_text("game_pack", "game_pack.info.language"),
+      i18n.get_runtime_text(
+        "game_pack",
+        if language_supported {
+          "game_pack.info.language.support"
+        } else {
+          "game_pack.info.language.not_support"
+        },
+      ),
+      if language_supported {
+        Self::style(TerminalColor::BrightGreen)
+      } else {
+        Self::style(TerminalColor::BrightRed)
+      },
+    );
+    y += 1;
     self.draw_info_status(
       canvas,
       rect,
@@ -2112,7 +2144,7 @@ impl GamePackageUi {
       })
       .height
       .max(1);
-    14 + 1 + 1 + 1 + 4 + 1 + 7 + 1 + 1 + description_lines
+    14 + 1 + 1 + 1 + 4 + 1 + 8 + 1 + 1 + description_lines
   }
 
   fn handle_hover(&mut self, id: HitAreaId) {

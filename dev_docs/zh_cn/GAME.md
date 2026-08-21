@@ -309,7 +309,7 @@ end
 
 当前 Lua Runtime 要求游戏入口实现以下回调：
 
-- 必需：`Init(ctx)`、`HandleEvent(event)`、`Update(dt)`、`UpdateFrame(dt, alpha)`、`Render(draw)`。
+- 必需：`Init(ctx)`、`HandleEvent(event)`、`Update(dt)`、`UpdateFrame(dt, alpha)`、`Render()`。
 - 可选：`SaveGame()`、`SaveBest()`。
 
 入口由 `package.json` 的 `entry` 指定，相对于包内 `scripts/` 目录；省略 `.lua` 后缀时由宿主补齐。入口规范、上下文、事件结构和资源限制详见 [Lua Runtime 协议](LUA_RUNTIME.md)。

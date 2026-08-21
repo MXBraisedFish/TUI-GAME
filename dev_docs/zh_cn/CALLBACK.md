@@ -6,15 +6,15 @@
 
 入口脚本在加载完成后，宿主会从脚本环境中查找以下回调：
 
-| 回调 | 游戏 | 屏保 | 主要用途 |
-|---|---:|---:|---|
-| `Init(ctx)` | 必需 | 必需 | 初始化脚本状态并读取宿主提供的启动数据。 |
-| `HandleEvent(event)` | 必需 | 必需 | 接收宿主路由给当前 Session 的事件。 |
-| `Update(dt)` | 必需 | 必需 | 按固定的 60 Hz 步长更新确定性逻辑。 |
-| `UpdateFrame(dt, alpha)` | 必需 | 必需 | 每个宿主帧更新一次与真实帧时间有关的逻辑。 |
-| `Render(draw)` | 必需 | 必需 | 为当前可见画面提交绘制命令。 |
-| `SaveGame()` | 条件必需 | 不使用 | 返回“继续游戏”槽位所需的数据。 |
-| `SaveBest()` | 条件必需 | 不使用 | 返回游戏最佳记录及其展示文本。 |
+| 回调                     |     游戏 |   屏保 | 主要用途                                   |
+| ------------------------ | -------: | -----: | ------------------------------------------ |
+| `Init(ctx)`              |     必需 |   必需 | 初始化脚本状态并读取宿主提供的启动数据。   |
+| `HandleEvent(event)`     |     必需 |   必需 | 接收宿主路由给当前 Session 的事件。        |
+| `Update(dt)`             |     必需 |   必需 | 按固定的 60 Hz 步长更新确定性逻辑。        |
+| `UpdateFrame(dt, alpha)` |     必需 |   必需 | 每个宿主帧更新一次与真实帧时间有关的逻辑。 |
+| `Render()`               |     必需 |   必需 | 为当前可见画面提交绘制命令。               |
+| `SaveGame()`             | 条件必需 | 不使用 | 返回“继续游戏”槽位所需的数据。             |
+| `SaveBest()`             | 条件必需 | 不使用 | 返回游戏最佳记录及其展示文本。             |
 
 前五个回调缺失或不是函数时，Session 创建失败，游戏不会进入运行状态，屏保也不会覆盖当前画面。
 
@@ -39,7 +39,7 @@ Update(1 / 60) × 0..8
   ↓
 UpdateFrame(real_dt, alpha) × 1
   ↓
-Render(draw) × 0..1（仅当前可见 Session）
+Render() × 0..1（仅当前可见 Session）
 ```
 
 补充规则：
@@ -49,7 +49,7 @@ Render(draw) × 0..1（仅当前可见 Session）
 - 回调执行期间产生的新事件只追加到队尾，最早在下一宿主帧投递，不会递归调用 `HandleEvent`。
 - 游戏被覆盖屏遮挡时仍会执行 `Update` 和 `UpdateFrame`，但不会执行游戏的 `Render`。
 - 屏保成为当前覆盖画面时执行屏保的更新和渲染；若更高优先级覆盖屏遮挡屏保，则屏保继续更新但跳过 `Render`。
-- `SaveGame` 和 `SaveBest` 不属于每帧调用链，只会在保存或正常结束游戏时按条件调用。
+- `SaveGame` 和 `SaveBest` 不属于每帧调用链，只会在脚本显式请求保存时按条件调用；退出游戏不会自动调用它们。
 
 ## 3. `Init`
 
@@ -88,17 +88,17 @@ end
 }
 ```
 
-| 字段 | 类型 | 含义 |
-|---|---|---|
-| `package_id` | `string` | 当前包的 `mod_id`。不会暴露宿主内部完整包索引。 |
-| `package_type` | `string` | `"game"` 或 `"screensaver"`。 |
-| `base` | `table` | Session 启动时的 Base 画布尺寸快照。 |
-| `base.width` | `integer` | Base 画布初始宽度，单位为终端单元格。 |
-| `base.height` | `integer` | Base 画布初始高度，单位为终端单元格。 |
-| `start_mode` | `string` | `"new"` 表示普通启动，`"continue"` 表示从继续游戏槽位启动。屏保恒为 `"new"`。 |
-| `best_data` | `table` | 当前游戏已有的最佳记录数据，即上一次 `SaveBest` 返回的完整表。不存在时不包含该字段。 |
-| `continue_data` | `any` | 从“继续游戏”进入时，由该游戏上一次 `SaveGame` 返回的数据还原得到。不存在时不包含该字段。 |
-| `api_version` | `integer` | 当前 TUI GAME Lua API 版本，当前为 `1`。 |
+| 字段            | 类型      | 含义                                                                                     |
+| --------------- | --------- | ---------------------------------------------------------------------------------------- |
+| `package_id`    | `string`  | 当前包的 `mod_id`。不会暴露宿主内部完整包索引。                                          |
+| `package_type`  | `string`  | `"game"` 或 `"screensaver"`。                                                            |
+| `base`          | `table`   | Session 启动时的 Base 画布尺寸快照。                                                     |
+| `base.width`    | `integer` | Base 画布初始宽度，单位为终端单元格。                                                    |
+| `base.height`   | `integer` | Base 画布初始高度，单位为终端单元格。                                                    |
+| `start_mode`    | `string`  | `"new"` 表示普通启动，`"continue"` 表示从继续游戏槽位启动。屏保恒为 `"new"`。            |
+| `best_data`     | `table`   | 当前游戏已有的最佳记录数据，即上一次 `SaveBest` 返回的完整表。不存在时不包含该字段。     |
+| `continue_data` | `any`     | 从“继续游戏”进入时，由该游戏上一次 `SaveGame` 返回的数据还原得到。不存在时不包含该字段。 |
+| `api_version`   | `integer` | 当前 TUI GAME Lua API 版本，当前为 `1`。                                                 |
 
 `continue_data` 和 `best_data` 只包含 JSON 兼容数据：`nil`、布尔值、有限数值、UTF-8 字符串、连续数组和字符串键对象。
 
@@ -170,12 +170,12 @@ end
 }
 ```
 
-| 字段 | 类型 | 含义 |
-|---|---|---|
-| `type` | `string` | 事件类型，决定 `data` 的具体结构。 |
+| 字段       | 类型      | 含义                                                     |
+| ---------- | --------- | -------------------------------------------------------- |
+| `type`     | `string`  | 事件类型，决定 `data` 的具体结构。                       |
 | `sequence` | `integer` | Runtime 全局单调递增的事件序号。经过目标过滤后可能跳号。 |
-| `frame` | `integer` | 事件进入 Lua Broker 时的宿主帧号。 |
-| `data` | `table` | 当前事件的数据表。 |
+| `frame`    | `integer` | 事件进入 Lua Broker 时的宿主帧号。                       |
+| `data`     | `table`   | 当前事件的数据表。                                       |
 
 全部事件类型、字段和投递条件见 [EVENT.md](EVENT.md)。
 
@@ -226,8 +226,8 @@ end
 
 ### 参数
 
-| 参数 | 类型 | 当前值 | 含义 |
-|---|---|---:|---|
+| 参数 | 类型     |   当前值 | 含义                                                            |
+| ---- | -------- | -------: | --------------------------------------------------------------- |
 | `dt` | `number` | `1 / 60` | 本次固定更新代表的秒数。固定步长不再通过 `Init(ctx)` 重复提供。 |
 
 ### 返回值
@@ -268,10 +268,10 @@ end
 
 ### 参数
 
-| 参数 | 类型 | 范围 | 含义 |
-|---|---|---|---|
-| `dt` | `number` | `0.0..=0.25` | 当前宿主帧经过的真实秒数；为避免异常大步长，最大钳制为 250 ms。 |
-| `alpha` | `number` | `0.0..=1.0` | 固定更新累加器剩余时间与 `1 / 60` 的比例，可用于在前后两个固定状态之间插值。 |
+| 参数    | 类型     | 范围         | 含义                                                                         |
+| ------- | -------- | ------------ | ---------------------------------------------------------------------------- |
+| `dt`    | `number` | `0.0..=0.25` | 当前宿主帧经过的真实秒数；为避免异常大步长，最大钳制为 250 ms。              |
+| `alpha` | `number` | `0.0..=1.0`  | 固定更新累加器剩余时间与 `1 / 60` 的比例，可用于在前后两个固定状态之间插值。 |
 
 当一个宿主帧达到 8 次追赶上限后，宿主会丢弃多余的完整固定步长，只保留不足一个固定步长的余数。
 
@@ -300,7 +300,7 @@ end
 ### 声明
 
 ```lua
-function Render(draw)
+function Render()
 end
 ```
 
@@ -314,31 +314,9 @@ end
 
 ### 参数
 
-`draw` 是只读的帧级绘制视图：
+无。绘制时直接使用全局 `draw` 库，方法参数见 [draw API](api/draw.md)。
 
-```lua
-{
-  width = 120,
-  height = 40,
-  text = <function>,
-  fill_rect = <function>,
-  stroke_rect = <function>,
-  erase_rect = <function>,
-  render = <function>,
-}
-```
-
-| 字段 | 类型 | 含义 |
-|---|---|---|
-| `width` | `integer` | 当前可绘制区域宽度。 |
-| `height` | `integer` | 当前可绘制区域高度。 |
-| `text` | `function` | 与全局 `draw.text` 相同。 |
-| `fill_rect` | `function` | 与全局 `draw.fill_rect` 相同。 |
-| `stroke_rect` | `function` | 与全局 `draw.stroke_rect` 相同。 |
-| `erase_rect` | `function` | 与全局 `draw.erase_rect` 相同。 |
-| `render` | `function` | 与全局 `draw.render` 相同，但该方法禁止在 `Render` 回调内调用。 |
-
-绘制方法的参数见 [draw API](api/draw.md)。
+Base 画布的初始宽高来自 `Init(ctx)` 的 `ctx.base.width` 和 `ctx.base.height`；运行期间尺寸变化通过 `resize` 事件更新。宿主不会向 `Render` 传递画布或终端尺寸。
 
 ### 返回值
 
@@ -357,12 +335,12 @@ end
 ### 示例
 
 ```lua
-function Render(draw)
+function Render()
   draw.fill_rect {
     x = 0,
     y = 0,
-    width = draw.width,
-    height = draw.height,
+    width = base_width,
+    height = base_height,
     bg = color.BLACK,
   }
 
@@ -408,7 +386,7 @@ end
 ### 调用时机
 
 - 脚本调用 `game.save_game()` 后，由宿主在当前 Lua 回调返回后调用。
-- 游戏通过正常退出链路结束时，宿主会在销毁 Session 前调用。
+- 退出游戏或关闭宿主不会自动调用；开发者如需保留继续游戏数据，必须在退出前显式调用 `game.save_game()`。
 - Session 已经故障时不会自动保存故障状态。
 
 该存储只用于宿主的单个“继续游戏”槽位。所有游戏共用该槽位，后保存的游戏会覆盖之前的继续游戏数据。游戏自己的长期、多槽位存档应在获得权限后使用文件 API。
@@ -419,7 +397,7 @@ end
 
 ### 返回值
 
-必须返回一个非 `nil`、可序列化为 JSON 的值。宿主只读取第一个返回值，其余返回值会被忽略。
+可以返回任意非 `nil`、可序列化为 JSON 的单值或表。宿主只读取第一个返回值，其余返回值会被忽略。
 
 允许的值：
 
@@ -447,7 +425,7 @@ end
 
 - `game.save_game()` 不允许在 `SaveGame` 内再次调用，避免递归保存。
 - `game.exit_game()` 不允许在 `SaveGame` 内调用。
-- 保存失败会记录到当前游戏日志，不应导致宿主崩溃。
+- 返回值不合法时不会写入继续游戏槽位，并会作为当前游戏的 Lua Session 错误抛出；宿主继续运行。
 
 ## 9. `SaveBest`
 
@@ -466,7 +444,7 @@ end
 
 ### 启用条件
 
-仅游戏使用。`package.json` 必须启用成绩：
+仅游戏使用。`package.json` 必须启用记录：
 
 ```json
 {
@@ -483,7 +461,7 @@ end
 ### 调用时机
 
 - 脚本调用 `game.save_best()` 后，由宿主在当前 Lua 回调返回后调用。
-- 游戏通过正常退出链路结束时，宿主会在销毁 Session 前调用。
+- 退出游戏或关闭宿主不会自动调用；开发者如需更新最佳记录，必须在退出前显式调用 `game.save_best()`。
 - Session 已经故障时不会自动保存故障状态。
 
 ### 参数
@@ -492,7 +470,7 @@ end
 
 ### 返回值
 
-必须返回一个可序列化的对象表，并且必须包含：
+必须返回一个可序列化的对象表，不能返回单值，并且必须包含：
 
 ```lua
 {
@@ -500,9 +478,9 @@ end
 }
 ```
 
-| 字段 | 类型 | 必填 | 含义 |
-|---|---|---:|---|
-| `best_string` | `string` | 是 | 游戏列表显示的最佳记录文本，允许使用富文本语法。 |
+| 字段          | 类型     | 必填 | 含义                                             |
+| ------------- | -------- | ---: | ------------------------------------------------ |
+| `best_string` | `string` |   是 | 游戏列表显示的最佳记录文本，允许使用富文本语法。 |
 
 其余字段由游戏自行定义，宿主会连同 `best_string` 一起保存，并在下一次创建该游戏 Session 时通过 `Init(ctx)` 的 `ctx.best_data` 传回。
 
@@ -512,22 +490,22 @@ end
 
 - `game.save_best()` 不允许在 `SaveBest` 内再次调用，避免递归保存。
 - `game.exit_game()` 不允许在 `SaveBest` 内调用。
-- 保存失败会记录到当前游戏日志，不应导致宿主崩溃。
+- 返回值不合法时不会写入最佳记录，并会作为当前游戏的 Lua Session 错误抛出；宿主继续运行。
 
 ## 10. 公共执行限制
 
 ### 10.1 时间与指令预算
 
-| 回调 | 慢调用警告 | 硬时间上限 | Lua 指令上限 |
-|---|---:|---:|---:|
-| `Init` | 50 ms | 100 ms | 1,000,000 |
-| `HandleEvent` | 20 ms | 75 ms | 200,000 |
-| 独立事件回调 | 20 ms | 75 ms | 200,000 |
-| `Update` | 20 ms | 75 ms | 200,000 |
-| `UpdateFrame` | 20 ms | 75 ms | 200,000 |
-| `Render` | 20 ms | 75 ms | 200,000 |
-| `SaveGame` | 50 ms | 100 ms | 1,000,000 |
-| `SaveBest` | 50 ms | 100 ms | 1,000,000 |
+| 回调          | 慢调用警告 | 硬时间上限 | Lua 指令上限 |
+| ------------- | ---------: | ---------: | -----------: |
+| `Init`        |      50 ms |     100 ms |    1,000,000 |
+| `HandleEvent` |      20 ms |      75 ms |      200,000 |
+| 独立事件回调  |      20 ms |      75 ms |      200,000 |
+| `Update`      |      20 ms |      75 ms |      200,000 |
+| `UpdateFrame` |      20 ms |      75 ms |      200,000 |
+| `Render`      |      20 ms |      75 ms |      200,000 |
+| `SaveGame`    |      50 ms |     100 ms |    1,000,000 |
+| `SaveBest`    |      50 ms |     100 ms |    1,000,000 |
 
 - Hook 每 1,000 条 Lua 指令检查一次预算。
 - Rust API 调用消耗的墙钟时间也包含在硬时间上限内。
@@ -558,14 +536,22 @@ end
 local state = {
   elapsed = 0,
 }
+local base_width = 0
+local base_height = 0
 
 function Init(ctx)
+  base_width = ctx.base.width
+  base_height = ctx.base.height
   if ctx.continue_data ~= nil then
     state = ctx.continue_data
   end
 end
 
 function HandleEvent(event)
+  if event.type == "resize" then
+    base_width = event.data.width
+    base_height = event.data.height
+  end
 end
 
 function Update(dt)
@@ -575,7 +561,7 @@ end
 function UpdateFrame(dt, alpha)
 end
 
-function Render(draw)
+function Render()
   draw.text {
     x = 1,
     y = 1,
@@ -595,17 +581,25 @@ function SaveBest()
 end
 ```
 
-若游戏没有启用存档或成绩功能，应删除对应的保存回调。
+若游戏没有启用存档或记录功能，应删除对应的保存回调。
 
 ### 屏保
 
 ```lua
 local elapsed = 0
+local base_width = 0
+local base_height = 0
 
 function Init(ctx)
+  base_width = ctx.base.width
+  base_height = ctx.base.height
 end
 
 function HandleEvent(event)
+  if event.type == "resize" then
+    base_width = event.data.width
+    base_height = event.data.height
+  end
 end
 
 function Update(dt)
@@ -615,7 +609,7 @@ end
 function UpdateFrame(dt, alpha)
 end
 
-function Render(draw)
+function Render()
   draw.text {
     x = 1,
     y = 1,

@@ -1,0 +1,6 @@
+{
+  "cover_continue.title": "覆盖存档警告",
+  "cover_continue.tip": "开始新游戏将清除当前继续游戏 {value:continue_game} 的存档数据。\n无论新游戏是否支持存档，现有存档都将被覆盖。",
+  "cover_continue.start": "{key:start} 开启新游戏",
+  "cover_continue.back": "{key:back} 返回游戏列表"
+}

@@ -1350,6 +1350,13 @@ impl GameListUi {
     if entry.high_privilege_required && entry.safe_mode {
       warnings.push(i18n.get_runtime_text("game_list", "game_list.info.high_privilege.error"));
     }
+    if !entry
+      .supported_languages
+      .iter()
+      .any(|language| language.eq_ignore_ascii_case(i18n.current_language_code()))
+    {
+      warnings.push(i18n.get_runtime_text("game_list", "game_list.info.language.error"));
+    }
     warnings
   }
 

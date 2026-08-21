@@ -35,11 +35,11 @@ end
 function UpdateFrame(dt, alpha)
 end
 
-function Render(surface)
-  draw.fill_rect{ x = 0, y = 0, width = surface.width, height = surface.height, char = " ", bg = "black" }
+function Render()
+  draw.fill_rect{ x = 0, y = 0, width = width, height = height, char = " ", bg = "black" }
   for item in ipairs(stars) do
     local star = item.value
-    if star.x < surface.width and star.y < surface.height then
+    if star.x < width and star.y < height then
       draw.text{ x = star.x, y = star.y, text = star.speed == 3 and "*" or ".", fg = star.speed == 3 and "white" or "gray" }
     end
   end

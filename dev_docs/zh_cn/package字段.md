@@ -1,174 +1,510 @@
 # 游戏包
 
+```jsonc
 {
-  "mod_id": "id", - 模组唯一ID：字符串，由用户自行定义
-  "schema_version": 1, - 配置版本：必须等于当前宿主要求
-  "type": "game", - 包类型：game/screensaver
-  "version": "1.0.0", - 版本号（展示）：可以是任意值，也可以是i18n键
-  "version_code": 1, - 版本真值：为正整数，必须递增（但现在我们没有社区管理，只检查类型即可）
-  "api": { - 支持的API版本：对象，区间闭合，宿主版本必须包含在范围内
-    "min": 1, - 最小范围：正整数，必须小于等于max
-    "max": 2 - 最大范围：正整数，必须大于等于max
+  // ============================================================
+  //  必填基础信息
+  // ============================================================
+  "mod_id": "id",                           // 模组唯一ID，由用户自行定义
+  "schema_version": 1,                      // 配置版本，必须等于当前宿主要求
+  "type": "game",                           // 包类型：game / screensaver
+  "version": {                              // 展示版本号
+		"type": "i18n",                         // i18n 或 text，也可以直接传递一个字符串，"..."等价于{"type": "text", "text": "..."}
+		"path": "display.json",                 // i18n 时必填：相对于 assets/language/[language_code]/ 的路径
+		"key": "title",                         // i18n 时必填：匹配键
+		"callback": "Title",                    // i18n 时必填：回退值
+		"text": "Title"                         // text 时必填：直接文本（i18n 时忽略）
+	},                       
+  "version_code": 1,                        // 版本真值，正整数，必须递增（当前版本无社区，仅作为保留字段，实际上并不影响包加载）
+
+  // ============================================================
+  //  API 版本支持（区间闭合）
+  // ============================================================
+  "api": {
+    "min": 1,                               // 最小版本，必须 ≤ max
+    "max": 2                                 // 最大版本，必须 ≥ min
   },
-  "entry": "init.lua", - 入口脚本：相对于包scripts/目录的lua脚本（可以不包含后缀，宿主会自动检测）
-  "display": { - 显示信息：对象
-    "title": "My Game Pack", - 包标题：字符串或i18n键
-    "description": "A collection of classic terminal games.", - 包简介：字符串或i18n键
-    "author": "Alex", - 包作者：字符串或i18n键
-    "icon":  {
-		"type": "image" | "text",
-		"path": "path" -> 相对于包的assets/路径
-    }
-    "banner": {
-		"type": "image" | "text",
-		"path": "path" -> 相对于包的assets/路径
-    }
-  },
-  "runtime": { - 运行配置：对象
-    "min_width": 60, - 最小宽度：正整数，或为0（不限制）
-    "min_height": 20, - 最小高度：正整数，或为0（不限制）
-  },
-  "game": { - 游戏包专属配置：对象
-    "name": "Minefield", - 游戏名：字符串或i18n键
-    "detail": "A full-featured minesweeper with multiple difficulty levels.", - 游戏简介：字符串或i18n键
-    "high_privilege": false, - 是否需要高权限请求：布尔值-表示该包需要写请求
-    "truecolor": false, - 是否需要写操作请求：布尔值-表示该包需要写请求
-	"mouse": false, - 是否需要鼠标操作：布尔值-表示该包需要鼠标操作
-    "target_fps": 30 - 默认目标帧率：正整数30，60，120，游戏期望帧率上限
-    "save": true, - 是否支持存档：布尔值-表示该游戏允许存档
-    "score": { - 是否支持存储最佳纪录：对象
-      "enabled": true, - 是否支持：布尔值-表示该游戏需要记录最佳记录
-      "empty_text": "$game.no_record" - 当该游戏无最佳纪录数据的时候显示的默认值：字符串或i18n键
+
+  // ============================================================
+  //  入口脚本（相对于包 scripts/ 目录）
+  // ============================================================
+  "entry": "init.lua",
+
+  // ============================================================
+  //  显示信息
+  // ============================================================
+  "display": {
+    // ----- 标题 -----
+    "title": {
+      "type": "i18n",                       // i18n 或 text，也可以直接传递一个字符串，"..."等价于{"type": "text", "text": "..."}
+      "path": "display.json",               // i18n 时必填：相对于 assets/language/[language_code]/ 的路径
+      "key": "title",                       // i18n 时必填：匹配键
+      "callback": "Title",                  // i18n 时必填：回退值
+      "text": "Title"                       // text 时必填：直接文本（i18n 时忽略）
     },
-    "actions": { - 按键注册：对象
-      "move_up": { - 动作名：对象
-        "description": "Move cursor up", - 动作描述（用于后续修改按键界面展示）：字符串或i18n键
-        "keys": [ - 键内容：数组
-          ["w"], - 第一个键：数组（至多两个元素）
-          ["up"] - 第二个键：数组（至多两个元素）
+    // ----- 简介 -----
+    "description": {
+      "type": "i18n",
+      "path": "display.json",
+      "key": "description",
+      "callback": "Description",
+      "text": "Description"
+    },
+    // ----- 作者 -----
+    "author": {
+      "type": "i18n",
+      "path": "display.json",
+      "key": "author",
+      "callback": "Author",
+      "text": "Author"
+    },
+    // ----- 图标（选填，默认使用宿主内置）-----
+    "icon": {
+      "type": "image",                      // image 或 text
+      "path": "path"                        // 相对于包的 assets/ 路径
+    },
+    // ----- 横幅（选填，默认使用宿主内置）-----
+    "banner": {
+      "type": "image",                      // image 或 text
+      "path": "path"                        // 相对于包的 assets/ 路径
+    }
+  },
+
+  // ============================================================
+  //  运行配置
+  // ============================================================
+  "runtime": {
+    "min_width": 60,                        // 最小宽度，0 表示不限制
+    "min_height": 20                        // 最小高度，0 表示不限制
+  },
+
+  // ============================================================
+  //  游戏包专属配置，type为game时必填
+  // ============================================================
+  "game": {
+    // ----- 游戏名称 -----
+    "name": {
+      "type": "i18n",
+      "path": "display.json",
+      "key": "game_name",
+      "callback": "Minefield",
+      "text": "Minefield"
+    },
+    // ----- 游戏详情 -----
+    "detail": {
+      "type": "i18n",
+      "path": "display.json",
+      "key": "game_detail",
+      "callback": "A full-featured minesweeper...",
+      "text": "A full-featured minesweeper..."
+    },
+
+    // ----- 功能开关 -----
+    "high_privilege": false,                // 【选填，默认 false】是否需要高权限（关闭安全模式）
+    "truecolor": false,                     // 【选填，默认 false】是否需要真彩支持
+    "mouse": false,                         // 【选填，默认 false】是否需要鼠标操作
+    "target_fps": 30,                       // 【选填，默认 60】目标帧率：30/60/120
+    "save": true,                           // 【选填，默认 false】是否支持存档
+    
+    // ----- 支持语言 -----
+    "language": [zh_cn, en_us, ...]         // 填写语言代码，用于表示支持哪些语言
+
+    // ----- 最佳纪录配置（选填）-----
+    "score": { 
+      "enabled": true,                      // 【选填，默认 false】是否启用最佳纪录
+      "empty_text": {                       // 【选填，默认程序内置】无纪录时显示的占位文本
+	      "type": "i18n",
+	      "path": "display.json",
+	      "key": "description",
+	      "callback": "Description",
+	      "text": "Description"
+	    },       
+    },
+
+    // ----- 按键注册（动作可任意扩展）-----
+    "actions": {
+      "move_up": {                          // 动作语义名（可自定义）
+        "description": {                    // 动作描述（用于按键修改界面展示）
+          "type": "i18n",
+          "path": "display.json",
+          "key": "action_move_up",
+          "callback": "Move cursor up",
+          "text": "Move cursor up"
+        },
+        "keys": [                           // 键位数组（数组至多 2 个元素，多出来的取前两个）
+          ["w"],                            // 主键（数组至多 2 个元素，多出来的取前两个）
+          ["up"]                            // 备选键（数组至多 2 个元素，多出来的取前两个）
         ]
-      },
+      }
+      // 可继续添加 ...
     }
   }
 }
-
->以下内容要求均同上
+```
 
 # 屏保包
 
+```jsonc
 {
-  "mod_id": "id", - 模组唯一ID
-  "schema_version": 1, - 配置版本
-  "type": "screensaver", - 包类型
-  "version": "1.0.0", - 版本号（展示）
-  "version_code": 1, - 版本真值
-  "api": { - 支持的API版本
-    "min": 1, - 最小范围
-    "max": 2 - 最大范围
+  // ============================================================
+  //  必填基础信息
+  // ============================================================
+  "mod_id": "id",                           // 模组唯一ID，由用户自行定义
+  "schema_version": 1,                      // 配置版本，必须等于当前宿主要求
+  "type": "screensaver",                    // 包类型：game / screensaver
+  "version": {                              // 展示版本号
+    "type": "i18n",                         // i18n 或 text，也可以直接传递一个字符串，"..."等价于{"type": "text", "text": "..."}
+    "path": "display.json",                 // i18n 时必填：相对于 assets/language/[language_code]/ 的路径
+    "key": "version",                       // i18n 时必填：匹配键
+    "callback": "1.0.0",                    // i18n 时必填：回退值
+    "text": "1.0.0"                         // text 时必填：直接文本（i18n 时忽略）
   },
-  "entry": "init.lua", - 入口脚本
-  "display": { - 显示信息
-    "title": "My Game Pack", - 包标题
-    "description": "A collection of classic terminal games.", - 包简介
-    "author": "Alex", - 包作者
-    "icon": "pack_icon.png", - 包图标
-    "banner": "pack_banner.png" - 包头图
+  "version_code": 1,                        // 版本真值，正整数，必须递增（当前版本无社区，仅作为保留字段，实际上并不影响包加载）
+
+  // ============================================================
+  //  API 版本支持（区间闭合）
+  // ============================================================
+  "api": {
+    "min": 1,                               // 最小版本，必须 ≤ max
+    "max": 2                                 // 最大版本，必须 ≥ min
   },
-  "runtime": { - 运行配置
-    "min_width": 60, - 最小宽度
-    "min_height": 20, - 最小高度
+
+  // ============================================================
+  //  入口脚本（相对于包 scripts/ 目录）
+  // ============================================================
+  "entry": "init.lua",
+
+  // ============================================================
+  //  显示信息
+  // ============================================================
+  "display": {
+    // ----- 标题 -----
+    "title": {
+      "type": "i18n",                       // i18n 或 text，也可以直接传递一个字符串，"..."等价于{"type": "text", "text": "..."}
+      "path": "display.json",               // i18n 时必填：相对于 assets/language/[language_code]/ 的路径
+      "key": "title",                       // i18n 时必填：匹配键
+      "callback": "My Screensaver Pack",    // i18n 时必填：回退值
+      "text": "My Screensaver Pack"         // text 时必填：直接文本（i18n 时忽略）
+    },
+    // ----- 简介 -----
+    "description": {
+      "type": "i18n",
+      "path": "display.json",
+      "key": "description",
+      "callback": "A collection of classic terminal screensavers.",
+      "text": "A collection of classic terminal screensavers."
+    },
+    // ----- 作者 -----
+    "author": {
+      "type": "i18n",
+      "path": "display.json",
+      "key": "author",
+      "callback": "Alex",
+      "text": "Alex"
+    },
+    // ----- 图标（选填，默认使用宿主内置）-----
+    "icon": {
+      "type": "image",                      // image 或 text
+      "path": "pack_icon.png"               // 相对于包的 assets/ 路径
+    },
+    // ----- 横幅（选填，默认使用宿主内置）-----
+    "banner": {
+      "type": "image",                      // image 或 text
+      "path": "pack_banner.png"             // 相对于包的 assets/ 路径
+    }
   },
-  "screensaver": { - 游戏包专属配置
-    "name": "Minefield", - 屏保名：字符串或i18n键
-    "command": "mind", - 快捷指令：字符串，后续将用于快捷启动
-    "truecolor": false, - 是否需要写操作请求：布尔值-表示该包需要写请求
-	"mouse": false, - 是否需要鼠标操作：布尔值-表示该包需要鼠标操作
+
+  // ============================================================
+  //  运行配置
+  // ============================================================
+  "runtime": {
+    "min_width": 60,                        // 最小宽度，0 表示不限制
+    "min_height": 20                        // 最小高度，0 表示不限制
+  },
+
+  // ============================================================
+  //  屏保包专属配置，type 为 screensaver 时必填
+  // ============================================================
+  "screensaver": {
+    // ----- 屏保名称 -----
+    "name": {
+      "type": "i18n",
+      "path": "display.json",
+      "key": "screensaver_name",
+      "callback": "Minefield",
+      "text": "Minefield"
+    },
+    // ----- 快捷指令（用于快捷启动）-----
+    "command": "mind",                      // 【必填】快捷指令：字符串
+
+    // ----- 功能开关 -----
+    "truecolor": false,                     // 【选填，默认 false】是否需要真彩支持
   }
 }
+```
 
-  
+安全详细里的markdown没有及时的转换语言，说明markdown对象创建需要优化。
+若原本游戏已经存储了继续游戏或最佳记录的字段，但是游戏包更新后不再支持这两个字段如何处理这个边界条件需要修复：我的建议是扫描后删除。
+几个代办的记录：
+1.完善继续游戏，在继续游戏后传递真正的继续游戏上下文表，并完善 ui 界面的继续游戏，有继续游戏时，为白色，后接目前保存的游戏的名字，否则为灰色且不可聚焦不可选中不可确认；所有新游戏都会导致旧的继续游戏被清理，无论该游戏是否支持保存继续。
+2. 添加初始的加载界面，以提醒玩家启动器正在初始化。
+3. 游戏包添加新的字段language，里面填写语言代码数组，然后i18n 添加对应的语言警告，提醒玩家是否支持当前偏好语言，两个包的将i18n 字段改为text，i18n显式声明，包含文件，字段，回退。
+4. 添加快捷参数指令tg -x相关，目前有查询版本与更新，快速在当前目录创建一个游戏包或屏保包结构，快捷启动屏保，查询安装位置，查询占用存储，初始化data目录（完全清理，二次确认），导出全部数据（可指定路径）。
+5. 完善错误捕获，我们不必那么完善，但是必须保证每个服务都可以在出现错误后，被捕获，先走报错路径，除非我们控制不了再交给panic hook。
+6.游戏时长记录，手柄支持，成就系统。
 
-完整表
-████████ [调试]包名      █
-████████ 作者：          █
-████████ 版本：          █
-████████ 状态：启用/禁用 █
+---
 
-简洁表
-▌[*_pack.list.debug]包名           [*_pack.list.status.*] █
-[*_pack.list.status.*]和最后的█之间要留一个空格，绘制时先计算[*_pack.list.status.*] █占据的位置（要动态计算，一些语言的*_pack.list.status.*的on和off不等长，然后[*_pack.list.debug]包名两者拼接占据剩余区域，超出使用...表示未展示完
-▌仍是聚焦选项
-简介表之间没有间隙，并且不垂直居中，直接向上顶到头
-文本颜色必须参考详细表
-然后接入L键切换
+接下来我发现了很多个问题，来一一优化：
+1. 我们完全重写包的检测部分，字段整合更新，尤其是针对文本展示的部分，使用更明确的对象结构来表达是纯文本还是i18n所需，彻底明确哪些是可选字段，可不写，宿主会默认对齐，哪些是必填字段，只要不写或不合法，就会被拒绝扫描（仅这个包，不会影响其他的），并在系统（宿主）的日志下写入问题所在（为什么被拒绝扫描），具体如下：
+# 游戏包
 
-信息展示
-banner图，按照36列*9行展示
-(空一行，注意：banner要居中展示)
-                                  包标题
-  (空一行，注意：包标题要居中展示，以下内容居左展示)
-*_pack.info.subtitle.base（黄色文字）
-*_pack.info.pack_name（亮蓝色文字）[后面接包名而非包标题]
-*_pack.info.author*（亮蓝色文字）[后面接包作者]
-*_pack.info.version*（亮蓝色文字）[后面接包版本]
-  (空一行）
-*_pack.info.subtitle.config（黄色文字）
-*_pack.info.status（亮蓝色文字）*_pack.info.status.*（on使用亮绿色，off使用亮红色）
-*_pack.info.debug（亮蓝色文字）*_pack.info.debug.*（on使用亮玫红，off使用灰色[hint同色，下面灰色均为该颜色]）
-*_pack.info.mouse（亮蓝色文字）*_pack.info.mouse.*（on.support使用亮绿色，on.unsupport使用两红色，off使用灰色[hint同色]）
-*_pack.info.write（亮蓝色文字，游戏包独有）game_pack.info.write.*（on使用亮红色，off使用灰色）
-*_pack.info.safe_mode（亮蓝色文字，游戏包独有）game_pack.info.safe_mode.*（on使用灰色，off.*使用亮红色）
-  (空一行）
-*_pack.info.subtitle.description（黄色文字）
-[后面接包简介]
+```jsonc
+{
+  // ============================================================
+  //  必填基础信息
+  // ============================================================
+  "mod_id": "id",                           // 模组唯一ID，由用户自行定义
+  "schema_version": 1,                      // 配置版本，必须等于当前宿主要求
+  "type": "game",                           // 包类型：game / screensaver
+  "version": {                              // 展示版本号
+		"type": "i18n",                         // i18n 或 text，也可以直接传递一个字符串，"..."等价于{"type": "text", "text": "..."}
+		"path": "display.json",                 // i18n 时必填：相对于 assets/language/[language_code]/ 的路径
+		"key": "title",                         // i18n 时必填：匹配键
+		"callback": "Title",                    // i18n 时必填：回退值
+		"text": "Title"                         // text 时必填：直接文本（i18n 时忽略）
+	},                       
+  "version_code": 1,                        // 版本真值，正整数，必须递增（当前版本无社区，仅作为保留字段，实际上并不影响包加载）
 
+  // ============================================================
+  //  API 版本支持（区间闭合）
+  // ============================================================
+  "api": {
+    "min": 1,                               // 最小版本，必须 ≤ max
+    "max": 2                                 // 最大版本，必须 ≥ min
+  },
 
-操作：
-Q/E翻页
-↑/↓切换选项
-Esc返回/推出搜索
-Enter切换启用状态/提交
-D开启或关闭Debug模式
-J跳页
-L切换详细/简表
-S开启/关闭当前包的安全模式
-Z切换排序
-X切换顺序
-S搜索
+  // ============================================================
+  //  入口脚本（相对于包 scripts/ 目录）
+  // ============================================================
+  "entry": "init.lua",
 
-safe_mode_warning.description （使用默认颜色即可）
-(空一行)
-safe_mode_warning.no （使用亮绿色文字）
-safe_mode_warning.yes.temporary[时间safe_mode_warning.second] （使用亮红色文字）
-safe_mode_warning.yes.permanent[时间safe_mode_warning.second]（使用亮红色文字）
+  // ============================================================
+  //  显示信息
+  // ============================================================
+  "display": {
+    // ----- 标题 -----
+    "title": {
+      "type": "i18n",                       // i18n 或 text，也可以直接传递一个字符串，"..."等价于{"type": "text", "text": "..."}
+      "path": "display.json",               // i18n 时必填：相对于 assets/language/[language_code]/ 的路径
+      "key": "title",                       // i18n 时必填：匹配键
+      "callback": "Title",                  // i18n 时必填：回退值
+      "text": "Title"                       // text 时必填：直接文本（i18n 时忽略）
+    },
+    // ----- 简介 -----
+    "description": {
+      "type": "i18n",
+      "path": "display.json",
+      "key": "description",
+      "callback": "Description",
+      "text": "Description"
+    },
+    // ----- 作者 -----
+    "author": {
+      "type": "i18n",
+      "path": "display.json",
+      "key": "author",
+      "callback": "Author",
+      "text": "Author"
+    },
+    // ----- 图标（选填，默认使用宿主内置）-----
+    "icon": {
+      "type": "image",                      // image 或 text
+      "path": "path"                        // 相对于包的 assets/ 路径
+    },
+    // ----- 横幅（选填，默认使用宿主内置）-----
+    "banner": {
+      "type": "image",                      // image 或 text
+      "path": "path"                        // 相对于包的 assets/ 路径
+    }
+  },
 
-safe_mode_warning.description除了主动换行以外，还需要将自动换行限制在两侧距离终端距离各16格（即总宽度-16）
-然后这上面的所有内容均左对齐（包括换行）
-safe_mode_warning.yes.*在一开始为灰色（也就是正常页面具有的hint灰色，注意这是自定义色），temporary为倒计时3秒，permanent为倒计时5秒，倒计时结束后变为指定的亮红色
-操作：
-使用那两个：1. 禁用action map入队。2. 开启原始按键流入队。
-只有1对应临时关闭safe_mode
-只有2对应永久关闭safe_mode
-其它所有按键均指向取消
-但是action_map还是要写
-1
-2
-Esc
-同时包含对应的鼠标事件
-这个界面没有hint
+  // ============================================================
+  //  运行配置
+  // ============================================================
+  "runtime": {
+    "min_width": 60,                        // 最小宽度，0 表示不限制
+    "min_height": 20                        // 最小高度，0 表示不限制
+  },
 
-你先阅读一下文本json，然后依旧和之前一样先写在那个临时的python文件里，我确保你明白我的布局
+  // ============================================================
+  //  游戏包专属配置，type为game时必填
+  // ============================================================
+  "game": {
+    // ----- 游戏名称 -----
+    "name": {
+      "type": "i18n",
+      "path": "display.json",
+      "key": "game_name",
+      "callback": "Minefield",
+      "text": "Minefield"
+    },
+    // ----- 游戏详情 -----
+    "detail": {
+      "type": "i18n",
+      "path": "display.json",
+      "key": "game_detail",
+      "callback": "A full-featured minesweeper...",
+      "text": "A full-featured minesweeper..."
+    },
 
-我已将中文的safe_mode_warning.description改为safe_mode_warning.description.one（按照这个版本）
-然后应当是 总宽度-32，这是我的问题
-然后这个倒计时属于拼接，用中文举例
-[1]关闭（仅本次）[3秒]
-此时 [1]关闭（仅本次） 为灰色，[3秒]种[]为原始颜色，而里面的3秒为亮红色
-结束后
-[1]关闭（仅本次）
-此时 [1]关闭（仅本次） 变为亮红色，后面的计时消失不显示
-对应的鼠标事件，
-好的，可以开始依照现在的版本制作
-优先级
-终端尺寸警告 > 安全模式关闭警告 = 语言重加载进度条
-=的含义为谁先入栈谁在上
+    // ----- 功能开关 -----
+    "high_privilege": false,                // 【选填，默认 false】是否需要高权限（关闭安全模式），仅作为提示，并不影响实际使用
+    "truecolor": false,                     // 【选填，默认 false】是否需要真彩支持，仅作为提示，并不影响实际使用
+    "mouse": false,                         // 【选填，默认 false】是否需要鼠标操作，仅作为提示，并不影响实际使用
+    "target_fps": 30,                       // 【选填，默认 60】目标帧率：30/60/120
+    "save": true,                           // 【选填，默认 false】是否支持存档
+    
+    // ----- 支持语言 -----
+    "language": [zh_cn, en_us, ...]         // 填写语言代码，用于表示支持哪些语言，仅作为提示，并不影响实际使用
+
+    // ----- 最佳纪录配置（选填）-----
+    "score": { 
+      "enabled": true,                      // 【选填，默认 false】是否启用最佳纪录
+      "empty_text": {                       // 【选填，默认程序内置】无纪录时显示的占位文本
+	      "type": "i18n",
+	      "path": "display.json",
+	      "key": "description",
+	      "callback": "Description",
+	      "text": "Description"
+	    },       
+    },
+
+    // ----- 按键注册（动作可任意扩展）-----
+    "actions": {
+      "move_up": {                          // 动作语义名（可自定义）
+        "description": {                    // 动作描述（用于按键修改界面展示）
+          "type": "i18n",
+          "path": "display.json",
+          "key": "action_move_up",
+          "callback": "Move cursor up",
+          "text": "Move cursor up"
+        },
+        "keys": [                           // 键位数组（数组至多 2 个元素，多出来的取前两个）
+          ["w"],                            // 主键（数组至多 2 个元素，多出来的取前两个）
+          ["up"]                            // 备选键（数组至多 2 个元素，多出来的取前两个）
+        ]
+      }
+      // 可继续添加 ...
+    }
+  }
+}
+```
+
+# 屏保包
+
+```jsonc
+{
+  // ============================================================
+  //  必填基础信息
+  // ============================================================
+  "mod_id": "id",                           // 模组唯一ID，由用户自行定义
+  "schema_version": 1,                      // 配置版本，必须等于当前宿主要求
+  "type": "screensaver",                    // 包类型：game / screensaver
+  "version": {                              // 展示版本号
+    "type": "i18n",                         // i18n 或 text，也可以直接传递一个字符串，"..."等价于{"type": "text", "text": "..."}
+    "path": "display.json",                 // i18n 时必填：相对于 assets/language/[language_code]/ 的路径
+    "key": "version",                       // i18n 时必填：匹配键
+    "callback": "1.0.0",                    // i18n 时必填：回退值
+    "text": "1.0.0"                         // text 时必填：直接文本（i18n 时忽略）
+  },
+  "version_code": 1,                        // 版本真值，正整数，必须递增（当前版本无社区，仅作为保留字段，实际上并不影响包加载）
+
+  // ============================================================
+  //  API 版本支持（区间闭合）
+  // ============================================================
+  "api": {
+    "min": 1,                               // 最小版本，必须 ≤ max
+    "max": 2                                 // 最大版本，必须 ≥ min
+  },
+
+  // ============================================================
+  //  入口脚本（相对于包 scripts/ 目录）
+  // ============================================================
+  "entry": "init.lua",
+
+  // ============================================================
+  //  显示信息
+  // ============================================================
+  "display": {
+    // ----- 标题 -----
+    "title": {
+      "type": "i18n",                       // i18n 或 text，也可以直接传递一个字符串，"..."等价于{"type": "text", "text": "..."}
+      "path": "display.json",               // i18n 时必填：相对于 assets/language/[language_code]/ 的路径
+      "key": "title",                       // i18n 时必填：匹配键
+      "callback": "My Screensaver Pack",    // i18n 时必填：回退值
+      "text": "My Screensaver Pack"         // text 时必填：直接文本（i18n 时忽略）
+    },
+    // ----- 简介 -----
+    "description": {
+      "type": "i18n",
+      "path": "display.json",
+      "key": "description",
+      "callback": "A collection of classic terminal screensavers.",
+      "text": "A collection of classic terminal screensavers."
+    },
+    // ----- 作者 -----
+    "author": {
+      "type": "i18n",
+      "path": "display.json",
+      "key": "author",
+      "callback": "Alex",
+      "text": "Alex"
+    },
+    // ----- 图标（选填，默认使用宿主内置）-----
+    "icon": {
+      "type": "image",                      // image 或 text
+      "path": "pack_icon.png"               // 相对于包的 assets/ 路径
+    },
+    // ----- 横幅（选填，默认使用宿主内置）-----
+    "banner": {
+      "type": "image",                      // image 或 text
+      "path": "pack_banner.png"             // 相对于包的 assets/ 路径
+    }
+  },
+
+  // ============================================================
+  //  运行配置
+  // ============================================================
+  "runtime": {
+    "min_width": 60,                        // 最小宽度，0 表示不限制
+    "min_height": 20                        // 最小高度，0 表示不限制
+  },
+
+  // ============================================================
+  //  屏保包专属配置，type 为 screensaver 时必填
+  // ============================================================
+  "screensaver": {
+    // ----- 屏保名称 -----
+    "name": {
+      "type": "i18n",
+      "path": "display.json",
+      "key": "screensaver_name",
+      "callback": "Minefield",
+      "text": "Minefield"
+    },
+    // ----- 快捷指令（用于快捷启动）-----
+    "command": "mind",                      // 【必填】快捷指令：字符串
+
+    // ----- 功能开关 -----
+    "truecolor": false,                     // 【选填，默认 false】是否需要真彩支持，仅作为提示，并不影响实际使用
+  }
+}
+```
+2. 优化完字段后，注意到游戏添加了一个新的字段 `game.language` ，传递一个数组，里面填写语言代码字符串（注意，是语言代码），然后系统会根据当前玩家选择语言做出提醒，这个字段实际上只作为一个提示，不支持玩家的语言也不会影响游戏的正常启动。
+	提示字段位于game_list.json的game_list.info.language.error，其展示位置位于如第一张图所示的位置，然后在模组包列表的右侧信息部分，在配置信息额外添加一行语言支持，使用game_pack.json中的game_pack.info.language，和game_pack.info.language.not_support（红色）、game_pack.info.language.support（绿色），遍历数组后得出，其展示如第二张图所示。
+3. 正式加入继续游戏逻辑，首先优化首页的”继续游戏“这个选项，如果当前继续游戏槽位没有数据，则该选项为灰色，且不可选中、交互、聚焦；若当前存在一个游戏，则会展示”继续游戏-游戏名“，游戏名限制最多6个字符宽度，超出显示...，会自动锚定相对应的游戏名字（注意i18n扫描），然后继续游戏，现在哪怕是继续游戏可以启动脚本，传递的依旧是new而且没有continue_data数据，正式加入相关ctx和继续游戏逻辑
+4. 添加新的覆盖屏：覆盖存档提示。触发条件：当前继续游戏有存档数据，但是用户开启了新游戏，在正式进入游戏前提示。前提条件：我们的继续游戏数据会被新游戏无条件删除和覆盖，哪怕是当前游戏没有存档功能，也会直接删除继续游戏的数据，直接置空即可。
+	布局：上title，中间提示和操作，操作：Enter开始，Esc返回。
+	18n：cover_continue.json。相关颜色具体布局参考其他的警告页面即可。
+5. 如第三张和第四张图所示，当前右侧详细信息的滑动框会在下面的操作提示两行时显示出超出的内容，说明滑动框的高度没有随着实际占用高度变化，修复一下，该bug包含游戏包和屏保包两个界面。

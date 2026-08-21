@@ -23,7 +23,7 @@ pub use events::{
   translate_hyperlink_event, translate_markdown_event, translate_repeat_timer_event,
   translate_scroll_box_event, translate_text_input_event, translate_timer_event,
 };
-pub use game::{GameService, GameStopData, LuaSessionDiagnostics};
+pub use game::{GameService, LuaSessionDiagnostics};
 pub use object_pool::LuaObjectPool;
 pub use policy::{LuaBudgetKind, LuaExecutionBudget, LuaPolicy};
 pub use screensaver::ScreensaverService;

@@ -20,6 +20,7 @@
     "truecolor": false,
     "target_fps": 30,
     "save": true,
+    "language": ["en_us"],
     "score": { "enabled": true, "empty_text": "No probe run yet" },
     "actions": {
       "write_probe": { "description": "Write the Safe Mode probe", "keys": [["p"]] },

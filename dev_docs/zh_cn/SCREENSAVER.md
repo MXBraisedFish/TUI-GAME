@@ -227,7 +227,7 @@ end
 
 ## 入口脚本规范
 
-当前 Lua Runtime 要求屏保入口实现 `Init(ctx)`、`HandleEvent(event)`、`Update(dt)`、`UpdateFrame(dt, alpha)`、`Render(draw)`。
+当前 Lua Runtime 要求屏保入口实现 `Init(ctx)`、`HandleEvent(event)`、`Update(dt)`、`UpdateFrame(dt, alpha)`、`Render()`。
 
 屏保不注册保存或主动退出能力。屏保激活时，键盘动作和鼠标输入只供宿主全局按键处理，不会进入游戏或屏保 Session；窗口大小和聚焦变化会同时投递给两者。完整协议详见 [Lua Runtime 协议](LUA_RUNTIME.md)。
 

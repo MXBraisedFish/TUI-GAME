@@ -15,7 +15,7 @@
     action = "jump",
     state = "pressed",
   },
-}
+} 
 ```
 
 | 字段 | 类型 | 必定存在 | 作用 |

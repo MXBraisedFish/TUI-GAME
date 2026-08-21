@@ -15,7 +15,7 @@ pub(super) fn apply_home_command(
       let Some(slot) = services.storage.continue_game_save() else {
         return;
       };
-      start_game(slot.package, Some(slot.data), services, world);
+      start_game(slot.package, Some(slot.data), false, services, world);
     }
     HomeUiCommand::OpenSettings => world.state.enter_ui_node(UiNodeState::settings()),
     HomeUiCommand::OpenAbout => world.state.enter_ui_node(UiNodeState::input_demo()),
@@ -47,7 +47,13 @@ pub(super) fn apply_game_list_command(
       game_list_ui.submit_jump(&mut services.text_input, value);
     }
     GameListCommand::Confirm { package_id } => {
-      start_game(package_id, None, services, world);
+      if services.storage.continue_game_save().is_some() {
+        world.pending_new_game = Some(package_id);
+        world.state.push_cover_continue_overlay();
+        load_cover_continue_action_map(services);
+      } else {
+        start_game(package_id, None, false, services, world);
+      }
     }
   }
 }
@@ -55,16 +61,21 @@ pub(super) fn apply_game_list_command(
 fn start_game(
   package_id: crate::host_engine::services::PackageId,
   continue_data: Option<serde_json::Value>,
+  clear_continue_before_start: bool,
   services: &mut EngineServices,
   world: &mut RuntimeWorld,
-) {
+) -> bool {
+  let continuing = continue_data.is_some();
   let Some(package) = services.package.find_by_id(&package_id) else {
     log_package_start_error(
       services,
       &package_id,
       "game package was not found".to_string(),
     );
-    return;
+    if continuing {
+      let _ = services.storage.clear_continue_game_save(&mut services.log);
+    }
+    return false;
   };
   let Some(game) = package.game.as_ref() else {
     log_package_start_error(
@@ -72,7 +83,10 @@ fn start_game(
       &package.id,
       "game package has no game configuration".to_string(),
     );
-    return;
+    if continuing {
+      let _ = services.storage.clear_continue_game_save(&mut services.log);
+    }
+    return false;
   };
   if continue_data.is_some() && !game.save {
     services.log.warn_package(
@@ -80,7 +94,8 @@ fn start_game(
       LogSource::Lua,
       "Continue slot was provided for a game without save support",
     );
-    return;
+    let _ = services.storage.clear_continue_game_save(&mut services.log);
+    return false;
   }
   let entry_path = match services.package.validate_for_launch(&package) {
     Ok(path) => path,
@@ -90,7 +105,10 @@ fn start_game(
         &package.id,
         format!("game entry resolution failed: {error}"),
       );
-      return;
+      if continuing {
+        let _ = services.storage.clear_continue_game_save(&mut services.log);
+      }
+      return false;
     }
   };
   let entry = services
@@ -122,7 +140,10 @@ fn start_game(
       &package.id,
       format!("game user action map validation failed: {error}"),
     );
-    return;
+    if continuing {
+      let _ = services.storage.clear_continue_game_save(&mut services.log);
+    }
+    return false;
   }
   let action_entries = key_actions
     .iter()
@@ -140,7 +161,10 @@ fn start_game(
       &package.id,
       format!("game action map validation failed: {error:?}"),
     );
-    return;
+    if continuing {
+      let _ = services.storage.clear_continue_game_save(&mut services.log);
+    }
+    return false;
   }
   let api = crate::host_engine::services::LuaApiConfig {
     debug_enabled,
@@ -185,7 +209,10 @@ fn start_game(
       } else {
         log_package_start_error(services, &package.id, message);
       }
-      return;
+      if continuing {
+        let _ = services.storage.clear_continue_game_save(&mut services.log);
+      }
+      return false;
     }
   };
   let return_host = world
@@ -197,8 +224,27 @@ fn start_game(
     if let Some(id) = session_log {
       services.log.close_session(id);
     }
-    return;
+    if continuing {
+      let _ = services.storage.clear_continue_game_save(&mut services.log);
+    }
+    return false;
   };
+  if clear_continue_before_start
+    && services
+      .storage
+      .clear_continue_game_save(&mut services.log)
+      .is_err()
+  {
+    if let Some(id) = session_log {
+      services.log.close_session(id);
+    }
+    log_package_start_error(
+      services,
+      &package.id,
+      "failed to clear the previous continue slot before starting a new game".to_string(),
+    );
+    return false;
+  }
   if let Some(previous) = services.game.start(
     session,
     package.id.clone(),
@@ -226,6 +272,39 @@ fn start_game(
   }
   services.canvas.request_render();
   services.presenter.request_render();
+  true
+}
+
+pub(super) fn apply_cover_continue_command(
+  command: CoverContinueCommand,
+  cover_continue_ui: &mut CoverContinueUi,
+  services: &mut EngineServices,
+  world: &mut RuntimeWorld,
+) {
+  match command {
+    CoverContinueCommand::Start => {
+      let Some(package_id) = world.pending_new_game.take() else {
+        let _ = world.state.remove_overlay_kind(OverlayKind::CoverContinue);
+        cover_continue_ui.reset();
+        return;
+      };
+      let started = start_game(package_id, None, true, services, world);
+      if started {
+        let _ = world.state.remove_overlay_kind(OverlayKind::CoverContinue);
+        cover_continue_ui.reset();
+      } else {
+        let _ = world.state.remove_overlay_kind(OverlayKind::CoverContinue);
+        cover_continue_ui.reset();
+        load_game_list_action_map(services);
+      }
+    }
+    CoverContinueCommand::Back => {
+      world.pending_new_game = None;
+      let _ = world.state.remove_overlay_kind(OverlayKind::CoverContinue);
+      cover_continue_ui.reset();
+      load_game_list_action_map(services);
+    }
+  }
 }
 
 pub(super) fn log_package_start_error(
@@ -964,6 +1043,13 @@ pub(super) fn apply_security_settings_command(
     SecuritySettingsCommand::OpenDetails => {
       world.state.enter_ui_node(UiNodeState::security_details());
     }
+    SecuritySettingsCommand::ResetTerminal => {
+      let success = services
+        .storage
+        .reset_terminal_profile(&mut services.log)
+        .is_ok();
+      show_security_reset_popup(services, success, true);
+    }
     SecuritySettingsCommand::ResetStatus
     | SecuritySettingsCommand::ResetDebug
     | SecuritySettingsCommand::ResetSafeMode => {
@@ -1007,7 +1093,7 @@ pub(super) fn apply_security_settings_command(
         .storage
         .write_package_state(&profile, &mut services.log)
         .is_ok();
-      security_uis.settings.set_reset_result(success);
+      show_security_reset_popup(services, success, false);
     }
     SecuritySettingsCommand::SetDefaultStatus(enabled) => {
       update_package_defaults(security_uis, services, |defaults| {
@@ -1052,8 +1138,45 @@ fn update_package_defaults(
       profile.defaults.safe_mode,
     );
   } else {
-    security_uis.settings.set_reset_result(false);
+    show_security_reset_popup(services, false, false);
   }
+}
+
+fn show_security_reset_popup(services: &mut EngineServices, success: bool, terminal: bool) {
+  let mut text = services.i18n.get_runtime_text(
+    "security_settings",
+    if success {
+      "security_settings.reset.success"
+    } else {
+      "security_settings.reset.fail"
+    },
+  );
+  if success && terminal {
+    text.push_str(&services.i18n.get_runtime_text(
+      "security_settings",
+      "security_settings.reset.terminal.success",
+    ));
+  }
+  services.popup.show(PopupRequest {
+    text,
+    color: if success {
+      TextColor::Rgb {
+        r: 95,
+        g: 215,
+        b: 105,
+      }
+    } else {
+      TextColor::Rgb {
+        r: 255,
+        g: 76,
+        b: 76,
+      }
+    },
+    duration: Duration::from_secs(3),
+    dismiss_on: vec![PopupDismissEvent::UiInput],
+    replaceable: true,
+    persistent: false,
+  });
 }
 
 pub(super) fn apply_security_details_command(
@@ -1357,7 +1480,7 @@ pub(super) fn apply_safe_mode_warning_command(
           profile.defaults.safe_mode,
         );
       } else {
-        security_uis.settings.set_reset_result(false);
+        show_security_reset_popup(services, false, false);
       }
     }
     world.safe_mode_warning_all = false;
@@ -1440,6 +1563,22 @@ pub(super) fn apply_language_select_command(
     LanguageSelectCommand::Confirm(code) => {
       language_loading.pending_language = Some(code);
     }
+    LanguageSelectCommand::ConfirmAndApply(code) => {
+      language_loading.pending_language = None;
+      let enter_terminal_check_after_finish = !services
+        .storage
+        .is_terminal_profile_complete(&mut services.log);
+      world.state.pop_ui_node();
+      start_language_loading(
+        &code,
+        enter_terminal_check_after_finish,
+        language_loading,
+        language_loading_ui,
+        services,
+        world,
+      );
+      reset_language_select_ui(language_select_ui, services);
+    }
     LanguageSelectCommand::Back => {
       let pending_language = language_loading.pending_language.take();
       let enter_terminal_check_after_finish = !services
@@ -1462,6 +1601,10 @@ pub(super) fn apply_language_select_command(
       } else {
         reset_language_select_ui(language_select_ui, services);
       }
+    }
+    LanguageSelectCommand::Exit => {
+      language_loading.pending_language = None;
+      world.state.request_shutdown();
     }
   }
 }

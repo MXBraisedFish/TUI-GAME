@@ -8,6 +8,13 @@ use crate::host_engine::services::{LogService, LogSource, PackageId, PackageSour
 
 const MAX_GAME_SAVE_PROFILE_BYTES: u64 = 16 * 1024 * 1024;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GameSaveCapabilities {
+  pub package_id: PackageId,
+  pub save_enabled: bool,
+  pub score_enabled: bool,
+}
+
 #[derive(Clone, Debug, Serialize, PartialEq)]
 pub struct ContinueGameSave {
   pub package: PackageId,
@@ -173,6 +180,52 @@ impl StorageService {
     self.write_game_save_profile(profile, log)
   }
 
+  pub fn clear_continue_game_save(&self, log: &mut LogService) -> io::Result<()> {
+    let mut profile = self.game_save.borrow().clone();
+    if profile.continue_slot.is_none() {
+      return Ok(());
+    }
+    profile.continue_slot = None;
+    self.write_game_save_profile(profile, log)
+  }
+
+  /// Reconciles save capabilities after a successful package scan.
+  ///
+  /// A missing or no-longer-saveable continue target cannot be launched and is
+  /// removed. Best records are removed only for installed packages that now
+  /// explicitly disable score support; temporarily missing packages retain
+  /// their records.
+  pub fn reconcile_game_save_capabilities(
+    &self,
+    games: &[GameSaveCapabilities],
+    log: &mut LogService,
+  ) -> io::Result<()> {
+    let mut profile = self.game_save.borrow().clone();
+    let original = profile.clone();
+
+    if let Some(slot) = profile.continue_slot.as_ref() {
+      let can_continue = games
+        .iter()
+        .find(|game| game.package_id == slot.package)
+        .is_some_and(|game| game.save_enabled);
+      if !can_continue {
+        profile.continue_slot = None;
+      }
+    }
+
+    for game in games {
+      if !game.score_enabled {
+        profile.best.remove(&game.package_id.storage_key());
+      }
+    }
+
+    if profile == original {
+      Ok(())
+    } else {
+      self.write_game_save_profile(profile, log)
+    }
+  }
+
   pub fn write_best_game_save(
     &self,
     package_id: &PackageId,
@@ -279,6 +332,55 @@ mod tests {
     let mod_package = PackageId::new(PackageSource::Mod, PackageType::Game, "game.a").unwrap();
     assert!(storage.best_game_save(&mod_package).is_none());
 
+    storage.clear_continue_game_save(&mut log).unwrap();
+    assert!(storage.continue_game_save().is_none());
+    assert_eq!(
+      storage.best_game_save(&official).unwrap().best_string,
+      "100"
+    );
+
+    fs::remove_dir_all(root).unwrap();
+  }
+
+  #[test]
+  fn package_capability_changes_remove_unsupported_save_data() {
+    let root = std::env::temp_dir().join(format!(
+      "tui-game-save-capability-profile-{}",
+      std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(root.join("data/profiles")).unwrap();
+    let storage = StorageService::from_root_for_test(root.clone());
+    let mut log = LogService::new();
+    let id = PackageId::new(PackageSource::Mod, PackageType::Game, "game.changed").unwrap();
+
+    storage
+      .write_continue_game_save(&id, serde_json::json!({"level": 1}), &mut log)
+      .unwrap();
+    storage
+      .write_best_game_save(
+        &id,
+        BestGameSave {
+          best_string: "100".to_string(),
+          data: serde_json::json!({"best_string": "100"}),
+        },
+        &mut log,
+      )
+      .unwrap();
+
+    storage
+      .reconcile_game_save_capabilities(
+        &[GameSaveCapabilities {
+          package_id: id.clone(),
+          save_enabled: false,
+          score_enabled: false,
+        }],
+        &mut log,
+      )
+      .unwrap();
+
+    assert!(storage.continue_game_save().is_none());
+    assert!(storage.best_game_save(&id).is_none());
     fs::remove_dir_all(root).unwrap();
   }
 }

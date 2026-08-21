@@ -26,15 +26,6 @@ pub enum GameSessionState {
   Faulted,
 }
 
-#[derive(Clone, Debug, Default)]
-pub struct GameStopData {
-  pub package: Option<PackageId>,
-  pub game: Option<JsonValue>,
-  pub best: Option<JsonValue>,
-  pub save_errors: Vec<LuaSessionError>,
-  pub log_session: Option<LogSessionId>,
-}
-
 /// 唯一游戏 Session 的宿主生命周期。
 pub struct GameService {
   session: Option<LuaSession>,
@@ -73,7 +64,7 @@ impl GameService {
     save_best_enabled: bool,
     log_session: Option<LogSessionId>,
   ) -> Option<LogSessionId> {
-    let previous_log = self.stop(false).log_session;
+    let previous_log = self.stop();
     self.generation = self.generation.wrapping_add(1).max(1);
     self.package = Some(package);
     self.target_fps = Some(target_fps);
@@ -86,25 +77,10 @@ impl GameService {
     previous_log
   }
 
-  pub fn stop(&mut self, save: bool) -> GameStopData {
-    let mut result = GameStopData::default();
-    result.package = self.package.take();
-    result.log_session = self.log_session.take();
+  pub fn stop(&mut self) -> Option<LogSessionId> {
+    self.package = None;
+    let log_session = self.log_session.take();
     if let Some(mut session) = self.session.take() {
-      if save && session.state() != LuaSessionState::Faulted {
-        if self.save_game_enabled {
-          match session.save_game() {
-            Ok(value) => result.game = value,
-            Err(error) => result.save_errors.push(error),
-          }
-        }
-        if self.save_best_enabled {
-          match session.save_best() {
-            Ok(value) => result.best = value,
-            Err(error) => result.save_errors.push(error),
-          }
-        }
-      }
       session.stop();
     }
     self.target_fps = None;
@@ -112,7 +88,7 @@ impl GameService {
     self.save_game_enabled = false;
     self.save_best_enabled = false;
     self.accumulator = Duration::ZERO;
-    result
+    log_session
   }
 
   pub fn log_session(&self) -> Option<LogSessionId> {
@@ -215,11 +191,11 @@ impl GameService {
     Ok(updates)
   }
 
-  pub fn render(&mut self, size: Size) -> Result<(), LuaSessionError> {
+  pub fn render(&mut self) -> Result<(), LuaSessionError> {
     let Some(session) = self.session.as_mut() else {
       return Ok(());
     };
-    session.render(size)
+    session.render()
   }
 
   pub fn take_host_commands(&mut self) -> Vec<LuaHostCommand> {
@@ -297,7 +273,7 @@ mod tests {
         function HandleEvent(event) end
         function Update(dt) updates = updates + 1 end
         function UpdateFrame(dt, alpha) frames = frames + 1 end
-        function Render(draw) end
+        function Render() end
         function SaveGame() return { updates = updates, frames = frames } end
       "#,
     )
@@ -352,9 +328,10 @@ mod tests {
         .unwrap(),
       1
     );
-    let stop = service.stop(true);
-    assert_eq!(stop.game.as_ref().unwrap()["updates"], 9);
-    assert_eq!(stop.game.as_ref().unwrap()["frames"], 2);
+    let save = service.save_game().unwrap().unwrap();
+    assert_eq!(save["updates"], 9);
+    assert_eq!(save["frames"], 2);
+    service.stop();
   }
 
   #[test]
@@ -375,7 +352,7 @@ mod tests {
     );
     let first = service.session_token().unwrap();
     assert!(service.has_objects());
-    service.stop(false);
+    service.stop();
     assert!(service.session_token().is_none());
     assert!(!service.has_objects());
 

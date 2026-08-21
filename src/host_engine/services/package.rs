@@ -29,11 +29,15 @@ const MAX_PACKAGE_MANIFEST_BYTES: usize = 1024 * 1024;
 const MAX_PACKAGE_TEXT_BYTES: usize = 1024 * 1024;
 const MAX_PACKAGE_I18N_BYTES: usize = 1024 * 1024;
 
-/// 包文本字段：普通字符串直接使用，@ 开头的字符串在扫描时解析包内 i18n。
+/// 包文本字段：普通字符串直接使用，对象形式明确声明纯文本或包内 i18n。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PackageText {
   Literal(String),
-  I18n(String),
+  I18n {
+    path: String,
+    key: String,
+    callback: String,
+  },
 }
 
 /// 包完整信息
@@ -83,6 +87,7 @@ pub struct PackageListEntry {
   pub mouse_required: bool,
   pub truecolor_required: bool,
   pub high_privilege_required: bool,
+  pub supported_languages: Vec<String>,
   pub score_enabled: bool,
   pub score_empty_text: String,
   pub best_string: Option<String>,
@@ -135,6 +140,7 @@ pub struct GameConfig {
   pub truecolor: bool,
   pub target_fps: u32,
   pub save: bool,
+  pub supported_languages: Vec<String>,
   pub score: Option<ScoreConfig>,
   pub actions: HashMap<String, ActionConfig>,
   pub action_order: Vec<String>,
@@ -572,14 +578,14 @@ fn log_package_event(log: &mut LogService, event: PackageEvent) {
       package_id,
       message,
     } => {
-      log.warn_package(&package_id, LogSource::Pack, message);
+      log.warn_package(&package_id, LogSource::Pack, message.clone());
       let location = log
         .package_log_path(&package_id)
         .map(|path| path.display().to_string())
         .unwrap_or_else(|_| "the package log".to_string());
       log.warn(
         LogSource::Pack,
-        format!("Package '{package_id}' was rejected; see '{location}'"),
+        format!("Package '{package_id}' was rejected: {message}; details: '{location}'"),
       );
     }
     PackageEvent::ScanStarted { total } => log.info(
@@ -899,6 +905,11 @@ fn package_list_entry(info: PackageInfo) -> PackageListEntry {
       .as_ref()
       .is_some_and(|screensaver| screensaver.truecolor);
   let high_privilege_required = info.game.as_ref().is_some_and(|game| game.high_privilege);
+  let supported_languages = info
+    .game
+    .as_ref()
+    .map(|game| game.supported_languages.clone())
+    .unwrap_or_default();
   let key_actions: HashMap<String, Vec<Vec<String>>> = info
     .game
     .as_ref()
@@ -966,6 +977,7 @@ fn package_list_entry(info: PackageInfo) -> PackageListEntry {
     mouse_required,
     truecolor_required,
     high_privilege_required,
+    supported_languages,
     score_enabled,
     score_empty_text,
     best_string: None,
@@ -1162,8 +1174,8 @@ fn read_package(
     .map_err(|error| format!("Cannot read package.json: {error}"))?;
   let mut watched_files = vec![json_path.clone()];
 
-  let raw: RawPackageJson =
-    serde_json::from_str(&content).map_err(|e| format!("Invalid JSON: {}", e))?;
+  let raw: RawPackageJson = serde_json::from_str(&content)
+    .map_err(|error| format!("Invalid package.json schema: {error}"))?;
 
   if raw.schema_version != PACKAGE_MANIFEST_VERSION {
     return Err(format!(
@@ -1206,71 +1218,93 @@ fn read_package(
 
   let entry = resolve_entry(dir, &raw.entry)?;
 
-  let display = raw.display.unwrap_or_default();
-  let title = resolve_package_text(dir, display.title, request, &mut watched_files);
+  let display = raw.display;
+  let title = resolve_package_text(
+    dir,
+    &display.title,
+    request,
+    &mut watched_files,
+    "display.title",
+  )?;
   if title.trim().is_empty() {
     return Err("display.title is empty".into());
   }
-  let version = raw
-    .version
-    .map(|value| resolve_package_text(dir, value, request, &mut watched_files))
-    .unwrap_or_default();
+  let version = resolve_package_text(dir, &raw.version, request, &mut watched_files, "version")?;
+  if version.trim().is_empty() {
+    return Err("version is empty".into());
+  }
 
-  let runtime = raw.runtime.unwrap_or_default();
+  let runtime = raw.runtime;
 
   let game = match pkg_type {
     PackageType::Game => {
       let g = raw.game.ok_or("Missing 'game' config for game type")?;
-      if !VALID_TARGET_FPS.contains(&g.target_fps) {
+      let target_fps = g.target_fps.unwrap_or(60);
+      if !VALID_TARGET_FPS.contains(&target_fps) {
         return Err(format!(
           "target_fps must be one of {:?}, got {}",
-          VALID_TARGET_FPS, g.target_fps
+          VALID_TARGET_FPS, target_fps
         ));
       }
+      let name = resolve_package_text(dir, &g.name, request, &mut watched_files, "game.name")?;
+      if name.trim().is_empty() {
+        return Err("game.name is empty".into());
+      }
+      let detail =
+        resolve_package_text(dir, &g.detail, request, &mut watched_files, "game.detail")?;
+      let supported_languages = normalize_language_codes(&g.language)?;
       let mut actions = HashMap::new();
       let mut action_order = Vec::new();
-      if let Some(raw_actions) = g.actions {
-        let raw_actions = raw_actions
-          .as_object()
-          .ok_or("game.actions must be an object")?;
-        for (name, value) in raw_actions {
-          let a: RawActionConfig = serde_json::from_value(value.clone())
-            .map_err(|error| format!("Invalid game action '{}': {}", name, error))?;
-          action_order.push(name.clone());
-          actions.insert(
-            name.clone(),
-            ActionConfig {
-              description: a
-                .description
-                .map(|value| resolve_package_text(dir, value, request, &mut watched_files))
-                .unwrap_or_default(),
-              keys: normalize_action_keys(name, a.keys)?,
-              lock: a.lock,
-            },
-          );
-        }
+      let raw_actions = g
+        .actions
+        .as_object()
+        .ok_or("game.actions must be an object")?;
+      for (name, value) in raw_actions {
+        let a: RawActionConfig = serde_json::from_value(value.clone())
+          .map_err(|error| format!("Invalid game.actions.{name}: {error}"))?;
+        action_order.push(name.clone());
+        actions.insert(
+          name.clone(),
+          ActionConfig {
+            description: resolve_package_text(
+              dir,
+              &a.description,
+              request,
+              &mut watched_files,
+              &format!("game.actions.{name}.description"),
+            )?,
+            keys: normalize_action_keys(name, a.keys)?,
+            lock: a.lock,
+          },
+        );
       }
       Some(GameConfig {
-        name: g
-          .name
-          .map(|value| resolve_package_text(dir, value, request, &mut watched_files))
-          .unwrap_or_default(),
-        detail: g
-          .detail
-          .map(|value| resolve_package_text(dir, value, request, &mut watched_files))
-          .unwrap_or_default(),
-        high_privilege: g.high_privilege.or(g.write).unwrap_or(false),
+        name,
+        detail,
+        high_privilege: g.high_privilege.unwrap_or(false),
         mouse: g.mouse.unwrap_or(false),
         truecolor: g.truecolor.unwrap_or(false),
-        target_fps: g.target_fps,
+        target_fps,
         save: g.save.unwrap_or(false),
-        score: g.score.map(|s| ScoreConfig {
-          enabled: s.enabled,
-          empty_text: s
-            .empty_text
-            .map(|value| resolve_package_text(dir, value, request, &mut watched_files))
-            .unwrap_or_default(),
-        }),
+        supported_languages,
+        score: g
+          .score
+          .map(|s| {
+            Ok::<_, String>(ScoreConfig {
+              enabled: s.enabled.unwrap_or(false),
+              empty_text: match s.empty_text {
+                Some(value) => resolve_package_text(
+                  dir,
+                  &value,
+                  request,
+                  &mut watched_files,
+                  "game.score.empty_text",
+                )?,
+                None => String::new(),
+              },
+            })
+          })
+          .transpose()?,
         actions,
         action_order,
       })
@@ -1281,13 +1315,23 @@ fn read_package(
   let screensaver = match pkg_type {
     PackageType::Screensaver => {
       let s = raw.screensaver.ok_or("Missing 'screensaver' config")?;
+      let name = resolve_package_text(
+        dir,
+        &s.name,
+        request,
+        &mut watched_files,
+        "screensaver.name",
+      )?;
+      if name.trim().is_empty() {
+        return Err("screensaver.name is empty".into());
+      }
+      if s.command.trim().is_empty() {
+        return Err("screensaver.command is empty".into());
+      }
       Some(ScreensaverConfig {
-        name: s
-          .name
-          .map(|value| resolve_package_text(dir, value, request, &mut watched_files))
-          .unwrap_or_default(),
+        name,
         truecolor: s.truecolor.unwrap_or(false),
-        command: s.command.unwrap_or_default(),
+        command: s.command,
       })
     }
     PackageType::Game => None,
@@ -1306,22 +1350,28 @@ fn read_package(
     entry,
     display: PackageDisplay {
       title,
-      description: display
-        .description
-        .map(|value| resolve_package_text(dir, value, request, &mut watched_files))
-        .unwrap_or_default(),
-      author: display
-        .author
-        .map(|value| resolve_package_text(dir, value, request, &mut watched_files))
-        .unwrap_or_default(),
-      icon: parse_package_asset(dir, &display.icon, AssetShape::Icon, &mut watched_files)
+      description: resolve_package_text(
+        dir,
+        &display.description,
+        request,
+        &mut watched_files,
+        "display.description",
+      )?,
+      author: resolve_package_text(
+        dir,
+        &display.author,
+        request,
+        &mut watched_files,
+        "display.author",
+      )?,
+      icon: parse_package_asset(dir, &display.icon, AssetShape::Icon, &mut watched_files)?
         .unwrap_or_else(default_icon_asset),
-      banner: parse_package_asset(dir, &display.banner, AssetShape::Banner, &mut watched_files)
+      banner: parse_package_asset(dir, &display.banner, AssetShape::Banner, &mut watched_files)?
         .unwrap_or_else(default_banner_asset),
     },
     runtime: PackageRuntime {
-      min_width: runtime.min_width.unwrap_or(0),
-      min_height: runtime.min_height.unwrap_or(0),
+      min_width: runtime.min_width,
+      min_height: runtime.min_height,
     },
     game,
     screensaver,
@@ -1337,13 +1387,9 @@ fn normalize_action_keys(action: &str, keys: Vec<Vec<String>>) -> Result<Vec<Vec
   if action.trim().is_empty() {
     return Err("game action name is empty".to_string());
   }
-  if keys.len() > 2 {
-    return Err(format!(
-      "game action '{action}' contains more than two bindings"
-    ));
-  }
   keys
     .into_iter()
+    .take(2)
     .enumerate()
     .map(|(pattern_index, pattern)| {
       if pattern.is_empty() {
@@ -1351,13 +1397,9 @@ fn normalize_action_keys(action: &str, keys: Vec<Vec<String>>) -> Result<Vec<Vec
           "game action '{action}' key pattern {pattern_index} is empty"
         ));
       }
-      if pattern.len() > 2 {
-        return Err(format!(
-          "game action '{action}' key pattern {pattern_index} contains more than two keys"
-        ));
-      }
       pattern
         .into_iter()
+        .take(2)
         .map(|token| {
           canonical_key_token(&token)
             .ok_or_else(|| format!("game action '{action}' contains unknown key token '{token}'"))
@@ -1405,6 +1447,9 @@ fn validate_loaded_package(package: &PackageInfo) -> Result<(), String> {
       if !VALID_TARGET_FPS.contains(&game.target_fps) {
         return Err(format!("invalid game target_fps {}", game.target_fps));
       }
+      if normalize_language_codes(&game.supported_languages)? != game.supported_languages {
+        return Err("game.language contains non-canonical language codes".to_string());
+      }
       for (action, config) in &game.actions {
         let normalized = normalize_action_keys(action, config.keys.clone())?;
         if normalized != config.keys {
@@ -1415,8 +1460,12 @@ fn validate_loaded_package(package: &PackageInfo) -> Result<(), String> {
       }
     }
     PackageType::Screensaver => {
-      if package.screensaver.is_none() {
-        return Err("screensaver package has no screensaver configuration".to_string());
+      let screensaver = package
+        .screensaver
+        .as_ref()
+        .ok_or("screensaver package has no screensaver configuration")?;
+      if screensaver.command.trim().is_empty() {
+        return Err("screensaver.command is empty".to_string());
       }
       if package.game.is_some() {
         return Err("screensaver package contains game configuration".to_string());
@@ -1506,12 +1555,12 @@ struct RawPackageJson {
   schema_version: u32,
   #[serde(rename = "type")]
   package_type: String,
-  version: Option<String>,
+  version: RawPackageText,
   version_code: u32,
   api: RawApiRange,
   entry: String,
-  display: Option<RawDisplay>,
-  runtime: Option<RawRuntime>,
+  display: RawDisplay,
+  runtime: RawRuntime,
   game: Option<RawGameConfig>,
   screensaver: Option<RawScreensaverConfig>,
 }
@@ -1522,11 +1571,28 @@ struct RawApiRange {
   max: u32,
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Clone, Deserialize)]
+#[serde(untagged)]
+enum RawPackageText {
+  Literal(String),
+  Object(RawPackageTextObject),
+}
+
+#[derive(Clone, Deserialize)]
+struct RawPackageTextObject {
+  #[serde(rename = "type")]
+  text_type: String,
+  text: Option<String>,
+  path: Option<String>,
+  key: Option<String>,
+  callback: Option<String>,
+}
+
+#[derive(Deserialize)]
 struct RawDisplay {
-  title: String,
-  description: Option<String>,
-  author: Option<String>,
+  title: RawPackageText,
+  description: RawPackageText,
+  author: RawPackageText,
   #[serde(default)]
   icon: Option<RawDisplayAsset>,
   #[serde(default)]
@@ -1540,35 +1606,35 @@ struct RawDisplayAsset {
   path: String,
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize)]
 struct RawRuntime {
-  min_width: Option<u32>,
-  min_height: Option<u32>,
+  min_width: u32,
+  min_height: u32,
 }
 
 #[derive(Deserialize)]
 struct RawGameConfig {
-  name: Option<String>,
-  detail: Option<String>,
+  name: RawPackageText,
+  detail: RawPackageText,
   high_privilege: Option<bool>,
-  write: Option<bool>,
   mouse: Option<bool>,
   truecolor: Option<bool>,
-  target_fps: u32,
+  target_fps: Option<u32>,
   save: Option<bool>,
+  language: Vec<String>,
   score: Option<RawScoreConfig>,
-  actions: Option<serde_json::Value>,
+  actions: serde_json::Value,
 }
 
 #[derive(Deserialize)]
 struct RawScoreConfig {
-  enabled: bool,
-  empty_text: Option<String>,
+  enabled: Option<bool>,
+  empty_text: Option<RawPackageText>,
 }
 
 #[derive(Deserialize)]
 struct RawActionConfig {
-  description: Option<String>,
+  description: RawPackageText,
   keys: Vec<Vec<String>>,
   #[serde(default)]
   lock: bool,
@@ -1576,9 +1642,9 @@ struct RawActionConfig {
 
 #[derive(Deserialize)]
 struct RawScreensaverConfig {
-  name: Option<String>,
+  name: RawPackageText,
   truecolor: Option<bool>,
-  command: Option<String>,
+  command: String,
 }
 
 fn parse_package_type(s: &str) -> Result<PackageType, String> {
@@ -1609,27 +1675,48 @@ fn parse_package_asset(
   raw: &Option<RawDisplayAsset>,
   shape: AssetShape,
   watched_files: &mut Vec<PathBuf>,
-) -> Option<PackageAsset> {
-  let raw = raw.as_ref()?;
-  let path = safe_asset_path(&raw.path)?;
+) -> Result<Option<PackageAsset>, String> {
+  let Some(raw) = raw.as_ref() else {
+    return Ok(None);
+  };
+  let path = safe_asset_path(&raw.path)
+    .ok_or_else(|| format!("display asset path '{}' is invalid", raw.path))?;
   let watched_path = package_dir.join("assets").join(&path);
-  match raw.asset_type.as_str() {
+  let asset = match raw.asset_type.as_str() {
     "image" if is_supported_image_path(&path) => {
-      resolve_package_image_path(package_dir, Path::new(&path))?;
+      resolve_package_image_path(package_dir, Path::new(&path))
+        .ok_or_else(|| format!("display image asset '{path}' is missing or unsafe"))?;
       watched_files.push(watched_path);
-      Some(PackageAsset::Image { path })
+      PackageAsset::Image { path }
     }
     "text" if is_supported_text_path(&path) => {
-      let asset_path = resolve_package_file(package_dir, Path::new("assets"), Path::new(&path))?;
+      let asset_path = resolve_package_file(package_dir, Path::new("assets"), Path::new(&path))
+        .ok_or_else(|| format!("display text asset '{path}' is missing or unsafe"))?;
       watched_files.push(watched_path);
-      let content = read_utf8_file_limited(&asset_path, MAX_PACKAGE_TEXT_BYTES).ok()?;
-      Some(PackageAsset::Text {
+      let content = read_utf8_file_limited(&asset_path, MAX_PACKAGE_TEXT_BYTES)
+        .map_err(|error| format!("cannot read display text asset '{path}': {error}"))?;
+      PackageAsset::Text {
         path,
         lines: normalize_asset_text(&content, shape),
-      })
+      }
     }
-    _ => None,
-  }
+    "image" => {
+      return Err(format!(
+        "display image asset '{path}' has an unsupported extension"
+      ));
+    }
+    "text" => {
+      return Err(format!(
+        "display text asset '{path}' must use the .txt extension"
+      ));
+    }
+    other => {
+      return Err(format!(
+        "display asset type '{other}' must be 'image' or 'text'"
+      ));
+    }
+  };
+  Ok(Some(asset))
 }
 
 pub(crate) fn default_icon_lines() -> Vec<String> {
@@ -1855,110 +1942,121 @@ fn fit_line_width(line: &str, width: usize) -> String {
 
 fn resolve_package_text(
   pkg_dir: &Path,
-  value: String,
+  value: &RawPackageText,
   request: &ScanRequest,
   watched_files: &mut Vec<PathBuf>,
-) -> String {
-  match package_text(value) {
-    PackageText::Literal(text) => text,
-    PackageText::I18n(key) => resolve_package_i18n(pkg_dir, &key, request, watched_files),
+  field: &str,
+) -> Result<String, String> {
+  match value {
+    RawPackageText::Literal(text) => Ok(text.clone()),
+    RawPackageText::Object(value) if value.text_type == "text" => value
+      .text
+      .clone()
+      .ok_or_else(|| format!("{field}.text is required when type is 'text'")),
+    RawPackageText::Object(value) if value.text_type == "i18n" => {
+      let path = value
+        .path
+        .as_deref()
+        .ok_or_else(|| format!("{field}.path is required when type is 'i18n'"))?;
+      let path = safe_asset_path(path)
+        .filter(|path| extension_is(path, &["json"]))
+        .ok_or_else(|| format!("{field}.path must be a safe relative .json path"))?;
+      let key = value
+        .key
+        .as_deref()
+        .filter(|key| !key.trim().is_empty())
+        .ok_or_else(|| format!("{field}.key is required when type is 'i18n'"))?;
+      let callback = value
+        .callback
+        .as_deref()
+        .ok_or_else(|| format!("{field}.callback is required when type is 'i18n'"))?;
+      Ok(resolve_package_i18n(
+        pkg_dir,
+        &path,
+        key,
+        callback,
+        request,
+        watched_files,
+      ))
+    }
+    RawPackageText::Object(value) => Err(format!(
+      "{field}.type must be 'text' or 'i18n', got '{}'",
+      value.text_type
+    )),
   }
-}
-
-fn package_text(value: String) -> PackageText {
-  value
-    .strip_prefix('@')
-    .map(|key| PackageText::I18n(key.to_string()))
-    .unwrap_or(PackageText::Literal(value))
 }
 
 fn resolve_package_i18n(
   pkg_dir: &Path,
+  path: &str,
   key: &str,
+  callback: &str,
   request: &ScanRequest,
   watched_files: &mut Vec<PathBuf>,
 ) -> String {
-  push_package_i18n_watch_path(pkg_dir, &request.language_code, key, watched_files);
-  push_package_i18n_watch_path(pkg_dir, "en_us", key, watched_files);
-  load_package_i18n_value(pkg_dir, &request.language_code, key)
-    .or_else(|| load_package_i18n_value(pkg_dir, "en_us", key))
-    .unwrap_or_else(|| {
-      request
-        .missing_template
-        .replace("{value:missing_key}", &format!("@{key}"))
-    })
+  push_package_i18n_watch_path(pkg_dir, &request.language_code, path, watched_files);
+  push_package_i18n_watch_path(pkg_dir, "en_us", path, watched_files);
+  load_package_i18n_value(pkg_dir, &request.language_code, path, key)
+    .or_else(|| load_package_i18n_value(pkg_dir, "en_us", path, key))
+    .unwrap_or_else(|| callback.to_string())
 }
 
 fn push_package_i18n_watch_path(
   pkg_dir: &Path,
   language_code: &str,
-  key: &str,
+  path: &str,
   watched_files: &mut Vec<PathBuf>,
 ) {
-  for (path, _) in package_i18n_paths(pkg_dir, language_code, key) {
-    watched_files.push(path);
+  if safe_path_segment(language_code) {
+    watched_files.push(
+      pkg_dir
+        .join("assets/language")
+        .join(language_code)
+        .join(path),
+    );
   }
 }
 
-fn load_package_i18n_value(pkg_dir: &Path, language_code: &str, key: &str) -> Option<String> {
-  package_i18n_paths(pkg_dir, language_code, key)
-    .into_iter()
-    .find_map(|(path, field)| {
-      let asset_root = pkg_dir.join("assets");
-      let relative = path.strip_prefix(&asset_root).ok()?;
-      let path = resolve_package_file(pkg_dir, Path::new("assets"), relative)?;
-      let content = read_utf8_file_limited(&path, MAX_PACKAGE_I18N_BYTES).ok()?;
-      serde_json::from_str::<HashMap<String, String>>(&content)
-        .ok()?
-        .get(&field)
-        .cloned()
-    })
+fn load_package_i18n_value(
+  pkg_dir: &Path,
+  language_code: &str,
+  relative_path: &str,
+  key: &str,
+) -> Option<String> {
+  if !safe_path_segment(language_code) {
+    return None;
+  }
+  let relative = Path::new("language")
+    .join(language_code)
+    .join(relative_path);
+  let path = resolve_package_file(pkg_dir, Path::new("assets"), &relative)?;
+  let content = read_utf8_file_limited(&path, MAX_PACKAGE_I18N_BYTES).ok()?;
+  serde_json::from_str::<HashMap<String, String>>(&content)
+    .ok()?
+    .get(key)
+    .cloned()
 }
 
-fn package_i18n_paths(pkg_dir: &Path, language_code: &str, key: &str) -> Vec<(PathBuf, String)> {
-  let parts: Vec<&str> = key.split('/').filter(|part| !part.is_empty()).collect();
-  if !safe_path_segment(language_code) || parts.iter().any(|part| !safe_path_segment(part)) {
-    return Vec::new();
-  }
-  let language_root = pkg_dir.join("assets").join("language").join(language_code);
-  match parts.as_slice() {
-    [] => Vec::new(),
-    [field] => vec![(language_root.with_extension("json"), (*field).to_string())],
-    many => {
-      let Some((last, dirs)) = many.split_last() else {
-        return Vec::new();
-      };
-      let mut paths = Vec::new();
-
-      if let Some((file, field)) = last.rsplit_once('.') {
-        paths.push(package_i18n_file_path(&language_root, dirs, file, field));
-      }
-
-      if let Some((field, prefix)) = many.split_last() {
-        if let Some((file, old_dirs)) = prefix.split_last() {
-          let old_path = package_i18n_file_path(&language_root, old_dirs, file, field);
-          if !paths.contains(&old_path) {
-            paths.push(old_path);
-          }
-        }
-      }
-
-      paths
+fn normalize_language_codes(values: &[String]) -> Result<Vec<String>, String> {
+  let mut seen = HashSet::new();
+  let mut normalized = Vec::with_capacity(values.len());
+  for (index, value) in values.iter().enumerate() {
+    let code = value.trim().to_ascii_lowercase();
+    if code.is_empty()
+      || code.len() > 64
+      || !code
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+    {
+      return Err(format!(
+        "game.language[{index}] contains an invalid language code"
+      ));
+    }
+    if seen.insert(code.clone()) {
+      normalized.push(code);
     }
   }
-}
-
-fn package_i18n_file_path(
-  language_root: &Path,
-  dirs: &[&str],
-  file: &str,
-  field: &str,
-) -> (PathBuf, String) {
-  let mut path = language_root.to_path_buf();
-  for dir in dirs {
-    path = path.join(dir);
-  }
-  (path.join(format!("{file}.json")), field.to_string())
+  Ok(normalized)
 }
 
 // 规范化包入口脚本路径。扫描阶段只验证路径语义，不验证脚本文件是否存在。
@@ -2116,19 +2214,21 @@ mod tests {
     );
     assert!(normalize_action_keys("move", vec![Vec::new()]).is_err());
     assert!(normalize_action_keys("move", vec![vec!["arrow_right".into()]]).is_err());
-    assert!(
+    assert_eq!(
       normalize_action_keys(
         "move",
         vec![vec!["a".into()], vec!["d".into()], vec!["right".into()]],
       )
-      .is_err()
+      .unwrap(),
+      vec![vec!["a".to_string()], vec!["d".to_string()]]
     );
-    assert!(
+    assert_eq!(
       normalize_action_keys(
         "move",
         vec![vec!["ctrl".into(), "shift".into(), "right".into()]],
       )
-      .is_err()
+      .unwrap(),
+      vec![vec!["left_ctrl".to_string(), "left_shift".to_string()]]
     );
   }
 
@@ -2168,8 +2268,6 @@ mod tests {
         match expected_type {
           PackageType::Game => {
             let game = package.game.expect("game configuration");
-            assert!(game.save);
-            assert!(game.score.is_some_and(|score| score.enabled));
             assert!(!game.actions.is_empty());
             let action_map = game
               .actions
@@ -2209,8 +2307,9 @@ mod tests {
           "version_code":1,
           "api":{{"min":1,"max":1}},
           "entry":"main",
-          "display":{{"title":"{title}","author":"Tester"}},
-          "game":{{"target_fps":60}}
+          "display":{{"title":"{title}","description":"Description","author":"Tester"}},
+          "runtime":{{"min_width":0,"min_height":0}},
+          "game":{{"name":"{title}","detail":"Detail","target_fps":60,"language":["en_us"],"actions":{{}}}}
         }}"#
       ),
     )
@@ -2232,8 +2331,9 @@ mod tests {
           "version_code":1,
           "api":{{"min":1,"max":1}},
           "entry":"main",
-          "display":{{"title":"{title}","author":"Tester"}},
-          "game":{{"target_fps":60}}
+          "display":{{"title":"{title}","description":"Description","author":"Tester"}},
+          "runtime":{{"min_width":0,"min_height":0}},
+          "game":{{"name":"{title}","detail":"Detail","target_fps":60,"language":["en_us"],"actions":{{}}}}
         }}"#
       ),
     )
@@ -2255,8 +2355,9 @@ mod tests {
           "version_code":1,
           "api":{{"min":1,"max":1}},
           "entry":"main",
-          "display":{{"title":"{title}","author":"Tester"}},
-          "screensaver":{{"name":"{title}"}}
+          "display":{{"title":"{title}","description":"Description","author":"Tester"}},
+          "runtime":{{"min_width":0,"min_height":0}},
+          "screensaver":{{"name":"{title}","command":"screen"}}
         }}"#
       ),
     )
@@ -2456,8 +2557,10 @@ mod tests {
         "version_code":1,
         "api":{"min":1,"max":1},
         "entry":"main",
-        "display":{"title":"f%{key:move_up} Move","author":"Tester"},
+        "display":{"title":"f%{key:move_up} Move","description":"Description","author":"Tester"},
+        "runtime":{"min_width":0,"min_height":0},
         "game":{
+          "name":"Move Game","detail":"Detail","language":["en_us"],
           "target_fps":60,
           "actions":{
             "move_up":{"description":"Move up","keys":[["w"],["up"]],"lock":true}
@@ -2509,8 +2612,10 @@ mod tests {
         "version_code":1,
         "api":{"min":1,"max":1},
         "entry":"main",
-        "display":{"title":"Empty Action","author":"Tester"},
+        "display":{"title":"Empty Action","description":"Description","author":"Tester"},
+        "runtime":{"min_width":0,"min_height":0},
         "game":{
+          "name":"Empty Action","detail":"Detail","language":["en_us"],
           "target_fps":60,
           "actions":{"optional":{"description":"Optional","keys":[]}}
         }
@@ -2541,21 +2646,23 @@ mod tests {
         "mod_id":"i18n_game",
         "schema_version":1,
         "type":"game",
-        "version":"@meta/version",
+        "version":{"type":"i18n","path":"meta.json","key":"version","callback":"1.0.0"},
         "version_code":1,
         "api":{"min":1,"max":1},
         "entry":"ui/init",
         "display":{
-          "title":"@display/title",
-          "description":"@deep/nested/text/description",
-          "author":"@author"
+          "title":{"type":"i18n","path":"display.json","key":"title","callback":"Title"},
+          "description":{"type":"i18n","path":"deep/nested/text.json","key":"description","callback":"Description"},
+          "author":{"type":"i18n","path":"common.json","key":"author","callback":"Author"}
         },
+        "runtime":{"min_width":1,"min_height":1},
         "game":{
-          "name":"@game.name",
-          "detail":"@detail/main",
+          "name":{"type":"i18n","path":"common.json","key":"game.name","callback":"Game"},
+          "detail":{"type":"i18n","path":"detail.json","key":"main","callback":"Detail"},
           "target_fps":60,
-          "score":{"enabled":true,"empty_text":"@score.empty"},
-          "actions":{"move_up":{"description":"@action/move.up","keys":[["w"]]}}
+          "language":["zh_cn"],
+          "score":{"enabled":true,"empty_text":{"type":"i18n","path":"common.json","key":"score.empty","callback":"Empty"}},
+          "actions":{"move_up":{"description":{"type":"i18n","path":"action.json","key":"move.up","callback":"Move"},"keys":[["w"]]}}
         }
       }"#,
     )
@@ -2595,7 +2702,7 @@ mod tests {
       "data/mod/game",
       "i18n_game",
       "zh_cn",
-      "",
+      "common.json",
       r#"{"author":"作者","game.name":"游戏名","score.empty":"无记录"}"#,
     );
     write_package_language(
@@ -2645,12 +2752,12 @@ mod tests {
       .unwrap()
       .replace(
         r#""author":"Tester""#,
-        r#""author":"@creator/identity/author.name""#,
+        r#""author":{"type":"i18n","path":"creator/identity/author.json","key":"name","callback":"Author"}"#,
       )
-      .replace(r#""version":"1.0.0""#, r#""version":"@meta/version.text""#)
+      .replace(r#""version":"1.0.0""#, r#""version":{"type":"i18n","path":"meta/version.json","key":"text","callback":"1.0.0"}"#)
       .replace(
         r#""title":"Dot Path Game""#,
-        r#""title":"@long/path/display/title.text""#,
+        r#""title":{"type":"i18n","path":"long/path/display/title.json","key":"text","callback":"Title"}"#,
       );
     std::fs::write(package_json, content).unwrap();
     write_package_language(
@@ -2693,7 +2800,7 @@ mod tests {
   #[test]
   fn package_i18n_falls_back_to_en_us_then_missing_template() {
     let root = temp_root("i18n_fallback");
-    write_game_manifest_only(&root, "data/mod/game", "fallback_game", "@display/title");
+    write_game_manifest_only(&root, "data/mod/game", "fallback_game", "Fallback Title");
     write_package_language(
       &root,
       "data/mod/game",
@@ -2705,7 +2812,14 @@ mod tests {
     let package_json = root.join("data/mod/game/fallback_game/package.json");
     let content = std::fs::read_to_string(&package_json)
       .unwrap()
-      .replace(r#""author":"Tester""#, r#""author":"@missing.author""#);
+      .replace(
+        r#""title":"Fallback Title""#,
+        r#""title":{"type":"i18n","path":"display.json","key":"title","callback":"Fallback Title"}"#,
+      )
+      .replace(
+        r#""author":"Tester""#,
+        r#""author":{"type":"i18n","path":"missing.json","key":"author","callback":"Fallback Author"}"#,
+      );
     std::fs::write(package_json, content).unwrap();
 
     let mut service = PackageService::new();
@@ -2714,7 +2828,7 @@ mod tests {
 
     let game = service.games().remove(0);
     assert_eq!(game.display.title, "English Title");
-    assert_eq!(game.display.author, "[Missing i18n Key: @missing.author]");
+    assert_eq!(game.display.author, "Fallback Author");
 
     let _ = std::fs::remove_dir_all(root);
   }
@@ -2724,17 +2838,18 @@ mod tests {
     let root = temp_root("screensaver_i18n");
     write_screensaver(&root, "data/mod/screensaver", "screen_i18n", "Screen Title");
     let package_json = root.join("data/mod/screensaver/screen_i18n/package.json");
-    let content = std::fs::read_to_string(&package_json)
-      .unwrap()
-      .replace(r#""name":"Screen Title""#, r#""name":"@screen.name""#);
+    let content = std::fs::read_to_string(&package_json).unwrap().replace(
+      r#""name":"Screen Title""#,
+      r#""name":{"type":"i18n","path":"screen.json","key":"name","callback":"Screen Title"}"#,
+    );
     std::fs::write(package_json, content).unwrap();
     write_package_language(
       &root,
       "data/mod/screensaver",
       "screen_i18n",
       "zh_cn",
-      "",
-      r#"{"screen.name":"屏保名"}"#,
+      "screen.json",
+      r#"{"name":"屏保名"}"#,
     );
 
     let mut service = PackageService::new();
@@ -2780,8 +2895,8 @@ mod tests {
     write_game(&root, "data/mod/game", "flag_game", "Flag Game");
     let package_json = root.join("data/mod/game/flag_game/package.json");
     let content = std::fs::read_to_string(&package_json).unwrap().replace(
-      r#""game":{"target_fps":60}"#,
-      r#""game":{"target_fps":60,"high_privilege":true,"truecolor":true}"#,
+      r#""target_fps":60"#,
+      r#""target_fps":60,"high_privilege":true,"truecolor":true"#,
     );
     std::fs::write(package_json, content).unwrap();
 
@@ -2797,21 +2912,20 @@ mod tests {
   }
 
   #[test]
-  fn legacy_game_write_field_maps_to_high_privilege() {
+  fn legacy_game_write_field_is_ignored() {
     let root = temp_root("legacy_write");
     write_game(&root, "data/mod/game", "legacy_game", "Legacy Game");
     let package_json = root.join("data/mod/game/legacy_game/package.json");
-    let content = std::fs::read_to_string(&package_json).unwrap().replace(
-      r#""game":{"target_fps":60}"#,
-      r#""game":{"target_fps":60,"write":true}"#,
-    );
+    let content = std::fs::read_to_string(&package_json)
+      .unwrap()
+      .replace(r#""target_fps":60"#, r#""target_fps":60,"write":true"#);
     std::fs::write(package_json, content).unwrap();
 
     let mut service = PackageService::new();
     let mut log = LogService::new();
     scan(&mut service, &root, &mut log, "en_us");
 
-    assert!(service.mod_games()[0].high_privilege_required);
+    assert!(!service.mod_games()[0].high_privilege_required);
 
     let _ = std::fs::remove_dir_all(root);
   }
@@ -2822,8 +2936,8 @@ mod tests {
     write_screensaver(&root, "data/mod/screensaver", "flag_screen", "Flag Screen");
     let package_json = root.join("data/mod/screensaver/flag_screen/package.json");
     let content = std::fs::read_to_string(&package_json).unwrap().replace(
-      r#""screensaver":{"name":"Flag Screen"}"#,
-      r#""screensaver":{"name":"@screen.name","mouse":true,"truecolor":true,"command":"flag-screen"}"#,
+      r#""screensaver":{"name":"Flag Screen","command":"screen"}"#,
+      r#""screensaver":{"name":{"type":"i18n","path":"screen.json","key":"screen.name","callback":"Flag Screen"},"mouse":true,"truecolor":true,"command":"flag-screen"}"#,
     );
     std::fs::write(package_json, content).unwrap();
     write_package_language(
@@ -2831,7 +2945,7 @@ mod tests {
       "data/mod/screensaver",
       "flag_screen",
       "zh_cn",
-      "",
+      "screen.json",
       r#"{"screen.name":"旗标屏保"}"#,
     );
 
@@ -2996,7 +3110,7 @@ mod tests {
   #[test]
   fn scan_collects_manifest_asset_and_i18n_watch_files() {
     let root = temp_root("watch_files");
-    write_game_manifest_only(&root, "data/mod/game", "watch_game", "@display/title");
+    write_game_manifest_only(&root, "data/mod/game", "watch_game", "Watch Game");
     let dir = root.join("data/mod/game/watch_game");
     std::fs::create_dir_all(dir.join("assets/ui")).unwrap();
     std::fs::write(dir.join("assets/ui/icon.txt"), "icon").unwrap();
@@ -3009,10 +3123,16 @@ mod tests {
       r#"{"title":"监听标题"}"#,
     );
     let package_json = dir.join("package.json");
-    let content = std::fs::read_to_string(&package_json).unwrap().replace(
-      r#""author":"Tester""#,
-      r#""author":"Tester","icon":{"type":"text","path":"ui/icon.txt"}"#,
-    );
+    let content = std::fs::read_to_string(&package_json)
+      .unwrap()
+      .replace(
+        r#""title":"Watch Game""#,
+        r#""title":{"type":"i18n","path":"display.json","key":"title","callback":"Watch Game"}"#,
+      )
+      .replace(
+        r#""author":"Tester""#,
+        r#""author":"Tester","icon":{"type":"text","path":"ui/icon.txt"}"#,
+      );
     std::fs::write(&package_json, content).unwrap();
 
     let request = ScanRequest {
@@ -3033,7 +3153,7 @@ mod tests {
   }
 
   #[test]
-  fn missing_or_invalid_assets_fall_back_to_default_text_assets() {
+  fn missing_assets_use_defaults_and_invalid_explicit_assets_reject_package() {
     let root = temp_root("default_assets");
     write_game_manifest_only(
       &root,
@@ -3042,15 +3162,6 @@ mod tests {
       "Default Asset Game",
     );
     let dir = root.join("data/mod/game/default_asset_game");
-    let package_json = dir.join("package.json");
-    let content = std::fs::read_to_string(&package_json)
-      .unwrap()
-      .replace(
-        r#""author":"Tester""#,
-        r#""author":"Tester","icon":{"type":"image","path":"bad/icon.gif"},"banner":{"type":"text","path":"missing/banner.txt"}"#,
-      );
-    std::fs::write(package_json, content).unwrap();
-
     let mut service = PackageService::new();
     let mut log = LogService::new();
     scan(&mut service, &root, &mut log, "en_us");
@@ -3070,6 +3181,15 @@ mod tests {
         .all(|line| UnicodeWidthStr::width(line.as_str()) == 60)
     );
     assert!(service.mod_games()[0].icon_path.is_none());
+
+    let package_json = dir.join("package.json");
+    let content = std::fs::read_to_string(&package_json).unwrap().replace(
+      r#""author":"Tester""#,
+      r#""author":"Tester","icon":{"type":"image","path":"bad/icon.gif"}"#,
+    );
+    std::fs::write(package_json, content).unwrap();
+    scan(&mut service, &root, &mut log, "en_us");
+    assert!(service.games().is_empty());
 
     let _ = std::fs::remove_dir_all(root);
   }
@@ -3098,10 +3218,9 @@ mod tests {
 
   #[test]
   fn package_i18n_paths_reject_directory_traversal() {
-    let package = Path::new("package");
-    assert!(package_i18n_paths(package, "../outside", "title").is_empty());
-    assert!(package_i18n_paths(package, "en_us", "../outside/title").is_empty());
-    assert!(package_i18n_paths(package, "en_us", r"folder\..\title").is_empty());
+    assert!(!safe_path_segment("../outside"));
+    assert!(safe_asset_path("../outside.json").is_none());
+    assert!(safe_asset_path(r"folder\..\title.json").is_none());
   }
 
   #[test]

@@ -6,6 +6,7 @@ const CONDITIONAL_DISMISS_DELAY: Duration = Duration::from_millis(500);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PopupDismissEvent {
+  UiInput,
   ScreenshotModeInput,
   ScreenshotOperationInput,
   MediaRenameResolved,

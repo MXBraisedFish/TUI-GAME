@@ -80,12 +80,12 @@ pub use input_method::{ImPolicy, InputMethodService};
 pub use layout::{LayoutService, Rect, Size};
 pub use log::{LogLevel, LogPrintOptions, LogService, LogSessionId, LogSessionKind, LogSource};
 pub use lua::{
-  GameService, GameStopData, LuaActionState, LuaAnimationEvent, LuaAnimationEventKind,
-  LuaApiConfig, LuaApiContext, LuaAudioEvent, LuaAudioEventKind, LuaBudgetKind,
-  LuaCallbackLifetime, LuaDrawCommand, LuaDrawTarget, LuaEnqueueError, LuaErrorStage,
-  LuaEventBroker, LuaEventCallbackId, LuaEventData, LuaEventDelivery, LuaEventError,
-  LuaEventErrorCode, LuaEventRoute, LuaExecutionBudget, LuaExecutionLimitKind, LuaExecutionStats,
-  LuaFileEntry, LuaFileEvent, LuaFileOperation, LuaFileOutcome, LuaHitAreaEvent, LuaHostCommand,
+  GameService, LuaActionState, LuaAnimationEvent, LuaAnimationEventKind, LuaApiConfig,
+  LuaApiContext, LuaAudioEvent, LuaAudioEventKind, LuaBudgetKind, LuaCallbackLifetime,
+  LuaDrawCommand, LuaDrawTarget, LuaEnqueueError, LuaErrorStage, LuaEventBroker,
+  LuaEventCallbackId, LuaEventData, LuaEventDelivery, LuaEventError, LuaEventErrorCode,
+  LuaEventRoute, LuaExecutionBudget, LuaExecutionLimitKind, LuaExecutionStats, LuaFileEntry,
+  LuaFileEvent, LuaFileOperation, LuaFileOutcome, LuaHitAreaEvent, LuaHostCommand,
   LuaHyperlinkEvent, LuaI18nEvent, LuaI18nEventKind, LuaImageEvent, LuaImageOutcome,
   LuaMarkdownEvent, LuaNetworkBody, LuaNetworkEvent, LuaNetworkOutcome, LuaObjectPool, LuaPolicy,
   LuaRuntimeEvent, LuaScrollBoxEvent, LuaService, LuaSession, LuaSessionDiagnostics,
@@ -120,10 +120,11 @@ pub use screenshot::{ScreenshotAsyncEvent, ScreenshotRect, ScreenshotService, Sc
 pub use storage::{
   ActionKeyMap, AutoRecordingMode, AutoSplitDuration, BestGameSave, ContinueGameSave,
   DisplayFpsLimit, DisplayLogoMode, DisplayOrderMode, DisplaySettingsProfile, DisplaySourceMode,
-  GamePackageState, GameSaveProfile, KeyBindingsProfile, PackageDefaultState, PackageStateProfile,
-  RecordingExportFrameRate, RecordingExportQuality, RecordingFrameRate, RecordingGpuAcceleration,
-  RecordingPixelScale, RecordingPopupMode, RecordingProfile, SafeModeDefault,
-  ScreensaverPackageState, ScreenshotDoubleAction, ScreenshotProfile, StorageService,
+  GamePackageState, GameSaveCapabilities, GameSaveProfile, KeyBindingsProfile, PackageDefaultState,
+  PackageStateProfile, RecordingExportFrameRate, RecordingExportQuality, RecordingFrameRate,
+  RecordingGpuAcceleration, RecordingPixelScale, RecordingPopupMode, RecordingProfile,
+  SafeModeDefault, ScreensaverPackageState, ScreenshotDoubleAction, ScreenshotProfile,
+  StorageService,
 };
 pub use terminal::TerminalService;
 pub use text_layout::{DrawTextParams, TextAlign, TextMode, TextWrapMode};

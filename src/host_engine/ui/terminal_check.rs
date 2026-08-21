@@ -254,15 +254,16 @@ impl TerminalCheckUi {
       i18n.get_runtime_text("terminal", "terminal.action.exit"),
     );
 
-    let term_h = layout.physical_size().height;
+    let viewport = layout.developer_viewport_rect();
+    let term_h = layout.developer_height();
 
-    let title_y: u16 = 1;
-    let hint_y = term_h.saturating_sub(1);
+    let title_y = viewport.y.saturating_add(1);
+    let hint_y = viewport.y.saturating_add(term_h.saturating_sub(1));
 
     let title_x = centered_x(layout, &title);
 
     let hint_w = layout.get_text_width(&hint, Some(&key_params));
-    let hint_x = layout.resolve_host_x(LayoutService::ALIGN_CENTER, hint_w, 0);
+    let hint_x = centered_base_x(layout, hint_w);
 
     let option_names: [&str; UNICODE_OPTIONS] = [&yes_text, &no_text];
     let option_texts: Vec<String> = (0..UNICODE_OPTIONS)
@@ -413,14 +414,15 @@ impl TerminalCheckUi {
       i18n.get_runtime_text("terminal", "terminal.action.exit"),
     );
 
-    let term_h = layout.physical_size().height;
+    let viewport = layout.developer_viewport_rect();
+    let term_h = layout.developer_height();
 
-    let title_y: u16 = 1;
-    let hint_y = term_h.saturating_sub(1);
+    let title_y = viewport.y.saturating_add(1);
+    let hint_y = viewport.y.saturating_add(term_h.saturating_sub(1));
 
     let title_x = centered_x(layout, &title);
     let hint_w = layout.get_text_width(&hint, Some(&key_params));
-    let hint_x = layout.resolve_host_x(LayoutService::ALIGN_CENTER, hint_w, 0);
+    let hint_x = centered_base_x(layout, hint_w);
     let option_names: [&str; COLOR_OPTIONS] = [&yes_text, &no256_text, &no_other_text];
     let option_texts: Vec<String> = (0..COLOR_OPTIONS)
       .map(|i| self.option_display_name(&option_names, i))
@@ -512,9 +514,10 @@ impl TerminalCheckUi {
         ..Default::default()
       },
     );
-    let term_w = layout.physical_size().width;
-    let left = term_w * BAND_LEFT_PCT / 100;
-    let right = term_w * BAND_RIGHT_PCT / 100;
+    let viewport = layout.developer_viewport_rect();
+    let term_w = layout.developer_width();
+    let left = viewport.x.saturating_add(term_w * BAND_LEFT_PCT / 100);
+    let right = viewport.x.saturating_add(term_w * BAND_RIGHT_PCT / 100);
     let band_w = right.saturating_sub(left);
     for row in 0..BAND_ROWS {
       let y = positions.tip_y.saturating_add(2).saturating_add(row);
@@ -574,10 +577,11 @@ impl TerminalCheckUi {
   }
 
   fn compute_placeholder_positions(&self, layout: &LayoutService) -> TerminalCheckLayout {
+    let viewport = layout.developer_viewport_rect();
     let title = "---";
     let title_w = layout.get_text_width(title, None);
-    let title_x = layout.resolve_host_x(LayoutService::ALIGN_CENTER, title_w, 0);
-    let title_y: u16 = 1;
+    let title_x = centered_base_x(layout, title_w);
+    let title_y = viewport.y.saturating_add(1);
 
     TerminalCheckLayout {
       title_x,
@@ -589,7 +593,9 @@ impl TerminalCheckUi {
       option_rects: Vec::new(),
       option_xs: Vec::new(),
       hint_x: 0,
-      hint_y: layout.physical_size().height.saturating_sub(1),
+      hint_y: viewport
+        .y
+        .saturating_add(layout.developer_height().saturating_sub(1)),
     }
   }
 
@@ -602,7 +608,7 @@ impl TerminalCheckUi {
     let positions = self.compute_placeholder_positions(layout_svc);
     let title = format!("{} ({}/{})", self._step_title(), self.step + 1, 3);
     let title_w = layout_svc.get_text_width(&title, None);
-    let title_x = layout_svc.resolve_host_x(LayoutService::ALIGN_CENTER, title_w, 0);
+    let title_x = centered_base_x(layout_svc, title_w);
 
     render.draw_host_text(
       canvas,
@@ -641,17 +647,18 @@ impl TerminalCheckUi {
       i18n.get_runtime_text("terminal", "terminal.action.exit"),
     );
 
-    let term_h = layout.physical_size().height;
+    let viewport = layout.developer_viewport_rect();
+    let term_h = layout.developer_height();
 
-    let title_y: u16 = 1;
-    let hint_y = term_h.saturating_sub(1);
+    let title_y = viewport.y.saturating_add(1);
+    let hint_y = viewport.y.saturating_add(term_h.saturating_sub(1));
 
     let title_x = centered_x(layout, &title);
     let hint_w = layout.get_text_width(&hint, Some(&key_params));
-    let hint_x = layout.resolve_host_x(LayoutService::ALIGN_CENTER, hint_w, 0);
+    let hint_x = centered_base_x(layout, hint_w);
     let tip_w = layout.get_text_width(&tip, None);
     let box_w = tip_w + MOUSE_BOX_PADDING * 2 + 2;
-    let box_x = layout.resolve_host_x(LayoutService::ALIGN_CENTER, box_w, 0);
+    let box_x = centered_base_x(layout, box_w);
     let available = hint_y.saturating_sub(title_y).saturating_sub(5);
     let box_y = if available > MOUSE_BOX_HEIGHT {
       title_y
@@ -894,7 +901,14 @@ impl TerminalCheckUi {
 
 fn centered_x(layout: &LayoutService, text: &str) -> u16 {
   let w = layout.get_text_width(text, None);
-  layout.resolve_host_x(LayoutService::ALIGN_CENTER, w, 0)
+  centered_base_x(layout, w)
+}
+
+fn centered_base_x(layout: &LayoutService, content_width: u16) -> u16 {
+  layout
+    .developer_viewport_rect()
+    .x
+    .saturating_add(layout.resolve_base_x(LayoutService::ALIGN_CENTER, content_width, 0))
 }
 
 fn rainbow_at(t: f32) -> (u8, u8, u8) {
@@ -910,4 +924,39 @@ fn rainbow_at(t: f32) -> (u8, u8, u8) {
 
 fn lerp(a: u8, b: u8, t: f32) -> u8 {
   (a as f32 + (b as f32 - a as f32) * t).round() as u8
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn terminal_check_layout_uses_developer_viewport() {
+    let mut layout = LayoutService::new();
+    layout.resize_physical(120, 40);
+    layout.set_developer_viewport(Rect {
+      x: 4,
+      y: 3,
+      width: 100,
+      height: 30,
+    });
+    let i18n = I18nService::new();
+    let mut ui = TerminalCheckUi::init();
+
+    for step in [STEP_UNICODE, STEP_COLOR, STEP_MOUSE] {
+      ui.step = step;
+      let positions = ui.compute_positions(&layout, &i18n);
+
+      assert_eq!(positions.title_y, 4);
+      assert_eq!(positions.hint_y, 32);
+      assert!((4..104).contains(&positions.title_x));
+      assert!((4..104).contains(&positions.hint_x));
+      assert!(positions.option_rects.iter().all(|rect| {
+        rect.x >= 4
+          && rect.x.saturating_add(rect.width) <= 104
+          && rect.y >= 3
+          && rect.y.saturating_add(rect.height) <= 33
+      }));
+    }
+  }
 }

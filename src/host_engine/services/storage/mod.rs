@@ -6,7 +6,7 @@ mod profile;
 mod service;
 
 pub(crate) use atomic::{atomic_replace_with, atomic_write};
-pub use game_save::{BestGameSave, ContinueGameSave, GameSaveProfile};
+pub use game_save::{BestGameSave, ContinueGameSave, GameSaveCapabilities, GameSaveProfile};
 pub use profile::{
   ActionKeyMap, AutoRecordingMode, AutoSplitDuration, DisplayFpsLimit, DisplayLogoMode,
   DisplayOrderMode, DisplaySettingsProfile, DisplaySourceMode, GamePackageState,

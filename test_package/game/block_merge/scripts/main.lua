@@ -25,13 +25,18 @@ end
 function UpdateFrame(dt, alpha)
 end
 
-function Render(surface)
+function Render()
   x = align.resolve_x {width = 5, horizontal_align = align.CENTER}
   draw.text {x = x, y = 0, text = "Hellow"}
 end
 
 function SaveGame()
+  return x
 end
 
 function SaveBest()
+  return {
+    best_string = "Hellow " .. tostring(x),
+    x = x,
+  }
 end

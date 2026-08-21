@@ -19,10 +19,11 @@ pub use home::{
   StorageManagementViewCommand, StorageManagementViewUi, ToolbarCustomCommand,
 };
 pub use overlay::{
-  ClearWarningCommand, ClearWarningTarget, ClearWarningUi, ExportFormat, ExportLoadingUi,
-  ExportSettingsCommand, ExportSettingsUi, ExportType, GameWarningCommand, GameWarningUi,
-  LanguageLoadingUi, SafeModeWarningCommand, SafeModeWarningUi, ScreensaverOverlayUi,
-  ScreenshotCaptureCommand, ScreenshotCaptureUi, WindowSizeWarningCommand, WindowSizeWarningUi,
+  ClearWarningCommand, ClearWarningTarget, ClearWarningUi, CoverContinueCommand, CoverContinueUi,
+  ExportFormat, ExportLoadingUi, ExportSettingsCommand, ExportSettingsUi, ExportType,
+  GameWarningCommand, GameWarningUi, LanguageLoadingUi, SafeModeWarningCommand, SafeModeWarningUi,
+  ScreensaverOverlayUi, ScreenshotCaptureCommand, ScreenshotCaptureUi, WindowSizeWarningCommand,
+  WindowSizeWarningUi,
 };
 pub(crate) use terminal_check::TerminalCheckLayout;
 pub use terminal_check::{TerminalCheckCommand, TerminalCheckUi};

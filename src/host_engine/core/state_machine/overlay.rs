@@ -24,6 +24,7 @@ pub struct OverlayState {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OverlayKind {
   ConfirmExit,
+  CoverContinue,
   ClearWarning,
   ExportLoading,
   ExportSettings,
@@ -140,6 +141,7 @@ impl OverlayKind {
   fn priority(self) -> u8 {
     match self {
       OverlayKind::ConfirmExit => 10,
+      OverlayKind::CoverContinue => 20,
       OverlayKind::ClearWarning => 20,
       OverlayKind::ExportLoading => 20,
       OverlayKind::ExportSettings => 20,

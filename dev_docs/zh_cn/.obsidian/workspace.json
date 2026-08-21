@@ -27,12 +27,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "I18N.md",
+                "file": "package字段.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "I18N"
+              "title": "package字段"
             }
           },
           {
@@ -286,10 +286,10 @@
   },
   "active": "8171b89a049079c2",
   "lastOpenFiles": [
+    "I18N.md",
     "CALLBACK.md",
     "api/encoding.md",
     "api/i18n.md",
-    "I18N.md",
     "库.md",
     "api/table.md",
     "api/base.md",

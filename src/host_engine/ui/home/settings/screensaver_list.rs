@@ -1343,6 +1343,7 @@ mod tests {
       mouse_required: false,
       truecolor_required: false,
       high_privilege_required: false,
+      supported_languages: Vec::new(),
       score_enabled: false,
       score_empty_text: String::new(),
       best_string: None,

@@ -14,7 +14,7 @@
 | ----- | ---- | ---- |
 | `exit_game` | 请求结束当前游戏脚本运行 | [exit_game](#exit_game) |
 | `save_game` | 请求执行一次 `SaveGame` 回调，将游戏数据保存在"继续游戏"槽位 | [save_game](#save_game) |
-| `save_best` | 请求执行一次 `SaveBest` 回调，在游戏列表展示本游戏最佳成绩记录 | [save_best](#save_best) |
+| `save_best` | 请求执行一次 `SaveBest` 回调，在游戏列表展示本游戏最佳记录记录 | [save_best](#save_best) |
 
 ---
 
@@ -49,8 +49,9 @@ game.exit_game()
 
 ### 额外补充
 
-- 当 `package.json` 中，`game.save` 字段为 true 时，调用该 API 会在游戏脚本结束前，自动调用一次 `SaveGame` 回调。
-- 当 `package.json` 中，`game.score.enabled` 字段为 true 时，调用该 API 会在游戏脚本结束前，自动调用一次 `SaveBest` 回调。
+- 调用该 API 不会自动调用 `SaveGame` 或 `SaveBest`。
+- 如需保存继续游戏数据或最佳记录，应在退出前分别显式调用 `game.save_game()` 或 `game.save_best()`。
+- 同一回调中先请求保存、再请求退出时，宿主会按照调用顺序先完成保存，再结束游戏。
 - **不可**在 `Init`, `SaveGame`, `SaveBest` 回调中调用。
 
 ---
@@ -92,7 +93,7 @@ game.save_game()
 
 ## `save_best`
 
-请求执行一次 `SaveBest` 回调, 在游戏列表展示本游戏最佳成绩记录。
+请求执行一次 `SaveBest` 回调, 在游戏列表展示本游戏最佳记录记录。
 
 > 仅游戏脚本可用。
 > 仅当 `package.json` 中，`game.score.enabled` 字段为 true 时可用。

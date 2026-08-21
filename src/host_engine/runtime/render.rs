@@ -25,6 +25,7 @@ pub(super) fn route_render(
   game_warning_ui: &mut GameWarningUi,
   safe_mode_warning_ui: &mut SafeModeWarningUi,
   clear_warning_ui: &mut ClearWarningUi,
+  cover_continue_ui: &mut CoverContinueUi,
   export_settings_ui: &mut ExportSettingsUi,
   screenshot_capture_ui: &mut ScreenshotCaptureUi,
   game_warning_seconds_left: u8,
@@ -182,6 +183,36 @@ pub(super) fn route_render(
     return None;
   }
 
+  if world.state.current_overlay_kind() == Some(OverlayKind::CoverContinue) {
+    apply_host_viewport(services, false);
+    let continue_game = services
+      .storage
+      .continue_game_save()
+      .and_then(|slot| services.package.find_by_id(&slot.package))
+      .and_then(|package| package.game.map(|game| game.name))
+      .map(|name| services.rich_text.visible_text(&name, None))
+      .or_else(|| {
+        services
+          .storage
+          .continue_game_save()
+          .map(|slot| slot.package.mod_id)
+      })
+      .unwrap_or_default();
+    cover_continue_ui.start(continue_game);
+    cover_continue_ui.objects_mut().begin_render();
+    services
+      .canvas
+      .prepare(cover_continue_ui.objects(), &services.layout);
+    cover_continue_ui.render(
+      &mut services.render,
+      &mut services.canvas,
+      &services.layout,
+      &services.i18n,
+      &services.hit_area,
+    );
+    return None;
+  }
+
   if world.state.current_overlay_kind() == Some(OverlayKind::ExportSettings) {
     apply_host_viewport(services, false);
     export_settings_ui.objects_mut().begin_render();
@@ -299,6 +330,22 @@ pub(super) fn route_render(
   let mut input_cursor = None;
   match world.state.current_ui_kind() {
     Some(UiNodeKind::Home) => {
+      let continue_name = services.storage.continue_game_save().and_then(|slot| {
+        services
+          .package
+          .find_by_id(&slot.package)
+          .and_then(|package| {
+            package
+              .game
+              .as_ref()
+              .filter(|game| game.save)
+              .map(|game| services.rich_text.visible_text(&game.name, None))
+          })
+      });
+      if continue_name.is_none() && services.storage.continue_game_save().is_some() {
+        let _ = services.storage.clear_continue_game_save(&mut services.log);
+      }
+      home_ui.set_continue_game_name(continue_name);
       home_ui.render(
         &mut services.render,
         &mut services.canvas,

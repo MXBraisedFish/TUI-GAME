@@ -32,12 +32,12 @@ use crate::host_engine::services::{
   VideoAsyncEvent, VideoExportStage, translate_action_map,
 };
 use crate::host_engine::ui::{
-  ClearWarningCommand, ClearWarningTarget, ClearWarningUi, DisplaySettingsCommand,
-  DisplaySettingsUi, ExitWarningCommand, ExitWarningMode, ExitWarningUi, ExportFormat,
-  ExportLoadingUi, ExportSettingsCommand, ExportSettingsUi, ExportType, GameKeyBindingsCommand,
-  GameKeyBindingsUi, GameListCommand, GameListUi, GamePackageCommand, GamePackageUi,
-  GameWarningCommand, GameWarningUi, GlobalKeyBindingsCommand, GlobalKeyBindingsUi, HomeUi,
-  HomeUiCommand, InputDemoCommand, InputDemoUi, KeyBindingsCommand, KeyBindingsUi,
+  ClearWarningCommand, ClearWarningTarget, ClearWarningUi, CoverContinueCommand, CoverContinueUi,
+  DisplaySettingsCommand, DisplaySettingsUi, ExitWarningCommand, ExitWarningMode, ExitWarningUi,
+  ExportFormat, ExportLoadingUi, ExportSettingsCommand, ExportSettingsUi, ExportType,
+  GameKeyBindingsCommand, GameKeyBindingsUi, GameListCommand, GameListUi, GamePackageCommand,
+  GamePackageUi, GameWarningCommand, GameWarningUi, GlobalKeyBindingsCommand, GlobalKeyBindingsUi,
+  HomeUi, HomeUiCommand, InputDemoCommand, InputDemoUi, KeyBindingsCommand, KeyBindingsUi,
   LanguageLoadingUi, LanguageSelectCommand, LanguageSelectUi, MediaListNotice, MediaRenameError,
   ModsCommand, ModsUi, RecordingListCommand, RecordingListUi, RecordingSettingsCommand,
   RecordingSettingsUi, SafeModeWarningCommand, SafeModeWarningUi, ScreensaverListCommand,
@@ -343,6 +343,7 @@ pub fn run(services: &mut EngineServices, world: &mut RuntimeWorld) -> ExitState
   let mut export_loading_ui = ExportLoadingUi::init(&services.progress_bar, &services.time);
   let mut safe_mode_warning_ui = SafeModeWarningUi::init(&services.hit_area);
   let mut clear_warning_ui = ClearWarningUi::init(&services.hit_area);
+  let mut cover_continue_ui = CoverContinueUi::init(&services.hit_area);
   let mut export_settings_ui = ExportSettingsUi::init(&services.hit_area, &services.text_input);
   let mut screenshot_capture_ui = ScreenshotCaptureUi::init();
   let mut exit_warning_ui = ExitWarningUi::init(&services.progress_bar, &services.hit_area);
@@ -375,11 +376,9 @@ pub fn run(services: &mut EngineServices, world: &mut RuntimeWorld) -> ExitState
   let mut exception_countdown_elapsed = Duration::ZERO;
   let mut game_warning_elapsed = Duration::ZERO;
 
-  if services
-    .storage
-    .read_language_code(&mut services.log)
-    .is_none()
-    && language_select_ui.is_some()
+  if language_select_ui
+    .as_ref()
+    .is_some_and(LanguageSelectUi::is_first_selection)
   {
     world.state.enter_ui_node(UiNodeState::language_select());
   } else if !services
@@ -502,6 +501,7 @@ pub fn run(services: &mut EngineServices, world: &mut RuntimeWorld) -> ExitState
       &mut window_size_ui,
       &mut safe_mode_warning_ui,
       &mut clear_warning_ui,
+      &mut cover_continue_ui,
       &mut export_settings_ui,
       &mut screenshot_capture_ui,
       &mut export_loading_ui,
@@ -546,6 +546,7 @@ pub fn run(services: &mut EngineServices, world: &mut RuntimeWorld) -> ExitState
         &mut game_warning_ui,
         &mut safe_mode_warning_ui,
         &mut clear_warning_ui,
+        &mut cover_continue_ui,
         &mut export_settings_ui,
         &mut screenshot_capture_ui,
         &mut exit_warning_ui,
@@ -692,6 +693,7 @@ pub fn run(services: &mut EngineServices, world: &mut RuntimeWorld) -> ExitState
           &mut game_warning_ui,
           &mut safe_mode_warning_ui,
           &mut clear_warning_ui,
+          &mut cover_continue_ui,
           &mut export_settings_ui,
           &mut screenshot_capture_ui,
           game_warning_seconds_left(game_warning_elapsed),
@@ -1338,6 +1340,7 @@ fn route_frame_input(
   game_warning_ui: &mut GameWarningUi,
   safe_mode_warning_ui: &mut SafeModeWarningUi,
   clear_warning_ui: &mut ClearWarningUi,
+  cover_continue_ui: &mut CoverContinueUi,
   export_settings_ui: &mut ExportSettingsUi,
   screenshot_capture_ui: &mut ScreenshotCaptureUi,
   exit_warning_ui: &mut ExitWarningUi,
@@ -1466,6 +1469,7 @@ fn route_frame_input(
       window_size_ui,
       safe_mode_warning_ui,
       clear_warning_ui,
+      cover_continue_ui,
       export_settings_ui,
       screenshot_capture_ui,
       _export_loading_ui,
@@ -1485,22 +1489,7 @@ fn route_frame_input(
       synchronize_lua_event_sessions(services, lua_events);
     }
     if game_was_active && world.state.is_host_mode() {
-      let result = services.game.stop(true);
-      persist_game_stop_data(services, &result);
-      for error in &result.save_errors {
-        if let Some(id) = result.log_session {
-          services
-            .log
-            .error_session(id, LogSource::Lua, error.to_string());
-        } else if let Some(package) = &result.package {
-          services
-            .log
-            .error_package(package, LogSource::Lua, error.to_string());
-        } else {
-          services.log.error(LogSource::Lua, error.to_string());
-        }
-      }
-      if let Some(id) = result.log_session {
+      if let Some(id) = services.game.stop() {
         services.log.close_session(id);
       }
       synchronize_lua_event_sessions(services, lua_events);
@@ -1542,6 +1531,7 @@ fn route_frame_input(
       window_size_ui,
       safe_mode_warning_ui,
       clear_warning_ui,
+      cover_continue_ui,
       export_settings_ui,
       screenshot_capture_ui,
       _export_loading_ui,
@@ -1573,6 +1563,7 @@ fn route_frame_input(
       window_size_ui,
       safe_mode_warning_ui,
       clear_warning_ui,
+      cover_continue_ui,
       export_settings_ui,
       screenshot_capture_ui,
       _export_loading_ui,
@@ -1728,6 +1719,7 @@ fn route_frame_input(
       window_size_ui,
       safe_mode_warning_ui,
       clear_warning_ui,
+      cover_continue_ui,
       export_settings_ui,
       screenshot_capture_ui,
       _export_loading_ui,
@@ -1950,13 +1942,13 @@ fn update_lua_sessions(
   };
   match visible_session {
     Some(LuaSessionKind::Game) => {
-      if let Err(error) = services.game.render(game_size) {
+      if let Err(error) = services.game.render() {
         handle_lua_fault(services, world, error);
       }
       let _ = apply_lua_host_commands(LuaSessionKind::Game, services, world, router);
     }
     Some(LuaSessionKind::Screensaver) => {
-      if let Err(error) = services.screensaver.render(screensaver_size) {
+      if let Err(error) = services.screensaver.render() {
         handle_lua_fault(services, world, error);
       }
       let _ = apply_lua_host_commands(LuaSessionKind::Screensaver, services, world, router);
@@ -2118,22 +2110,7 @@ fn apply_lua_host_commands(
         }
       }
       LuaHostCommand::ExitGame if kind == LuaSessionKind::Game => {
-        let result = services.game.stop(true);
-        persist_game_stop_data(services, &result);
-        for error in &result.save_errors {
-          if let Some(id) = result.log_session {
-            services
-              .log
-              .error_session(id, LogSource::Lua, error.to_string());
-          } else if let Some(package) = &result.package {
-            services
-              .log
-              .error_package(package, LogSource::Lua, error.to_string());
-          } else {
-            services.log.error(LogSource::Lua, error.to_string());
-          }
-        }
-        if let Some(id) = result.log_session {
+        if let Some(id) = services.game.stop() {
           services.log.close_session(id);
         }
         let return_host = world
@@ -2160,7 +2137,8 @@ fn apply_lua_host_commands(
           }
           Ok(None) => {}
           Err(error) => {
-            log_lua_session_message(services, LuaSessionKind::Game, "error", error.to_string())
+            handle_lua_fault(services, world, error);
+            return flow;
           }
         }
       }
@@ -2182,7 +2160,8 @@ fn apply_lua_host_commands(
           },
           Ok(None) => {}
           Err(error) => {
-            log_lua_session_message(services, LuaSessionKind::Game, "error", error.to_string())
+            handle_lua_fault(services, world, error);
+            return flow;
           }
         }
       }
@@ -2197,29 +2176,6 @@ fn apply_lua_host_commands(
     }
   }
   flow
-}
-
-fn persist_game_stop_data(
-  services: &mut EngineServices,
-  result: &crate::host_engine::services::GameStopData,
-) {
-  let Some(package) = result.package.as_ref() else {
-    return;
-  };
-  let best = match result.best.clone() {
-    Some(value) => match crate::host_engine::services::BestGameSave::try_from(value) {
-      Ok(best) => Some(best),
-      Err(error) => {
-        services.log.error_package(package, LogSource::Lua, error);
-        None
-      }
-    },
-    None => None,
-  };
-  let _ =
-    services
-      .storage
-      .write_game_results(package, result.game.clone(), best, &mut services.log);
 }
 
 fn handle_lua_fault(
@@ -2251,7 +2207,7 @@ fn handle_lua_fault(
   }
   match error.session_kind {
     LuaSessionKind::Game => {
-      if let Some(id) = services.game.stop(false).log_session {
+      if let Some(id) = services.game.stop() {
         services.log.close_session(id);
       }
       world.state.push_game_warning_overlay();

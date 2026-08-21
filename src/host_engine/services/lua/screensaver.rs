@@ -140,11 +140,11 @@ impl ScreensaverService {
     Ok(updates)
   }
 
-  pub fn render(&mut self, size: Size) -> Result<(), LuaSessionError> {
+  pub fn render(&mut self) -> Result<(), LuaSessionError> {
     let Some(session) = self.session.as_mut() else {
       return Ok(());
     };
-    session.render(size)
+    session.render()
   }
 
   pub fn take_host_commands(&mut self) -> Vec<LuaHostCommand> {
@@ -214,12 +214,7 @@ mod tests {
     assert!(service.is_active());
     assert!(service.has_objects());
     assert_eq!(service.advance(Duration::from_millis(20)).unwrap(), 1);
-    service
-      .render(Size {
-        width: 100,
-        height: 30,
-      })
-      .unwrap();
+    service.render().unwrap();
     assert!(!service.take_draw_commands().is_empty());
 
     service.stop();

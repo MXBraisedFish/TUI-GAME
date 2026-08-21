@@ -1,4 +1,5 @@
 mod clear_warning;
+mod cover_continue;
 mod export_loading;
 mod export_settings;
 mod game_warning;
@@ -9,6 +10,7 @@ mod screenshot_capture;
 pub(crate) mod window_size_warning;
 
 pub use clear_warning::{ClearWarningCommand, ClearWarningTarget, ClearWarningUi};
+pub use cover_continue::{CoverContinueCommand, CoverContinueUi};
 pub use export_loading::ExportLoadingUi;
 pub use export_settings::{ExportFormat, ExportSettingsCommand, ExportSettingsUi, ExportType};
 pub use game_warning::{GameWarningCommand, GameWarningUi};

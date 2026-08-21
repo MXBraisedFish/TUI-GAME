@@ -5,5 +5,7 @@
   "language.action.focus": "{key:language.focus_up}/{key:language.focus_down}/{key:language.focus_left}/{key:language.right} 选择",
   "language.action.flip": "{key:language.flip_forward}/{key:language.flip_backward} 翻页",
   "language.action.confirm": "{key:language.confirm} 确认",
-  "language.action.back": "{key:language.back} 返回"
+  "language.action.confirm.two": "{key:language.confirm} 二次确认并使用",
+  "language.action.back": "{key:language.back} 返回并使用",
+  "language.action.exit": "{key:language.back} 退出"
 }
