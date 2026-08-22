@@ -12,10 +12,9 @@ use serde::{Deserialize, Serialize};
 use crate::host_engine::services::storage::atomic_write;
 use crate::host_engine::services::{
   AsyncRuntime, AudioAsyncEvent, AudioCaptureId, CanvasCell, ComposedCell, ComposedFrame,
-  EngineEvent, EngineTask, StorageService, TaskId, TerminalColor, TextColor,
+  EngineEvent, EngineTask, MEDIA_MANIFEST_VERSION, StorageService, TaskId, TerminalColor,
+  TextColor,
 };
-
-const RECORDING_SCHEMA_VERSION: u32 = 3;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum RecordingState {
@@ -37,7 +36,7 @@ pub struct RecordingSnapshot {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RecordingPlaybackMetadata {
   pub started_at: String,
-  pub frame_rate: Option<u16>,
+  pub frame_rate: u16,
   pub max_width: u16,
   pub max_height: u16,
   pub duration_us: u64,
@@ -64,7 +63,7 @@ pub struct RecordingPlayback {
 struct PlaybackDocument {
   schema_version: u32,
   started_at: String,
-  frame_rate: Option<u16>,
+  frame_rate: u16,
   canvas: PlaybackCanvas,
   duration_us: PlaybackDurations,
   #[serde(default)]
@@ -78,7 +77,7 @@ struct PlaybackDocument {
 struct PlaybackHeader {
   schema_version: u32,
   started_at: String,
-  frame_rate: Option<u16>,
+  frame_rate: u16,
   canvas: PlaybackCanvas,
   duration_us: PlaybackDurations,
   #[serde(default)]
@@ -124,9 +123,7 @@ struct PlaybackCell {
   text: String,
   foreground: Option<PlaybackColor>,
   background: Option<PlaybackColor>,
-  #[serde(default)]
   flags: u16,
-  #[serde(default)]
   continuation: bool,
 }
 
@@ -447,7 +444,7 @@ impl RecordingService {
       paused_duration: paused,
     };
     let document = RecordingDocument {
-      schema_version: RECORDING_SCHEMA_VERSION,
+      schema_version: MEDIA_MANIFEST_VERSION,
       started_at: session.started_at,
       finished_at: Local::now().to_rfc3339_opts(SecondsFormat::Millis, true),
       frame_rate: session.frame_rate,
@@ -704,16 +701,16 @@ fn playback_metadata(
   document_path: &Path,
   schema_version: u32,
   started_at: String,
-  frame_rate: Option<u16>,
+  frame_rate: u16,
   canvas: PlaybackCanvas,
   duration_us: PlaybackDurations,
   audio: Option<PlaybackAudio>,
 ) -> Option<RecordingPlaybackMetadata> {
-  if !matches!(schema_version, 1 | 2 | RECORDING_SCHEMA_VERSION)
+  if schema_version != MEDIA_MANIFEST_VERSION
     || started_at.is_empty()
     || canvas.max_width == 0
     || canvas.max_height == 0
-    || frame_rate == Some(0)
+    || frame_rate == 0
   {
     return None;
   }
@@ -1096,9 +1093,9 @@ mod tests {
       "canvas": { "max_width": 2, "max_height": 1 },
       "duration_us": { "active": 2_000_000, "paused": 0, "wall": 2_000_000 },
       "palette": [
-        { "text": " " },
-        { "text": "x", "foreground": { "type": "rgb", "value": [1, 2, 3] } },
-        { "text": "y" }
+        { "text": " ", "foreground": null, "background": null, "flags": 0, "continuation": false },
+        { "text": "x", "foreground": { "type": "rgb", "value": [1, 2, 3] }, "background": null, "flags": 0, "continuation": false },
+        { "text": "y", "foreground": null, "background": null, "flags": 0, "continuation": false }
       ],
       "initial": { "width": 2, "height": 1, "rows": [[[2, 1]]] },
       "events": [{ "time_us": 1_000_000, "size": [2, 1], "changes": [[0, 1, [2]]] }]
@@ -1167,7 +1164,7 @@ mod tests {
   #[test]
   fn document_keeps_frame_rate_and_event_timing() {
     let document = RecordingDocument {
-      schema_version: RECORDING_SCHEMA_VERSION,
+      schema_version: MEDIA_MANIFEST_VERSION,
       started_at: "2026-07-21T20:20:32.895Z".to_string(),
       finished_at: "2026-07-21T20:20:34.895Z".to_string(),
       frame_rate: Some(60),
@@ -1195,7 +1192,7 @@ mod tests {
     };
 
     let value = serde_json::to_value(document).unwrap();
-    assert_eq!(value["schema_version"], 3);
+    assert_eq!(value["schema_version"], MEDIA_MANIFEST_VERSION);
     assert_eq!(value["frame_rate"], 60);
     assert_eq!(value["duration_us"]["active"], 2_000_000);
     assert_eq!(value["events"][0]["time_us"], 16_667);
@@ -1203,10 +1200,10 @@ mod tests {
 
   #[test]
   fn playback_loads_header_first_and_applies_events_by_recorded_time() {
-    let path = playback_file(playback_document(RECORDING_SCHEMA_VERSION, Some(60)));
+    let path = playback_file(playback_document(MEDIA_MANIFEST_VERSION, Some(60)));
 
     let metadata = load_recording_playback_metadata(&path).unwrap();
-    assert_eq!(metadata.frame_rate, Some(60));
+    assert_eq!(metadata.frame_rate, 60);
     assert_eq!(metadata.duration_us, 2_000_000);
 
     let playback = load_recording_playback(&path).unwrap();
@@ -1223,20 +1220,17 @@ mod tests {
   }
 
   #[test]
-  fn legacy_playback_without_frame_rate_remains_supported() {
+  fn old_playback_without_frame_rate_is_rejected() {
     let path = playback_file(playback_document(1, None));
 
-    assert_eq!(
-      load_recording_playback_metadata(&path).unwrap().frame_rate,
-      None
-    );
-    assert!(load_recording_playback(&path).is_some());
+    assert!(load_recording_playback_metadata(&path).is_none());
+    assert!(load_recording_playback(&path).is_none());
     fs::remove_file(path).unwrap();
   }
 
   #[test]
   fn playback_resolves_only_safe_sibling_audio_metadata() {
-    let path = playback_file(playback_document(RECORDING_SCHEMA_VERSION, Some(60)));
+    let path = playback_file(playback_document(MEDIA_MANIFEST_VERSION, Some(60)));
     let document = fs::read_to_string(&path).unwrap().replacen(
       ",\"palette\"",
       ",\"audio\":{\"file\":\"recording.audio.wav\",\"codec\":\"pcm_s16le\",\"sample_rate\":48000,\"channels\":2,\"duration_us\":2000000},\"palette\"",
@@ -1249,7 +1243,7 @@ mod tests {
     assert_eq!(audio.sample_rate, 48_000);
     assert_eq!(audio.channels, 2);
 
-    let invalid_path = playback_file(playback_document(RECORDING_SCHEMA_VERSION, Some(60)));
+    let invalid_path = playback_file(playback_document(MEDIA_MANIFEST_VERSION, Some(60)));
     let invalid = fs::read_to_string(&invalid_path).unwrap().replacen(
       ",\"palette\"",
       ",\"audio\":{\"file\":\"../outside.wav\",\"codec\":\"pcm_s16le\",\"sample_rate\":48000,\"channels\":2,\"duration_us\":2000000},\"palette\"",
@@ -1264,7 +1258,7 @@ mod tests {
 
   #[test]
   fn structurally_invalid_recording_keeps_header_but_rejects_playback() {
-    let mut document = playback_document(RECORDING_SCHEMA_VERSION, Some(60));
+    let mut document = playback_document(MEDIA_MANIFEST_VERSION, Some(60));
     document["events"][0]["changes"] = serde_json::json!([[0, 2, [2]]]);
     let path = playback_file(document);
 

@@ -158,9 +158,11 @@ impl LanguageSelectUi {
           continue;
         }
       }
-      log.warn(
+      log.warn_operation_failed(
         LogSource::I18n,
-        format!("Failed to load language runtime: {}", path.display()),
+        "load_runtime_language",
+        path.display().to_string(),
+        "language resource is unavailable",
       );
     }
     cache
@@ -520,7 +522,7 @@ impl LanguageSelectUi {
       self.selected_index -= cols;
     } else if self.page > 1 {
       self.page -= 1;
-      let (prev_start, prev_end, prev_cols, _) = self.page_bounds();
+      let (prev_start, prev_end, _prev_cols, _) = self.page_bounds();
       self.selected_index = (prev_start + col).min(prev_end - 1);
     }
   }
@@ -529,7 +531,7 @@ impl LanguageSelectUi {
     if self.registry.is_empty() {
       return;
     }
-    let (start, end, cols, pages) = self.page_bounds();
+    let (_start, end, cols, pages) = self.page_bounds();
     let col = self.selected_index % cols;
     let candidate = self.selected_index + cols;
 
@@ -553,7 +555,7 @@ impl LanguageSelectUi {
       self.selected_index -= 1;
     } else if self.page > 1 {
       self.page -= 1;
-      let (prev_start, prev_end, _, _) = self.page_bounds();
+      let (_prev_start, prev_end, _, _) = self.page_bounds();
       self.selected_index = prev_end - 1;
     }
   }
@@ -562,7 +564,7 @@ impl LanguageSelectUi {
     if self.registry.is_empty() {
       return;
     }
-    let (start, end, cols, pages) = self.page_bounds();
+    let (_start, end, cols, pages) = self.page_bounds();
     let col = self.selected_index % cols;
 
     if col + 1 < cols && self.selected_index + 1 < end {

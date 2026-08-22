@@ -15,7 +15,6 @@ pub struct UiNodeState {
 /// UI 节点类型枚举
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UiNodeKind {
-  Root,
   Home,
   Settings,
   KeyBindings,
@@ -54,14 +53,6 @@ pub struct UiNodeLogicState;
 pub struct UiNodeRenderState;
 
 impl UiNodeState {
-  pub fn root() -> Self {
-    Self {
-      kind: UiNodeKind::Root,
-      logic: UiNodeLogicState,
-      render: UiNodeRenderState,
-    }
-  }
-
   pub fn home() -> Self {
     Self {
       kind: UiNodeKind::Home,
@@ -294,10 +285,6 @@ impl UiTreeState {
     self.path.last()
   }
 
-  pub fn current_mut(&mut self) -> Option<&mut UiNodeState> {
-    self.path.last_mut()
-  }
-
   /// 进入一个 UI 节点，将其压入导航栈
   pub fn enter(&mut self, node: UiNodeState) {
     self.path.push(node);
@@ -310,18 +297,5 @@ impl UiTreeState {
     }
 
     self.path.pop()
-  }
-
-  /// 重置 UI 树，以指定根节点替换整个导航栈
-  pub fn reset(&mut self, root: UiNodeState) {
-    self.path.clear();
-    self.path.push(root);
-  }
-
-  /// 替换当前栈顶 UI 节点
-  pub fn replace_current(&mut self, node: UiNodeState) {
-    if let Some(current) = self.path.last_mut() {
-      *current = node;
-    }
   }
 }

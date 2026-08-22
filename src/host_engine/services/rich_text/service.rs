@@ -11,7 +11,7 @@ impl RichTextService {
 
   /// 解析富文本字符串，返回包含样式信息的分段列表。
   pub fn parse(&self, text: &str, params: Option<&RichTextParams>) -> RichText {
-    parser::parse(text, params)
+    parser::parse_auto(text, params)
   }
 
   pub(crate) fn parse_mode(
@@ -21,7 +21,6 @@ impl RichTextService {
     mode: TextMode,
   ) -> RichText {
     match mode {
-      TextMode::Legacy => parser::parse(text, params),
       TextMode::Auto => parser::parse_auto(text, params),
       TextMode::Plain => parser::parse_plain(text),
       TextMode::Rich => parser::parse_rich(text, params),
@@ -34,11 +33,37 @@ impl RichTextService {
       return text.to_string();
     }
 
-    let rich_text = self.parse(text, params);
+    // 宿主界面传入参数时已经明确要求格式化；Lua 的 AUTO 模式仍要求 `f%` 前缀。
+    let rich_text = if params.is_some() {
+      parser::parse_rich(text.strip_prefix("f%").unwrap_or(text), params)
+    } else {
+      self.parse(text, params)
+    };
     let mut result = String::new();
     for segment in &rich_text.segments {
       result.push_str(&segment.text);
     }
     result
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn host_visible_text_resolves_unprefixed_parameters() {
+    let mut params = RichTextParams::default();
+    params.values.insert("action".into(), "[Enter]".into());
+
+    let rich = RichTextService::new();
+    assert_eq!(
+      rich.visible_text("{value:action}", Some(&params)),
+      "[Enter]"
+    );
+    assert_eq!(
+      rich.visible_text("f%{value:action}", Some(&params)),
+      "[Enter]"
+    );
   }
 }

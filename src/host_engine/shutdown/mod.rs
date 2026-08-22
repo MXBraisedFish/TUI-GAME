@@ -1,7 +1,7 @@
 use crate::host_engine::core::{ExitState, RuntimeWorld, set_crash_phase};
 use crate::host_engine::services::EngineServices;
 
-use super::services::LogSource;
+use super::services::{HostLogMessage, LogSource};
 
 /// 执行引擎关闭流程：记录日志并退出终端
 pub fn close(services: &mut EngineServices, mut world: RuntimeWorld, _exit_state: ExitState) {
@@ -12,9 +12,14 @@ pub fn close(services: &mut EngineServices, mut world: RuntimeWorld, _exit_state
   write_barrier.wait();
   services.async_runtime.shutdown();
   for (path, error) in write_barrier.snapshot().failed {
-    services.log.error(
+    services.log.error_message(
       LogSource::Shutdown,
-      format!("Asynchronous write failed for {}: {error}", path.display()),
+      HostLogMessage::new(
+        "log_info.shutdown.write_failed",
+        "A pending write could not be completed for {path}: {error}",
+      )
+      .param("path", path.display().to_string())
+      .param("error", error),
     );
   }
 
@@ -26,9 +31,14 @@ pub fn close(services: &mut EngineServices, mut world: RuntimeWorld, _exit_state
   }
   let _ = services.input_method.release_input_method();
 
-  services.log.info(LogSource::Shutdown, "Engine closed.");
-
   services.terminal.exit();
+  services.log.info_message(
+    LogSource::Shutdown,
+    HostLogMessage::new(
+      "log_info.shutdown.completed",
+      "Shutdown completed and terminal ownership was released.",
+    ),
+  );
   world.state.enter_stopped();
   set_crash_phase(world.state.crash_phase());
 }

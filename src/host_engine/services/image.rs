@@ -184,7 +184,6 @@ fn validate(p: &ImageConvertParams) -> Result<(), String> {
 }
 
 const VALID_EXTS: &[&str] = &["png", "jpg", "jpeg"];
-const CACHE_FORMAT_VERSION: u8 = 2;
 
 // 解析图片路径，支持无后缀时自动查找 png/jpg/jpeg 文件
 fn resolve_path(raw: &str) -> Result<PathBuf, String> {
@@ -234,7 +233,7 @@ fn compute_hash(resolved: &Path, p: &ImageConvertParams) -> u64 {
     p.square_crop,
     p.scale,
     p.cache,
-    CACHE_FORMAT_VERSION,
+    crate::host_engine::services::IMAGE_CACHE_FORMAT_VERSION,
   );
   h.write(input.as_bytes());
   h.finish()
@@ -326,6 +325,38 @@ fn get_rgb(rgba: &image::RgbaImage, x: u32, y: u32) -> Rgb {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use std::sync::atomic::{AtomicU64, Ordering};
+
+  static NEXT_TEST_IMAGE_ID: AtomicU64 = AtomicU64::new(1);
+
+  struct TestImage {
+    root: PathBuf,
+    path: PathBuf,
+  }
+
+  impl TestImage {
+    fn new() -> Self {
+      let root = std::env::temp_dir().join(format!(
+        "tg_image_source_{}_{}",
+        std::process::id(),
+        NEXT_TEST_IMAGE_ID.fetch_add(1, Ordering::Relaxed)
+      ));
+      fs::create_dir_all(&root).expect("create image test directory");
+      let path = root.join("source.png");
+      let mut image = image::RgbImage::new(4, 4);
+      for (x, y, pixel) in image.enumerate_pixels_mut() {
+        *pixel = image::Rgb([(x * 63) as u8, (y * 63) as u8, 160]);
+      }
+      image.save(&path).expect("write image test fixture");
+      Self { root, path }
+    }
+  }
+
+  impl Drop for TestImage {
+    fn drop(&mut self) {
+      let _ = fs::remove_dir_all(&self.root);
+    }
+  }
 
   #[test]
   fn validate_rejects_empty_path() {
@@ -423,9 +454,9 @@ mod tests {
   #[test]
   fn convert_returns_f_percent_prefix() {
     let mut svc = ImageService::new(None);
-    let abs = std::path::absolute("assets/images/test/test.jpg").expect("test image should exist");
+    let source = TestImage::new();
     let p = ImageConvertParams {
-      image_path: abs.to_string_lossy().into(),
+      image_path: source.path.to_string_lossy().into(),
       output_width: 20,
       output_height: 10,
       scale: 0.5,
@@ -441,9 +472,9 @@ mod tests {
   #[test]
   fn cache_returns_same_result() {
     let mut svc = ImageService::new(None);
-    let abs = std::path::absolute("assets/images/test/test.jpg").expect("test image should exist");
+    let source = TestImage::new();
     let p = ImageConvertParams {
-      image_path: abs.to_string_lossy().into(),
+      image_path: source.path.to_string_lossy().into(),
       output_width: 10,
       output_height: 5,
       scale: 0.3,
@@ -458,9 +489,9 @@ mod tests {
   #[test]
   fn no_cache_returns_different_call() {
     let mut svc = ImageService::new(None);
-    let abs = std::path::absolute("assets/images/test/test.jpg").expect("test image should exist");
+    let source = TestImage::new();
     let p = ImageConvertParams {
-      image_path: abs.to_string_lossy().into(),
+      image_path: source.path.to_string_lossy().into(),
       output_width: 10,
       output_height: 5,
       scale: 0.3,
@@ -474,10 +505,10 @@ mod tests {
   #[test]
   fn output_dimensions_match_params() {
     let mut svc = ImageService::new(None);
-    let abs = std::path::absolute("assets/images/test/test.jpg").expect("test image should exist");
+    let source = TestImage::new();
     let (w, h) = (15u32, 8u32);
     let p = ImageConvertParams {
-      image_path: abs.to_string_lossy().into(),
+      image_path: source.path.to_string_lossy().into(),
       output_width: w,
       output_height: h,
       scale: 0.3,
@@ -495,9 +526,9 @@ mod tests {
     let tmp = std::env::temp_dir().join(format!("tg_image_test_{}", std::process::id()));
     let _ = fs::create_dir_all(&tmp);
 
-    let abs = std::path::absolute("assets/images/test/test.jpg").expect("test image should exist");
+    let source = TestImage::new();
     let p = ImageConvertParams {
-      image_path: abs.to_string_lossy().into(),
+      image_path: source.path.to_string_lossy().into(),
       output_width: 10,
       output_height: 5,
       scale: 0.3,
@@ -528,9 +559,9 @@ mod tests {
     let tmp = std::env::temp_dir().join(format!("tg_image_test2_{}", std::process::id()));
     let _ = fs::create_dir_all(&tmp);
 
-    let abs = std::path::absolute("assets/images/test/test.jpg").expect("test image should exist");
+    let source = TestImage::new();
     let p = ImageConvertParams {
-      image_path: abs.to_string_lossy().into(),
+      image_path: source.path.to_string_lossy().into(),
       output_width: 10,
       output_height: 5,
       scale: 0.3,
@@ -553,7 +584,7 @@ mod tests {
     let raw = fs::read_to_string(&cache_file).unwrap();
     let stale = raw.replace(
       &format!("\"source_modified\":{}", {
-        let meta = fs::metadata(&abs).unwrap();
+        let meta = fs::metadata(&source.path).unwrap();
         meta
           .modified()
           .unwrap()

@@ -7,11 +7,6 @@ impl I18nService {
   pub fn refresh_language_registry(&mut self, storage: &StorageService, log: &mut LogService) {
     let registry = load_language_registry(storage, log);
 
-    log.info(
-      LogSource::I18n,
-      format!("Loaded {} language registry entries.", registry.len()),
-    );
-
     self.set_language_registry(registry);
   }
 
@@ -35,9 +30,11 @@ impl I18nService {
       return true;
     }
 
-    log.warn(
+    log.warn_operation_failed(
       LogSource::I18n,
-      format!("Language package '{}' not available", language_code),
+      "load_language_package",
+      language_code,
+      "language package is unavailable",
     );
     self.set_current_language_info(None);
     false

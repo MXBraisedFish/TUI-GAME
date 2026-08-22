@@ -1,5 +1,5 @@
 use super::*;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 pub(super) const HOST_KEY_SCREENSHOT: &str = "host_key.screenshot";
 pub(super) const HOST_KEY_RECORDING: &str = "host_key.recording";
@@ -43,7 +43,6 @@ fn host_key_defaults() -> ActionKeyMap {
 pub(super) fn synchronize_key_bindings_profile(
   services: &mut EngineServices,
 ) -> KeyBindingsProfile {
-  migrate_legacy_package_state(services);
   let packages = services.package.games();
   let games = packages
     .iter()
@@ -60,21 +59,7 @@ pub(super) fn synchronize_key_bindings_profile(
   let mut profile = services
     .storage
     .read_key_bindings_profile(&mut services.log);
-  let mut changed = migrate_legacy_game_key_bindings(&packages, &mut profile);
-  warn_unresolved_legacy_keys(
-    &mut services.log,
-    "game key bindings",
-    &packages
-      .iter()
-      .map(|package| package.id.clone())
-      .collect::<Vec<_>>(),
-    profile
-      .default
-      .games
-      .keys()
-      .chain(profile.user.games.keys()),
-  );
-  changed |= profile.synchronize(host_key_defaults(), games);
+  let mut changed = profile.synchronize(host_key_defaults(), games);
   for package in &packages {
     let Some(game) = &package.game else {
       continue;
@@ -100,133 +85,6 @@ pub(super) fn synchronize_key_bindings_profile(
     .package
     .set_user_game_key_actions(profile.user.games.clone());
   profile
-}
-
-fn migrate_legacy_package_state(services: &mut EngineServices) {
-  let games = services.package.games();
-  let screensavers = services.package.screensavers();
-  let mut profile = services
-    .storage
-    .read_package_state_or_default(&mut services.log);
-  let mut changed = migrate_legacy_state_group(
-    &games
-      .iter()
-      .map(|package| package.id.clone())
-      .collect::<Vec<_>>(),
-    &mut profile.games,
-  );
-  changed |= migrate_legacy_state_group(
-    &screensavers
-      .iter()
-      .map(|package| package.id.clone())
-      .collect::<Vec<_>>(),
-    &mut profile.screensavers,
-  );
-  warn_unresolved_legacy_keys(
-    &mut services.log,
-    "game package state",
-    &games
-      .iter()
-      .map(|package| package.id.clone())
-      .collect::<Vec<_>>(),
-    profile.games.keys(),
-  );
-  warn_unresolved_legacy_keys(
-    &mut services.log,
-    "screensaver package state",
-    &screensavers
-      .iter()
-      .map(|package| package.id.clone())
-      .collect::<Vec<_>>(),
-    profile.screensavers.keys(),
-  );
-  if changed {
-    let _ = services
-      .storage
-      .write_package_state(&profile, &mut services.log);
-  }
-}
-
-fn migrate_legacy_state_group<T>(
-  packages: &[crate::host_engine::services::PackageId],
-  values: &mut std::collections::HashMap<String, T>,
-) -> bool {
-  let mut counts = BTreeMap::<&str, usize>::new();
-  for package in packages {
-    *counts.entry(package.mod_id.as_str()).or_default() += 1;
-  }
-  let mut changed = false;
-  for package in packages {
-    if counts.get(package.mod_id.as_str()) != Some(&1) {
-      continue;
-    }
-    let key = package.storage_key();
-    if !values.contains_key(&key)
-      && let Some(value) = values.remove(&package.mod_id)
-    {
-      values.insert(key, value);
-      changed = true;
-    }
-  }
-  changed
-}
-
-fn migrate_legacy_game_key_bindings(
-  packages: &[crate::host_engine::services::PackageInfo],
-  profile: &mut KeyBindingsProfile,
-) -> bool {
-  let mut counts = BTreeMap::<&str, usize>::new();
-  for package in packages {
-    *counts.entry(package.mod_id.as_str()).or_default() += 1;
-  }
-  let mut changed = false;
-  for package in packages {
-    if counts.get(package.mod_id.as_str()) != Some(&1) {
-      continue;
-    }
-    let key = package.id.storage_key();
-    if !profile.default.games.contains_key(&key)
-      && let Some(value) = profile.default.games.remove(&package.mod_id)
-    {
-      profile.default.games.insert(key.clone(), value);
-      changed = true;
-    }
-    if !profile.user.games.contains_key(&key)
-      && let Some(value) = profile.user.games.remove(&package.mod_id)
-    {
-      profile.user.games.insert(key, value);
-      changed = true;
-    }
-  }
-  changed
-}
-
-fn warn_unresolved_legacy_keys<'a>(
-  log: &mut crate::host_engine::services::LogService,
-  data_kind: &str,
-  packages: &[crate::host_engine::services::PackageId],
-  keys: impl Iterator<Item = &'a String>,
-) {
-  let legacy_keys = keys
-    .filter(|key| !key.contains('/'))
-    .cloned()
-    .collect::<BTreeSet<_>>();
-  for key in legacy_keys {
-    let matches = packages
-      .iter()
-      .filter(|package| package.mod_id == key)
-      .count();
-    let reason = if matches == 1 {
-      "a canonical entry already exists".to_string()
-    } else {
-      format!("it matches {matches} installed packages")
-    };
-    log.warn_once(
-      format!("legacy-package-index:{data_kind}:{key}"),
-      LogSource::Storage,
-      format!("Legacy {data_kind} entry '{key}' was preserved because {reason}"),
-    );
-  }
 }
 
 pub(super) fn host_key_action_entries_from_profile(
@@ -259,9 +117,11 @@ pub(super) fn load_host_key_action_map(services: &mut EngineServices) -> KeyBind
   match translate_action_map(&entries) {
     Ok(bindings) => services.input.load_system_key_bindings(bindings),
     Err(error) => {
-      services.log.error(
+      services.log.error_operation_failed(
         LogSource::Input,
-        format!("Failed to translate host key action map: {error:?}"),
+        "translate_action_map",
+        "host",
+        format!("{error:?}"),
       );
       services.input.load_system_key_bindings(Vec::new());
     }
@@ -543,9 +403,11 @@ fn load_action_map(
   match translate_action_map(action_map) {
     Ok(bindings) => services.input.load_key_bindings(bindings),
     Err(error) => {
-      services.log.error(
+      services.log.error_operation_failed(
         LogSource::Input,
-        format!("Failed to translate {name} action map: {error:?}"),
+        "translate_action_map",
+        name,
+        format!("{error:?}"),
       );
       services.input.load_key_bindings(Vec::new());
     }
@@ -555,7 +417,7 @@ fn load_action_map(
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::host_engine::services::{PackageId, PackageSource, PackageType, RichTextService};
+  use crate::host_engine::services::RichTextService;
 
   #[test]
   fn host_rich_text_uses_user_and_default_global_maps_independently() {
@@ -576,26 +438,5 @@ mod tests {
     );
 
     assert_eq!(visible, "[1]/[2]|[F1]");
-  }
-
-  #[test]
-  fn legacy_package_state_migrates_only_for_a_unique_package_identity() {
-    let official =
-      PackageId::new(PackageSource::Official, PackageType::Game, "unique.game").unwrap();
-    let mod_game = PackageId::new(PackageSource::Mod, PackageType::Game, "shared.game").unwrap();
-    let official_game =
-      PackageId::new(PackageSource::Official, PackageType::Game, "shared.game").unwrap();
-    let mut values = std::collections::HashMap::from([
-      ("unique.game".to_string(), 1_u8),
-      ("shared.game".to_string(), 2_u8),
-    ]);
-
-    assert!(migrate_legacy_state_group(
-      &[official.clone(), mod_game, official_game],
-      &mut values,
-    ));
-    assert_eq!(values.get(&official.storage_key()), Some(&1));
-    assert!(!values.contains_key("unique.game"));
-    assert_eq!(values.get("shared.game"), Some(&2));
   }
 }

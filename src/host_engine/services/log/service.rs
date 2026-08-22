@@ -8,7 +8,7 @@ use crate::host_engine::services::storage::atomic_write;
 use crate::host_engine::services::{FileService, I18nService, PackageId};
 
 use super::{
-  LogEntry, LogLabels, LogLevel, LogPrintOptions, LogSource, format_file_log_entry,
+  HostLogMessage, LogEntry, LogLabels, LogLevel, LogPrintOptions, LogSource, format_file_log_entry,
   format_log_entry, format_print_log_entry,
 };
 
@@ -19,12 +19,16 @@ pub struct LogService {
   next_file_sequence: u64,
   max_entries: usize,
   output_path: Option<PathBuf>,
+  package_scan_output_path: Option<PathBuf>,
   labels: LogLabels,
   last_file_error: Option<String>,
   next_session_id: u64,
   session_logs: HashMap<LogSessionId, SessionLog>,
   package_file_errors: HashSet<PathBuf>,
-  once_keys: HashSet<String>,
+  message_templates: HashMap<String, String>,
+  pending_messages: Vec<PendingHostLog>,
+  run_id: String,
+  write_enabled: bool,
 }
 
 const MAX_PACKAGE_LOG_BYTES: usize = 8 * 1024 * 1024;
@@ -42,6 +46,15 @@ pub enum LogSessionKind {
 struct SessionLog {
   path: PathBuf,
   package_id: PackageId,
+  kind: LogSessionKind,
+}
+
+struct PendingHostLog {
+  timestamp_ms: u128,
+  sequence: u64,
+  level: LogLevel,
+  source: LogSource,
+  message: HostLogMessage,
 }
 
 impl LogService {
@@ -52,64 +65,127 @@ impl LogService {
       next_file_sequence: 0,
       max_entries: 1000,
       output_path: None,
+      package_scan_output_path: None,
       labels: LogLabels::new(),
       last_file_error: None,
       next_session_id: 1,
       session_logs: HashMap::new(),
       package_file_errors: HashSet::new(),
-      once_keys: HashSet::new(),
+      message_templates: HashMap::new(),
+      pending_messages: Vec::new(),
+      run_id: format!("{}-{}", std::process::id(), now_ms()),
+      write_enabled: false,
     }
   }
 
   pub fn set_output_path(&mut self, path: PathBuf) -> io::Result<()> {
     self.output_path = Some(path);
-    self.flush_pending_to_file()
+    if self.write_enabled {
+      self.flush_pending_to_file()
+    } else {
+      Ok(())
+    }
+  }
+
+  /// 设置包管理器的集中扫描日志。该文件与游戏/屏保运行日志相互独立。
+  pub fn set_package_scan_output_path(&mut self, path: PathBuf) -> io::Result<()> {
+    if let Some(parent) = path.parent() {
+      std::fs::create_dir_all(parent)?;
+    }
+    self.package_scan_output_path = Some(path);
+    Ok(())
+  }
+
+  pub fn info_package_scan_message(&mut self, message: HostLogMessage) {
+    self.push_package_scan_message(LogLevel::Info, message);
+  }
+
+  pub fn warn_package_scan_message(&mut self, message: HostLogMessage) {
+    self.push_package_scan_message(LogLevel::Warn, message);
   }
 
   pub fn refresh_labels_from_i18n(&mut self, i18n: &I18nService) -> io::Result<()> {
     self.labels.refresh_from_i18n(i18n);
+    self.message_templates = i18n
+      .runtime_namespace("log_info")
+      .cloned()
+      .unwrap_or_default();
+    self.materialize_pending_messages();
+    self.write_enabled = true;
     self.flush_pending_to_file()
   }
 
-  /// 记录一条 TRACE 级别日志。
-  pub fn trace(&mut self, source: LogSource, message: impl Into<String>) {
-    self.push(LogLevel::Trace, source, message);
+  /// Enables file output with the embedded English labels when i18n is unavailable.
+  pub fn activate_embedded_english(&mut self) -> io::Result<()> {
+    self.materialize_pending_messages();
+    self.write_enabled = true;
+    self.flush_pending_to_file()
   }
 
-  /// 记录一条 DEBUG 级别日志。
-  pub fn debug(&mut self, source: LogSource, message: impl Into<String>) {
-    self.push(LogLevel::Debug, source, message);
+  pub fn run_id(&self) -> &str {
+    &self.run_id
   }
 
-  /// 记录一条 INFO 级别日志。
-  pub fn info(&mut self, source: LogSource, message: impl Into<String>) {
-    self.push(LogLevel::Info, source, message);
+  pub fn trace_message(&mut self, source: LogSource, message: HostLogMessage) {
+    self.push_message(LogLevel::Trace, source, message);
   }
 
-  /// 记录一条 WARN 级别日志。
-  pub fn warn(&mut self, source: LogSource, message: impl Into<String>) {
-    self.push(LogLevel::Warn, source, message);
+  pub fn debug_message(&mut self, source: LogSource, message: HostLogMessage) {
+    self.push_message(LogLevel::Debug, source, message);
   }
 
-  pub fn warn_once(
+  pub fn info_message(&mut self, source: LogSource, message: HostLogMessage) {
+    self.push_message(LogLevel::Info, source, message);
+  }
+
+  pub fn warn_message(&mut self, source: LogSource, message: HostLogMessage) {
+    self.push_message(LogLevel::Warn, source, message);
+  }
+
+  pub fn error_message(&mut self, source: LogSource, message: HostLogMessage) {
+    self.push_message(LogLevel::Error, source, message);
+  }
+
+  pub fn fatal_message(&mut self, source: LogSource, message: HostLogMessage) {
+    self.push_message(LogLevel::Fatal, source, message);
+  }
+
+  pub fn warn_operation_failed(
     &mut self,
-    key: impl Into<String>,
     source: LogSource,
-    message: impl Into<String>,
+    operation: impl Into<String>,
+    target: impl Into<String>,
+    error: impl Into<String>,
   ) {
-    if self.once_keys.insert(key.into()) {
-      self.warn(source, message);
-    }
+    self.warn_message(
+      source,
+      HostLogMessage::new(
+        "log_info.operation.failed",
+        "Host operation {operation} failed for {target}: {error}",
+      )
+      .param("operation", operation.into())
+      .param("target", target.into())
+      .param("error", error.into()),
+    );
   }
 
-  /// 记录一条 ERROR 级别日志。
-  pub fn error(&mut self, source: LogSource, message: impl Into<String>) {
-    self.push(LogLevel::Error, source, message);
-  }
-
-  /// 记录一条 FATAL 级别日志。
-  pub fn fatal(&mut self, source: LogSource, message: impl Into<String>) {
-    self.push(LogLevel::Fatal, source, message);
+  pub fn error_operation_failed(
+    &mut self,
+    source: LogSource,
+    operation: impl Into<String>,
+    target: impl Into<String>,
+    error: impl Into<String>,
+  ) {
+    self.error_message(
+      source,
+      HostLogMessage::new(
+        "log_info.operation.failed",
+        "Host operation {operation} failed for {target}: {error}",
+      )
+      .param("operation", operation.into())
+      .param("target", target.into())
+      .param("error", error.into()),
+    );
   }
 
   pub fn open_session(
@@ -142,13 +218,27 @@ impl LogService {
       SessionLog {
         path,
         package_id: package_id.clone(),
+        kind,
       },
+    );
+    self.info_message(
+      LogSource::Runtime,
+      HostLogMessage::new(
+        "log_info.session.started",
+        "{kind} session started for {package}.",
+      )
+      .param("kind", kind_name)
+      .param("package", package_id.storage_key()),
     );
     Ok(id)
   }
 
   pub fn close_session(&mut self, id: LogSessionId) {
     if let Some(session) = self.session_logs.remove(&id) {
+      let kind_name = match session.kind {
+        LogSessionKind::Game => "game",
+        LogSessionKind::Screensaver => "screensaver",
+      };
       self.write_package_entry(
         &session.path,
         &format!(
@@ -157,6 +247,15 @@ impl LogService {
           session.package_id,
           now_ms(),
         ),
+      );
+      self.info_message(
+        LogSource::Runtime,
+        HostLogMessage::new(
+          "log_info.session.stopped",
+          "{kind} session stopped for {package}.",
+        )
+        .param("kind", kind_name)
+        .param("package", session.package_id.storage_key()),
       );
     }
   }
@@ -194,6 +293,16 @@ impl LogService {
     message: impl Into<String>,
   ) {
     self.push_package(package_id, LogLevel::Warn, source, message);
+  }
+
+  pub fn warn_package_message(
+    &mut self,
+    package_id: &PackageId,
+    source: LogSource,
+    message: HostLogMessage,
+  ) {
+    let rendered = message.render(self.message_templates.get(message.key).map(String::as_str));
+    self.push_package(package_id, LogLevel::Warn, source, rendered);
   }
 
   pub fn info_package(
@@ -313,12 +422,23 @@ impl LogService {
     }
   }
 
+  fn push_package_scan_message(&mut self, level: LogLevel, message: HostLogMessage) {
+    let rendered = message.render(self.message_templates.get(message.key).map(String::as_str));
+    let entry = self.make_entry(level, LogSource::Pack, rendered);
+    let text = format_file_log_entry(&entry, &self.labels);
+    let Some(path) = self.package_scan_output_path.clone() else {
+      return;
+    };
+    self.write_package_entry(&path, &text);
+  }
+
   fn record_package_file_error(&mut self, path: PathBuf, error: io::Error) {
     if self.package_file_errors.insert(path.clone()) {
-      self.push(
-        LogLevel::Error,
+      self.error_operation_failed(
         LogSource::Storage,
-        format!("Failed to write package log '{}': {error}", path.display()),
+        "write_package_log",
+        path.display().to_string(),
+        error.to_string(),
       );
     }
   }
@@ -326,6 +446,47 @@ impl LogService {
   fn push(&mut self, level: LogLevel, source: LogSource, message: impl Into<String>) {
     let entry = self.make_entry(level, source, message.into());
     self.store_entry(entry);
+  }
+
+  fn push_message(&mut self, level: LogLevel, source: LogSource, message: HostLogMessage) {
+    if !self.write_enabled {
+      self.pending_messages.push(PendingHostLog {
+        timestamp_ms: now_ms(),
+        sequence: self.next_sequence,
+        level,
+        source,
+        message,
+      });
+      self.next_sequence = self.next_sequence.saturating_add(1);
+      return;
+    }
+    let rendered = message.render(self.message_templates.get(message.key).map(String::as_str));
+    self.push(level, source, rendered);
+  }
+
+  fn materialize_pending_messages(&mut self) {
+    for pending in self.pending_messages.drain(..) {
+      let rendered = pending.message.render(
+        self
+          .message_templates
+          .get(pending.message.key)
+          .map(String::as_str),
+      );
+      self.queue.push_back(LogEntry {
+        timestamp_ms: pending.timestamp_ms,
+        sequence: pending.sequence,
+        level: pending.level,
+        source: pending.source,
+        message: rendered,
+      });
+    }
+    self
+      .queue
+      .make_contiguous()
+      .sort_by_key(|entry| entry.sequence);
+    while self.queue.len() > self.max_entries {
+      self.queue.pop_front();
+    }
   }
 
   fn make_entry(&mut self, level: LogLevel, source: LogSource, message: String) -> LogEntry {
@@ -346,7 +507,9 @@ impl LogService {
       self.queue.pop_front();
     }
 
-    let _ = self.flush_pending_to_file();
+    if self.write_enabled {
+      let _ = self.flush_pending_to_file();
+    }
   }
 
   pub fn entries(&self) -> &VecDeque<LogEntry> {
@@ -381,6 +544,9 @@ impl LogService {
   }
 
   pub fn flush_pending_to_file(&mut self) -> io::Result<()> {
+    if !self.write_enabled {
+      return Ok(());
+    }
     let Some(path) = self.output_path.as_ref() else {
       return Ok(());
     };
@@ -477,11 +643,38 @@ mod tests {
     let mut log = LogService::new();
 
     log.set_output_path(path.clone()).unwrap();
-    log.info(LogSource::Storage, "storage ready");
+    log.activate_embedded_english().unwrap();
+    log.push(LogLevel::Info, LogSource::Storage, "storage ready");
 
     let text = fs::read_to_string(&path).unwrap();
     assert!(text.contains("[Runtime][Storage]"));
     assert!(text.contains("[INFO] storage ready"));
+
+    let _ = fs::remove_file(path);
+  }
+
+  #[test]
+  fn typed_boot_messages_are_translated_before_first_write() {
+    let path = std::env::temp_dir().join(format!(
+      "tui_game_log_boot_cache_{}_{}.log",
+      std::process::id(),
+      now_ms()
+    ));
+    let mut log = LogService::new();
+    log.set_output_path(path.clone()).unwrap();
+    log.info_message(
+      LogSource::Boot,
+      HostLogMessage::new("log_info.boot.stage_complete", "Ready: {name}").param("name", "engine"),
+    );
+    assert!(!path.exists());
+
+    log
+      .message_templates
+      .insert("log_info.boot.stage_complete".into(), "就绪：{name}".into());
+    log.activate_embedded_english().unwrap();
+    let text = fs::read_to_string(&path).unwrap();
+    assert!(text.contains("就绪：engine"));
+    assert!(!text.contains("Ready: engine"));
 
     let _ = fs::remove_file(path);
   }
@@ -496,6 +689,7 @@ mod tests {
     fs::create_dir_all(&directory).unwrap();
     let mut log = LogService::new();
     log.set_output_path(directory.join("tui_log.log")).unwrap();
+    log.activate_embedded_english().unwrap();
 
     let game_id = PackageId::new(
       crate::host_engine::services::PackageSource::Mod,

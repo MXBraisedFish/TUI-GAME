@@ -313,7 +313,7 @@ impl RecordingPlayer {
 }
 
 #[derive(Clone, Debug)]
-pub(super) struct ScreenshotPreview {
+pub(crate) struct ScreenshotPreview {
   width: u16,
   height: u16,
   timestamp: String,
@@ -344,6 +344,11 @@ impl ScreenshotPreview {
 
 pub(super) fn load_screenshot_preview(path: &Path) -> Option<ScreenshotPreview> {
   let document: Value = serde_json::from_slice(&fs::read(path).ok()?).ok()?;
+  if document.get("schema_version")?.as_u64()?
+    != u64::from(crate::host_engine::services::MEDIA_MANIFEST_VERSION)
+  {
+    return None;
+  }
   let selection = document.get("selection")?;
   let width = json_u16(selection.get("width")?)?;
   let height = json_u16(selection.get("height")?)?;
@@ -378,7 +383,7 @@ fn recording_info(recording: &RecordingPlayback) -> MediaInfo {
     width: metadata.max_width,
     height: metadata.max_height,
     timestamp: metadata.started_at.clone(),
-    frame_rate: metadata.frame_rate,
+    frame_rate: Some(metadata.frame_rate),
   }
 }
 
@@ -753,7 +758,7 @@ impl<S: MediaListSpec> MediaListUi<S> {
               width: metadata.max_width,
               height: metadata.max_height,
               timestamp: metadata.started_at,
-              frame_rate: metadata.frame_rate,
+              frame_rate: Some(metadata.frame_rate),
             },
           });
         }
@@ -2712,13 +2717,16 @@ mod tests {
       std::process::id()
     ));
     let document = serde_json::json!({
-      "schema_version": 2,
+      "schema_version": crate::host_engine::services::MEDIA_MANIFEST_VERSION,
       "started_at": "2026-07-21T20:20:32.895Z",
       "finished_at": "2026-07-21T20:20:34.895Z",
       "frame_rate": 60,
       "canvas": { "max_width": 1, "max_height": 1 },
       "duration_us": { "active": 2_000_000, "paused": 0, "wall": 2_000_000 },
-      "palette": [{ "text": "x" }, { "text": "y" }],
+      "palette": [
+        { "text": "x", "foreground": null, "background": null, "flags": 0, "continuation": false },
+        { "text": "y", "foreground": null, "background": null, "flags": 0, "continuation": false }
+      ],
       "initial": { "width": 1, "height": 1, "rows": [[[1, 0]]] },
       "events": [{ "time_us": 1_000_000, "size": [1, 1], "changes": [[0, 0, [1]]] }]
     });

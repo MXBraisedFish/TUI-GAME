@@ -18,7 +18,7 @@ pub use ui_object::interactives::hyperlink::{
   HyperlinkEvent, HyperlinkId, HyperlinkOptions, HyperlinkService,
 };
 pub use ui_object::interactives::text_input::{
-  TextAlign, TextInputCursorShape, TextInputEvent, TextInputId, TextInputMode, TextInputOptions,
+  TextInputCursorShape, TextInputEvent, TextInputId, TextInputMode, TextInputOptions,
   TextInputRenderParams, TextInputService, VerticalAlign,
 };
 pub use ui_object::surfaces::markdown_view::{

@@ -29,10 +29,9 @@ pub enum TextWrapMode {
   Normal,
 }
 
-/// 文本解析模式。宿主旧调用默认使用 Legacy；Lua API 显式使用其三种公开模式。
+/// 文本解析模式。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TextMode {
-  Legacy,
   Auto,
   Plain,
   Rich,
@@ -40,7 +39,7 @@ pub enum TextMode {
 
 impl Default for TextMode {
   fn default() -> Self {
-    Self::Legacy
+    Self::Auto
   }
 }
 
@@ -747,7 +746,7 @@ mod tests {
   }
 
   #[test]
-  fn auto_wrap_can_use_legacy_grapheme_wrapping() {
+  fn auto_wrap_can_use_grapheme_wrapping() {
     let lines = layout_text_lines(&DrawTextParams {
       text: "Hello".to_string(),
       wrap_mode: TextWrapMode::Auto,

@@ -45,8 +45,4 @@ impl FrameScheduler {
     self.target_frame_duration =
       target_fps.map(|fps| Duration::from_secs_f64(1.0 / fps.max(1) as f64));
   }
-
-  pub fn current_frame(&self) -> u64 {
-    self.current_frame
-  }
 }

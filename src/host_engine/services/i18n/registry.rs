@@ -22,13 +22,11 @@ pub fn load_language_registry(
   let content = match fs::read_to_string(&path) {
     Ok(content) => content,
     Err(error) => {
-      log.warn(
+      log.warn_operation_failed(
         LogSource::I18n,
-        format!(
-          "Failed to read language registry {}: {}",
-          path.display(),
-          error,
-        ),
+        "read_language_registry",
+        path.display().to_string(),
+        error.to_string(),
       );
       return Vec::new();
     }
@@ -37,13 +35,11 @@ pub fn load_language_registry(
   match serde_json::from_str::<Vec<LanguageRegistryEntry>>(&content) {
     Ok(registry) => registry,
     Err(error) => {
-      log.warn(
+      log.warn_operation_failed(
         LogSource::I18n,
-        format!(
-          "Failed to parse language registry {}: {}",
-          path.display(),
-          error,
-        ),
+        "parse_language_registry",
+        path.display().to_string(),
+        error.to_string(),
       );
       Vec::new()
     }

@@ -350,13 +350,23 @@ impl InputService {
 
   pub fn queue_key_event(&self, event: KeyEvent, log: &mut LogService) {
     if self.sender.send(event).is_err() {
-      log.warn(LogSource::Input, "Key event channel disconnected");
+      log.warn_operation_failed(
+        LogSource::Input,
+        "queue_key_event",
+        "input_channel",
+        "channel disconnected",
+      );
     }
   }
 
   pub fn queue_system_event(&self, event: SystemEvent, log: &mut LogService) {
     if self.system_sender.send(event).is_err() {
-      log.warn(LogSource::Input, "System event channel disconnected");
+      log.warn_operation_failed(
+        LogSource::Input,
+        "queue_system_event",
+        "input_channel",
+        "channel disconnected",
+      );
     }
   }
 
@@ -755,7 +765,12 @@ impl InputService {
   pub fn dispatch_action_events(&self, log: &mut LogService) {
     for event in self.collect_action_events() {
       if self.action_sender.send(event).is_err() {
-        log.warn(LogSource::Input, "Action event channel disconnected");
+        log.warn_operation_failed(
+          LogSource::Input,
+          "queue_action_event",
+          "input_channel",
+          "channel disconnected",
+        );
       }
     }
   }
@@ -768,7 +783,12 @@ impl InputService {
 
     for event in events {
       if self.action_sender.send(event).is_err() {
-        log.warn(LogSource::Input, "Action event channel disconnected");
+        log.warn_operation_failed(
+          LogSource::Input,
+          "queue_action_event",
+          "input_channel",
+          "channel disconnected",
+        );
       }
     }
   }

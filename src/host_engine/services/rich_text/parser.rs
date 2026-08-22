@@ -16,15 +16,7 @@ enum TagReadResult {
 
 /// 解析富文本字符串，将 `<tag>` 标签转换为样式段、`{param}` 替换为实际值。
 pub fn parse(text: &str, params: Option<&RichTextParams>) -> RichText {
-  let body = if text.starts_with(RICH_TEXT_PREFIX) {
-    &text[RICH_TEXT_PREFIX.len()..]
-  } else if params.is_some() {
-    return parse_formatted_text(text, params);
-  } else {
-    return plain_text(text);
-  };
-
-  parse_formatted_text(body, params)
+  parse_auto(text, params)
 }
 
 pub(super) fn parse_auto(text: &str, params: Option<&RichTextParams>) -> RichText {
@@ -166,7 +158,7 @@ fn resolve_parameter(name: &str, params: Option<&RichTextParams>) -> Option<Stri
       _ => None,
     }
   } else {
-    resolve_value(name, params)
+    None
   }
 }
 
@@ -371,12 +363,12 @@ mod tests {
   }
 
   #[test]
-  fn backward_compat_no_prefix() {
+  fn value_parameters_require_an_explicit_namespace() {
     let mut values = HashMap::new();
     values.insert("name".to_string(), "Bob".to_string());
     let params = make_params(values, HashMap::new());
     let rt = parse("f%{name}", Some(&params));
-    assert_eq!(rt.segments[0].text, "Bob");
+    assert_eq!(rt.segments[0].text, "{name}");
   }
 
   #[test]

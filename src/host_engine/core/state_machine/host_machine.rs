@@ -19,14 +19,6 @@ impl HostMachineState {
     HostMachineState::Boot
   }
 
-  pub fn is_boot(&self) -> bool {
-    matches!(self, HostMachineState::Boot)
-  }
-
-  pub fn is_init(&self) -> bool {
-    matches!(self, HostMachineState::Init)
-  }
-
   pub fn is_runtime(&self) -> bool {
     matches!(self, HostMachineState::Runtime(_))
   }
@@ -108,26 +100,6 @@ impl HostMachineState {
 
   /// 切换到停止状态
   pub fn enter_stopped(&mut self) {
-    *self = HostMachineState::Stopped;
-  }
-
-  pub fn set_boot(&mut self) {
-    *self = HostMachineState::Boot;
-  }
-
-  pub fn set_init(&mut self) {
-    *self = HostMachineState::Init;
-  }
-
-  pub fn set_runtime(&mut self, runtime: RuntimeState) {
-    *self = HostMachineState::Runtime(runtime);
-  }
-
-  pub fn set_shutdown(&mut self) {
-    *self = HostMachineState::Shutdown;
-  }
-
-  pub fn set_stopped(&mut self) {
     *self = HostMachineState::Stopped;
   }
 

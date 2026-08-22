@@ -36,19 +36,4 @@ impl MainHostState {
       _ => None,
     }
   }
-
-  pub fn game_mut(&mut self) -> Option<&mut GameState> {
-    match self {
-      MainHostState::Game(game) => Some(game),
-      _ => None,
-    }
-  }
-
-  pub fn switch_to_host(&mut self, host: HostState) {
-    *self = MainHostState::Host(host);
-  }
-
-  pub fn switch_to_game(&mut self, game: GameState) {
-    *self = MainHostState::Game(game);
-  }
 }

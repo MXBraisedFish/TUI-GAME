@@ -15,8 +15,9 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use crate::host_engine::services::async_runtime::TaskCancellation;
 use crate::host_engine::services::storage::{atomic_replace_with, atomic_write};
 use crate::host_engine::services::{
-  CanvasCell, ComposedCell, ComposedFrame, EngineEvent, LogService, LogSource, RecordingPixelScale,
-  StorageService, TaskId, TerminalColor, TextColor, TextStyle,
+  CanvasCell, ComposedCell, ComposedFrame, EngineEvent, LogService, LogSource,
+  MEDIA_MANIFEST_VERSION, RecordingPixelScale, StorageService, TaskId, TerminalColor, TextColor,
+  TextStyle,
 };
 
 // 导出按 1.5 倍基础像素密度直接栅格化，避免先低分辨率绘制再放大造成模糊。
@@ -277,6 +278,7 @@ impl ScreenshotService {
       .screenshot_cache_dir_path()
       .join(format!("{timestamp}.json"));
     let document = json!({
+      "schema_version": MEDIA_MANIFEST_VERSION,
       "timestamp": timestamp,
       "frame": { "width": frame.width(), "height": frame.height() },
       "selection": rect,
@@ -291,9 +293,11 @@ impl ScreenshotService {
         true,
       )
     }) {
-      log.warn(
+      log.warn_operation_failed(
         LogSource::Storage,
-        format!("Failed to write screenshot JSON: {error}"),
+        "write_screenshot_record",
+        path.display().to_string(),
+        error.to_string(),
       );
       return None;
     }
@@ -1358,5 +1362,37 @@ mod tests {
       TerminalFrameRasterizer::dimensions(2, 1, RecordingPixelScale::Original),
       (36, 36)
     );
+  }
+
+  #[test]
+  fn screenshot_record_uses_the_shared_media_manifest_version() {
+    let root = std::env::temp_dir().join(format!(
+      "tg_screenshot_manifest_{}_{}",
+      std::process::id(),
+      timestamp()
+    ));
+    let storage = StorageService::from_root_for_test(root.clone());
+    let mut log = LogService::new();
+    let mut frame = ComposedFrame::new(1, 1);
+    frame.set(0, 0, ComposedCell::Text(CanvasCell::new("x")));
+    let path = ScreenshotService::new()
+      .write_json(
+        &storage,
+        &frame,
+        ScreenshotRect {
+          x: 0,
+          y: 0,
+          width: 1,
+          height: 1,
+        },
+        None,
+        &mut log,
+      )
+      .unwrap();
+
+    let document: serde_json::Value =
+      serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+    assert_eq!(document["schema_version"], MEDIA_MANIFEST_VERSION);
+    let _ = std::fs::remove_dir_all(root);
   }
 }

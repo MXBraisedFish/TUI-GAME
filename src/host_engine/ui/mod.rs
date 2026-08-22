@@ -1,8 +1,10 @@
+mod boot_loading;
 mod exit;
 mod home;
 mod overlay;
 mod terminal_check;
 
+pub use boot_loading::{BootLoadingUi, BootProgress, BootStage};
 pub use exit::{ExitWarningCommand, ExitWarningMode, ExitWarningUi};
 pub use home::{
   DisplaySettingsCommand, DisplaySettingsUi, GameKeyBindingsCommand, GameKeyBindingsUi,

@@ -1,15 +1,15 @@
 use std::{
   collections::{BTreeMap, HashMap},
   fs, io,
+  path::Path,
 };
 
-use serde::{Deserialize, Deserializer, Serialize, de::DeserializeOwned};
-use serde_json::{Map, Value};
+use serde::{Deserialize, Serialize};
 
 use super::atomic_write;
 use super::layout;
 use super::service::StorageService;
-use crate::host_engine::services::{LogService, LogSource, PackageId};
+use crate::host_engine::services::{HostLogMessage, LogService, LogSource, PackageId};
 
 /// 终端配置文件：存储 Unicode 支持、颜色模式和鼠标支持的用户偏好。
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -22,14 +22,10 @@ pub struct TerminalProfile {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct PackageStateProfile {
-  #[serde(default)]
   pub defaults: PackageDefaultState,
-
-  #[serde(default)]
   pub games: HashMap<String, GamePackageState>,
-
-  #[serde(default)]
   pub screensavers: HashMap<String, ScreensaverPackageState>,
 }
 
@@ -46,21 +42,17 @@ impl PackageStateProfile {
 pub type ActionKeyMap = BTreeMap<String, Vec<Vec<String>>>;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct KeyBindingMapGroup {
-  #[serde(default)]
   pub global: ActionKeyMap,
-
-  #[serde(default)]
   pub games: BTreeMap<String, ActionKeyMap>,
 }
 
 /// 按键映射持久化表。default 保存包或宿主的原始定义，user 保存实际生效的用户映射。
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct KeyBindingsProfile {
-  #[serde(default)]
   pub default: KeyBindingMapGroup,
-
-  #[serde(default)]
   pub user: KeyBindingMapGroup,
 }
 
@@ -119,23 +111,14 @@ impl ScreenshotDoubleAction {
   }
 }
 
-fn default_screenshot_double_action() -> ScreenshotDoubleAction {
-  ScreenshotDoubleAction::SavePng
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct ScreenshotProfile {
-  #[serde(default)]
   pub guide_seen: bool,
-
-  #[serde(default = "default_screenshot_double_action")]
   pub double_action: ScreenshotDoubleAction,
-
-  #[serde(default)]
   pub auto_exit: bool,
 
   /// 截屏导出时按顺序尝试的自定义字体路径或系统字体名称。
-  #[serde(default)]
   pub fonts: Vec<String>,
 }
 
@@ -277,9 +260,9 @@ pub enum RecordingExportFrameRate {
 }
 
 impl RecordingExportFrameRate {
-  pub fn resolve(self, recorded: Option<u16>, legacy: u16) -> u16 {
+  pub fn resolve(self, recorded: u16) -> u16 {
     match self {
-      Self::Recorded => recorded.unwrap_or(legacy),
+      Self::Recorded => recorded,
       Self::Fps30 => 30,
       Self::Fps60 => 60,
       Self::Fps120 => 120,
@@ -368,72 +351,17 @@ impl RecordingGpuAcceleration {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct RecordingProfile {
-  #[serde(default, deserialize_with = "deserialize_or_default")]
   pub popup: RecordingPopupMode,
-  #[serde(default, deserialize_with = "deserialize_or_default")]
   pub auto_recording: AutoRecordingMode,
-  #[serde(default, deserialize_with = "deserialize_or_default")]
   pub auto_split: AutoSplitDuration,
-  #[serde(default, deserialize_with = "deserialize_or_default")]
   pub capture_frame_rate: RecordingFrameRate,
-  #[serde(default, deserialize_with = "deserialize_or_default")]
   pub export_frame_rate: RecordingExportFrameRate,
-  #[serde(
-    default = "default_legacy_frame_rate",
-    deserialize_with = "deserialize_legacy_frame_rate"
-  )]
-  pub legacy_frame_rate: u16,
-  #[serde(default, deserialize_with = "deserialize_or_default")]
   pub quality: RecordingExportQuality,
-  #[serde(
-    default = "default_keyframe_interval",
-    deserialize_with = "deserialize_keyframe_interval"
-  )]
   pub keyframe_interval_seconds: u16,
-  #[serde(default, deserialize_with = "deserialize_or_default")]
   pub pixel_scale: RecordingPixelScale,
-  #[serde(default, deserialize_with = "deserialize_or_default")]
   pub gpu_acceleration: RecordingGpuAcceleration,
-}
-
-fn deserialize_or_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
-where
-  D: Deserializer<'de>,
-  T: DeserializeOwned + Default,
-{
-  let value = Value::deserialize(deserializer)?;
-  Ok(serde_json::from_value(value).unwrap_or_default())
-}
-
-fn deserialize_legacy_frame_rate<'de, D>(deserializer: D) -> Result<u16, D::Error>
-where
-  D: Deserializer<'de>,
-{
-  let value = Value::deserialize(deserializer)?;
-  Ok(
-    serde_json::from_value(value)
-      .ok()
-      .filter(|value| matches!(value, 30 | 60 | 120))
-      .unwrap_or_else(default_legacy_frame_rate),
-  )
-}
-
-fn deserialize_keyframe_interval<'de, D>(deserializer: D) -> Result<u16, D::Error>
-where
-  D: Deserializer<'de>,
-{
-  let value = Value::deserialize(deserializer)?;
-  Ok(
-    serde_json::from_value(value)
-      .ok()
-      .filter(|value| (1..=10).contains(value))
-      .unwrap_or_else(default_keyframe_interval),
-  )
-}
-
-fn default_legacy_frame_rate() -> u16 {
-  30
 }
 
 fn default_keyframe_interval() -> u16 {
@@ -441,17 +369,8 @@ fn default_keyframe_interval() -> u16 {
 }
 
 impl RecordingProfile {
-  pub fn repair(&mut self) -> bool {
-    let mut repaired = false;
-    if !matches!(self.legacy_frame_rate, 30 | 60 | 120) {
-      self.legacy_frame_rate = default_legacy_frame_rate();
-      repaired = true;
-    }
-    if !(1..=10).contains(&self.keyframe_interval_seconds) {
-      self.keyframe_interval_seconds = default_keyframe_interval();
-      repaired = true;
-    }
-    repaired
+  pub fn is_valid(&self) -> bool {
+    (1..=10).contains(&self.keyframe_interval_seconds)
   }
 }
 
@@ -463,7 +382,6 @@ impl Default for RecordingProfile {
       auto_split: AutoSplitDuration::default(),
       capture_frame_rate: RecordingFrameRate::default(),
       export_frame_rate: RecordingExportFrameRate::default(),
-      legacy_frame_rate: default_legacy_frame_rate(),
       quality: RecordingExportQuality::default(),
       keyframe_interval_seconds: default_keyframe_interval(),
       pixel_scale: RecordingPixelScale::default(),
@@ -512,16 +430,14 @@ pub enum DisplayFpsLimit {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct DisplaySettingsProfile {
   pub logo_mode: DisplayLogoMode,
-  #[serde(default)]
   pub logo_sequence_cursor: u64,
   pub top_toolbar: bool,
-  #[serde(default)]
   pub top_toolbar_custom_text: String,
   pub screensaver_source: DisplaySourceMode,
   pub screensaver_order: DisplayOrderMode,
-  #[serde(default)]
   pub screensaver_sequence_cursor: u64,
   pub game_list_source: DisplaySourceMode,
   pub game_list_warnings: bool,
@@ -532,49 +448,36 @@ pub struct DisplaySettingsProfile {
 #[serde(rename_all = "snake_case")]
 pub enum SafeModeDefault {
   On,
-  #[serde(alias = "off_temporary")]
   OffPermanent,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct PackageDefaultState {
-  #[serde(default = "default_enabled")]
   pub enabled: bool,
-
-  #[serde(default)]
   pub debug: bool,
-
-  #[serde(default)]
   pub safe_mode: SafeModeDefault,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct GamePackageState {
-  #[serde(default = "default_enabled")]
   pub enabled: bool,
-
-  #[serde(default)]
   pub debug: bool,
-
-  #[serde(default = "default_safe_mode")]
   pub safe_mode: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct ScreensaverPackageState {
   /// 包管理器总开关：关闭后不进入屏保列表。
-  #[serde(default = "default_enabled")]
   pub enabled: bool,
-
-  #[serde(default)]
   pub debug: bool,
 
   /// 屏保列表中的局内启用状态，与包总开关相互独立。
-  #[serde(default = "default_enabled")]
   pub playlist_enabled: bool,
 
   /// 已启用屏保的显示顺序；未启用时不参与排序。
-  #[serde(default)]
   pub order: Option<u32>,
 }
 
@@ -632,14 +535,6 @@ impl Default for PackageDefaultState {
   }
 }
 
-fn default_enabled() -> bool {
-  true
-}
-
-fn default_safe_mode() -> bool {
-  true
-}
-
 impl Default for TerminalProfile {
   fn default() -> Self {
     Self {
@@ -667,10 +562,7 @@ impl StorageService {
   pub fn read_language_code(&self, log: &mut LogService) -> Option<String> {
     let content = fs::read_to_string(self.profile_language_path())
       .map_err(|error| {
-        log.warn(
-          LogSource::Storage,
-          format!("Failed to read language code: {err}", err = error),
-        );
+        log_profile_read_error(log, "language", &self.profile_language_path(), &error);
         error
       })
       .ok()?;
@@ -696,17 +588,16 @@ impl StorageService {
     let content = match fs::read_to_string(&path) {
       Ok(content) => content,
       Err(error) => {
-        log.warn(
-          LogSource::Storage,
-          format!("Failed to read key bindings profile: {error}"),
-        );
+        log_profile_read_error(log, "key_bindings", &path, &error);
         return KeyBindingsProfile::default();
       }
     };
     serde_json::from_str(&content).unwrap_or_else(|error| {
-      log.warn(
+      log.warn_operation_failed(
         LogSource::Storage,
-        format!("Failed to parse key bindings profile: {error}"),
+        "parse_profile",
+        "key_bindings",
+        error.to_string(),
       );
       KeyBindingsProfile::default()
     })
@@ -718,13 +609,19 @@ impl StorageService {
     log: &mut LogService,
   ) -> io::Result<()> {
     let json = serde_json::to_string_pretty(profile).map_err(io::Error::other)?;
-    atomic_write(&self.profile_key_bindings_path(), json.as_bytes(), true).map_err(|error| {
-      log.error(
+    let path = self.profile_key_bindings_path();
+    let changed = changed_profile_fields(&path, &json);
+    atomic_write(&path, json.as_bytes(), true).map_err(|error| {
+      log.error_operation_failed(
         LogSource::Storage,
-        format!("Failed to write key bindings profile: {error}"),
+        "write_profile",
+        "key_bindings",
+        error.to_string(),
       );
       error
-    })
+    })?;
+    log_profile_change(log, "key_bindings", changed);
+    Ok(())
   }
 
   /// 返回默认语言代码。
@@ -741,70 +638,19 @@ impl StorageService {
     log: &mut LogService,
   ) -> DisplaySettingsProfile {
     let path = self.profile_display_settings_path();
-    let mut values = read_json_object(&path);
-    let mut repaired = false;
-    let defaults = DisplaySettingsProfile::default();
-    let profile = DisplaySettingsProfile {
-      logo_mode: read_profile_field(&mut values, "logo_mode", defaults.logo_mode, &mut repaired),
-      logo_sequence_cursor: read_profile_field(
-        &mut values,
-        "logo_sequence_cursor",
-        defaults.logo_sequence_cursor,
-        &mut repaired,
-      ),
-      top_toolbar: read_profile_field(
-        &mut values,
-        "top_toolbar",
-        defaults.top_toolbar,
-        &mut repaired,
-      ),
-      top_toolbar_custom_text: read_profile_field(
-        &mut values,
-        "top_toolbar_custom_text",
-        defaults.top_toolbar_custom_text,
-        &mut repaired,
-      ),
-      screensaver_source: read_profile_field(
-        &mut values,
-        "screensaver_source",
-        defaults.screensaver_source,
-        &mut repaired,
-      ),
-      screensaver_order: read_profile_field(
-        &mut values,
-        "screensaver_order",
-        defaults.screensaver_order,
-        &mut repaired,
-      ),
-      screensaver_sequence_cursor: read_profile_field(
-        &mut values,
-        "screensaver_sequence_cursor",
-        defaults.screensaver_sequence_cursor,
-        &mut repaired,
-      ),
-      game_list_source: read_profile_field(
-        &mut values,
-        "game_list_source",
-        defaults.game_list_source,
-        &mut repaired,
-      ),
-      game_list_warnings: read_profile_field(
-        &mut values,
-        "game_list_warnings",
-        defaults.game_list_warnings,
-        &mut repaired,
-      ),
-      game_list_fps: read_profile_field(
-        &mut values,
-        "game_list_fps",
-        defaults.game_list_fps,
-        &mut repaired,
-      ),
-    };
-
-    if repaired {
-      write_json_object(&path, &values, log, "display settings profile");
-    }
+    let profile = fs::read_to_string(&path)
+      .and_then(|content| serde_json::from_str(&content).map_err(io::Error::other))
+      .unwrap_or_else(|error| {
+        if error.kind() != io::ErrorKind::NotFound {
+          log.warn_operation_failed(
+            LogSource::Storage,
+            "load_profile",
+            "display_settings",
+            error.to_string(),
+          );
+        }
+        DisplaySettingsProfile::default()
+      });
     self.display_settings = profile.clone();
     profile
   }
@@ -815,46 +661,19 @@ impl StorageService {
     log: &mut LogService,
   ) -> io::Result<()> {
     let path = self.profile_display_settings_path();
-    let mut values = read_json_object(&path);
-    set_profile_field(&mut values, "logo_mode", profile.logo_mode);
-    set_profile_field(
-      &mut values,
-      "logo_sequence_cursor",
-      profile.logo_sequence_cursor,
-    );
-    set_profile_field(&mut values, "top_toolbar", profile.top_toolbar);
-    set_profile_field(
-      &mut values,
-      "top_toolbar_custom_text",
-      &profile.top_toolbar_custom_text,
-    );
-    set_profile_field(
-      &mut values,
-      "screensaver_source",
-      profile.screensaver_source,
-    );
-    set_profile_field(&mut values, "screensaver_order", profile.screensaver_order);
-    set_profile_field(
-      &mut values,
-      "screensaver_sequence_cursor",
-      profile.screensaver_sequence_cursor,
-    );
-    set_profile_field(&mut values, "game_list_source", profile.game_list_source);
-    set_profile_field(
-      &mut values,
-      "game_list_warnings",
-      profile.game_list_warnings,
-    );
-    set_profile_field(&mut values, "game_list_fps", profile.game_list_fps);
-    let content = serde_json::to_string_pretty(&values).map_err(io::Error::other)?;
+    let content = serde_json::to_string_pretty(profile).map_err(io::Error::other)?;
+    let changed = changed_profile_fields(&path, &content);
     atomic_write(&path, content.as_bytes(), true).map_err(|error| {
-      log.warn(
+      log.warn_operation_failed(
         LogSource::Storage,
-        format!("Failed to write display settings profile: {error}"),
+        "write_profile",
+        "display_settings",
+        error.to_string(),
       );
       error
     })?;
     self.display_settings = profile.clone();
+    log_profile_change(log, "display_settings", changed);
     Ok(())
   }
 
@@ -862,18 +681,17 @@ impl StorageService {
   pub fn read_terminal_profile(&self, log: &mut LogService) -> Option<TerminalProfile> {
     let content = fs::read_to_string(self.profile_terminal_path())
       .map_err(|error| {
-        log.warn(
-          LogSource::Storage,
-          format!("Failed to read terminal profile: {err}", err = error),
-        );
+        log_profile_read_error(log, "terminal", &self.profile_terminal_path(), &error);
         error
       })
       .ok()?;
     serde_json::from_str(&content)
       .map_err(|error| {
-        log.warn(
+        log.warn_operation_failed(
           LogSource::Storage,
-          format!("Failed to parse terminal profile JSON: {err}", err = error),
+          "parse_profile",
+          "terminal",
+          error.to_string(),
         );
         error
       })
@@ -905,9 +723,11 @@ impl StorageService {
     let json = match serde_json::to_string_pretty(profile) {
       Ok(json) => json,
       Err(error) => {
-        log.error(
+        log.error_operation_failed(
           LogSource::Storage,
-          format!("Failed to serialize terminal profile: {err}", err = error),
+          "serialize_profile",
+          "terminal",
+          error.to_string(),
         );
         return Err(io::Error::new(
           io::ErrorKind::InvalidData,
@@ -915,7 +735,11 @@ impl StorageService {
         ));
       }
     };
-    atomic_write(&self.profile_terminal_path(), json.as_bytes(), true)
+    let path = self.profile_terminal_path();
+    let changed = changed_profile_fields(&path, &json);
+    atomic_write(&path, json.as_bytes(), true)?;
+    log_profile_change(log, "terminal", changed);
+    Ok(())
   }
 
   /// 清空已保存的终端能力检测结果，使下次启动重新进入能力检测流程。
@@ -933,18 +757,22 @@ impl StorageService {
   pub fn read_package_state(&self, log: &mut LogService) -> Option<PackageStateProfile> {
     let content = fs::read_to_string(self.profile_package_state_path())
       .map_err(|error| {
-        log.warn(
-          LogSource::Storage,
-          format!("Failed to read package state: {err}", err = error),
+        log_profile_read_error(
+          log,
+          "package_state",
+          &self.profile_package_state_path(),
+          &error,
         );
         error
       })
       .ok()?;
     serde_json::from_str(&content)
       .map_err(|error| {
-        log.warn(
+        log.warn_operation_failed(
           LogSource::Storage,
-          format!("Failed to parse package state JSON: {err}", err = error),
+          "parse_profile",
+          "package_state",
+          error.to_string(),
         );
         error
       })
@@ -963,9 +791,11 @@ impl StorageService {
     let json = match serde_json::to_string_pretty(profile) {
       Ok(json) => json,
       Err(error) => {
-        log.error(
+        log.error_operation_failed(
           LogSource::Storage,
-          format!("Failed to serialize package state: {err}", err = error),
+          "serialize_profile",
+          "package_state",
+          error.to_string(),
         );
         return Err(io::Error::new(
           io::ErrorKind::InvalidData,
@@ -973,7 +803,11 @@ impl StorageService {
         ));
       }
     };
-    atomic_write(&self.profile_package_state_path(), json.as_bytes(), true)
+    let path = self.profile_package_state_path();
+    let changed = changed_profile_fields(&path, &json);
+    atomic_write(&path, json.as_bytes(), true)?;
+    log_profile_change(log, "package_state", changed);
+    Ok(())
   }
 
   pub fn update_game_package_state(
@@ -1019,21 +853,17 @@ impl StorageService {
   pub fn read_screenshot_profile(&self, log: &mut LogService) -> Option<ScreenshotProfile> {
     let content = fs::read_to_string(self.profile_screenshot_path())
       .map_err(|error| {
-        log.warn(
-          LogSource::Storage,
-          format!("Failed to read screenshot profile: {err}", err = error),
-        );
+        log_profile_read_error(log, "screenshot", &self.profile_screenshot_path(), &error);
         error
       })
       .ok()?;
     serde_json::from_str(&content)
       .map_err(|error| {
-        log.warn(
+        log.warn_operation_failed(
           LogSource::Storage,
-          format!(
-            "Failed to parse screenshot profile JSON: {err}",
-            err = error
-          ),
+          "parse_profile",
+          "screenshot",
+          error.to_string(),
         );
         error
       })
@@ -1043,49 +873,29 @@ impl StorageService {
   pub fn read_recording_profile(&self, log: &mut LogService) -> Option<RecordingProfile> {
     let content = fs::read_to_string(self.profile_recording_path())
       .map_err(|error| {
-        log.warn(
-          LogSource::Storage,
-          format!("Failed to read recording profile: {error}"),
-        );
+        log_profile_read_error(log, "recording", &self.profile_recording_path(), &error);
         error
       })
       .ok()?;
-    let original = serde_json::from_str::<Value>(&content)
+    let profile = serde_json::from_str::<RecordingProfile>(&content)
       .map_err(|error| {
-        log.warn(
+        log.warn_operation_failed(
           LogSource::Storage,
-          format!("Failed to parse recording profile JSON: {error}"),
+          "parse_profile",
+          "recording",
+          error.to_string(),
         );
         error
       })
       .ok()?;
-    let mut profile = serde_json::from_value::<RecordingProfile>(original.clone())
-      .map_err(|error| {
-        log.warn(
-          LogSource::Storage,
-          format!("Failed to parse recording profile values: {error}"),
-        );
-        error
-      })
-      .ok()?;
-    let mut repaired = profile.repair();
-    let normalized = serde_json::to_value(&profile).ok()?;
-    repaired |= [
-      "popup",
-      "auto_recording",
-      "auto_split",
-      "capture_frame_rate",
-      "export_frame_rate",
-      "legacy_frame_rate",
-      "quality",
-      "keyframe_interval_seconds",
-      "pixel_scale",
-      "gpu_acceleration",
-    ]
-    .into_iter()
-    .any(|field| original.get(field) != normalized.get(field));
-    if repaired {
-      let _ = self.write_recording_profile(&profile, log);
+    if !profile.is_valid() {
+      log.warn_operation_failed(
+        LogSource::Storage,
+        "validate_profile",
+        "recording",
+        "profile contains values outside the current valid range",
+      );
+      return None;
     }
     Some(profile)
   }
@@ -1104,17 +914,22 @@ impl StorageService {
     log: &mut LogService,
   ) -> std::io::Result<()> {
     let json = serde_json::to_string_pretty(profile).map_err(|error| {
-      log.error(
+      log.error_operation_failed(
         LogSource::Storage,
-        format!("Failed to serialize recording profile: {error}"),
+        "serialize_profile",
+        "recording",
+        error.to_string(),
       );
       io::Error::new(io::ErrorKind::InvalidData, error)
     })?;
-    let result = atomic_write(&self.profile_recording_path(), json.as_bytes(), true);
+    let path = self.profile_recording_path();
+    let changed = changed_profile_fields(&path, &json);
+    let result = atomic_write(&path, json.as_bytes(), true);
     if result.is_ok() {
       self
         .recording_profile_revision
         .set(self.recording_profile_revision.get().wrapping_add(1));
+      log_profile_change(log, "recording", changed);
     }
     result
   }
@@ -1129,16 +944,22 @@ impl StorageService {
     log: &mut LogService,
   ) -> std::io::Result<()> {
     let json = serde_json::to_string_pretty(profile).map_err(|error| {
-      log.error(
+      log.error_operation_failed(
         LogSource::Storage,
-        format!("Failed to serialize screenshot profile: {err}", err = error),
+        "serialize_profile",
+        "screenshot",
+        error.to_string(),
       );
       io::Error::new(
         io::ErrorKind::InvalidData,
         format!("Serialization failed: {error}"),
       )
     })?;
-    atomic_write(&self.profile_screenshot_path(), json.as_bytes(), true)
+    let path = self.profile_screenshot_path();
+    let changed = changed_profile_fields(&path, &json);
+    atomic_write(&path, json.as_bytes(), true)?;
+    log_profile_change(log, "screenshot", changed);
+    Ok(())
   }
 
   pub fn mark_screenshot_guide_seen(&self, log: &mut LogService) {
@@ -1148,67 +969,82 @@ impl StorageService {
     }
     profile.guide_seen = true;
     if let Err(error) = self.write_screenshot_profile(&profile, log) {
-      log.warn(
+      log.warn_operation_failed(
         LogSource::Storage,
-        format!("Failed to write screenshot profile: {error}"),
+        "write_profile",
+        "screenshot",
+        error.to_string(),
       );
     }
   }
 }
 
-fn read_json_object(path: &std::path::Path) -> Map<String, Value> {
-  fs::read_to_string(path)
+fn changed_profile_fields(path: &Path, next_json: &str) -> Option<String> {
+  let next: serde_json::Value = serde_json::from_str(next_json).ok()?;
+  let previous = fs::read_to_string(path)
     .ok()
-    .and_then(|content| serde_json::from_str::<Value>(&content).ok())
-    .and_then(|value| value.as_object().cloned())
-    .unwrap_or_default()
-}
-
-fn read_profile_field<T>(
-  values: &mut Map<String, Value>,
-  key: &str,
-  default: T,
-  repaired: &mut bool,
-) -> T
-where
-  T: Clone + DeserializeOwned + Serialize,
-{
-  if let Some(value) = values
-    .get(key)
-    .and_then(|value| serde_json::from_value(value.clone()).ok())
-  {
-    return value;
+    .and_then(|content| serde_json::from_str::<serde_json::Value>(&content).ok());
+  if previous.as_ref() == Some(&next) {
+    return None;
   }
-  set_profile_field(values, key, default.clone());
-  *repaired = true;
-  default
-}
 
-fn set_profile_field<T: Serialize>(values: &mut Map<String, Value>, key: &str, value: T) {
-  if let Ok(value) = serde_json::to_value(value) {
-    values.insert(key.to_string(), value);
+  let Some(next_fields) = next.as_object() else {
+    return Some("value".to_string());
+  };
+  let previous_fields = previous.as_ref().and_then(serde_json::Value::as_object);
+  let mut changed = next_fields
+    .iter()
+    .filter_map(|(field, value)| {
+      (previous_fields.and_then(|fields| fields.get(field)) != Some(value)).then_some(field.clone())
+    })
+    .collect::<Vec<_>>();
+  if let Some(previous_fields) = previous_fields {
+    changed.extend(
+      previous_fields
+        .keys()
+        .filter(|field| !next_fields.contains_key(*field))
+        .cloned(),
+    );
   }
+  changed.sort_unstable();
+  changed.dedup();
+  Some(if changed.is_empty() {
+    "value".to_string()
+  } else {
+    changed.join(",")
+  })
 }
 
-fn write_json_object(
-  path: &std::path::Path,
-  values: &Map<String, Value>,
-  log: &mut LogService,
-  name: &str,
-) {
-  let result = serde_json::to_string_pretty(values)
-    .map_err(io::Error::other)
-    .and_then(|content| atomic_write(path, content.as_bytes(), true));
-  if let Err(error) = result {
-    log.warn(
+fn log_profile_change(log: &mut LogService, group: &str, fields: Option<String>) {
+  let Some(fields) = fields else {
+    return;
+  };
+  log.info_message(
+    LogSource::Storage,
+    HostLogMessage::new(
+      "log_info.setting.changed",
+      "Setting group {group} changed fields: {fields}.",
+    )
+    .param("group", group)
+    .param("fields", fields),
+  );
+}
+
+fn log_profile_read_error(log: &mut LogService, profile: &str, path: &Path, error: &io::Error) {
+  if error.kind() != io::ErrorKind::NotFound {
+    log.warn_operation_failed(
       LogSource::Storage,
-      format!("Failed to repair {name}: {error}"),
+      "read_profile",
+      format!("{profile}:{}", path.display()),
+      error.to_string(),
     );
   }
 }
 
 #[cfg(test)]
 mod tests {
+  use serde_json::Value;
+
   use super::*;
 
   fn temp_storage(name: &str) -> StorageService {
@@ -1363,27 +1199,20 @@ mod tests {
   }
 
   #[test]
-  fn old_package_profile_uses_default_settings() {
-    let profile: PackageStateProfile =
-      serde_json::from_str(r#"{"games":{},"screensavers":{}}"#).unwrap();
-    assert_eq!(profile.defaults, PackageDefaultState::default());
+  fn incomplete_package_profile_is_rejected() {
+    assert!(
+      serde_json::from_str::<PackageStateProfile>(r#"{"games":{},"screensavers":{}}"#).is_err()
+    );
   }
 
   #[test]
-  fn temporary_default_from_older_profile_becomes_permanent() {
-    let profile: PackageStateProfile = serde_json::from_str(
-      r#"{"defaults":{"enabled":true,"debug":false,"safe_mode":"off_temporary"}}"#,
-    )
-    .unwrap();
-    assert_eq!(profile.defaults.safe_mode, SafeModeDefault::OffPermanent);
+  fn removed_safe_mode_value_is_rejected() {
+    assert!(serde_json::from_str::<SafeModeDefault>(r#""off_temporary""#).is_err());
   }
 
   #[test]
-  fn old_screenshot_profile_receives_new_defaults() {
-    let profile: ScreenshotProfile = serde_json::from_str(r#"{"guide_seen":true}"#).unwrap();
-    assert!(profile.guide_seen);
-    assert_eq!(profile.double_action, ScreenshotDoubleAction::SavePng);
-    assert!(!profile.auto_exit);
+  fn incomplete_screenshot_profile_is_rejected() {
+    assert!(serde_json::from_str::<ScreenshotProfile>(r#"{"guide_seen":true}"#).is_err());
   }
 
   #[test]
@@ -1442,122 +1271,82 @@ mod tests {
   }
 
   #[test]
-  fn old_recording_profile_receives_export_defaults() {
-    let profile: RecordingProfile = serde_json::from_str("{}").unwrap();
-    assert_eq!(profile.capture_frame_rate, RecordingFrameRate::Fps60);
-    assert_eq!(
-      profile.export_frame_rate,
-      RecordingExportFrameRate::Recorded
-    );
-    assert_eq!(profile.legacy_frame_rate, 30);
-    assert_eq!(profile.quality, RecordingExportQuality::Balanced);
-    assert_eq!(profile.keyframe_interval_seconds, 2);
-    assert_eq!(profile.pixel_scale, RecordingPixelScale::Original);
-    assert_eq!(profile.gpu_acceleration, RecordingGpuAcceleration::Auto);
+  fn incomplete_recording_profile_is_rejected() {
+    assert!(serde_json::from_str::<RecordingProfile>("{}").is_err());
   }
 
   #[test]
-  fn recording_profile_repairs_invalid_numeric_values() {
-    let mut profile = RecordingProfile {
-      legacy_frame_rate: 59,
+  fn recording_profile_rejects_invalid_numeric_values() {
+    let profile = RecordingProfile {
       keyframe_interval_seconds: 0,
       ..Default::default()
     };
-    assert!(profile.repair());
-    assert_eq!(profile.legacy_frame_rate, 30);
-    assert_eq!(profile.keyframe_interval_seconds, 2);
-    assert!(!profile.repair());
+    assert!(!profile.is_valid());
   }
 
   #[test]
-  fn recording_profile_tolerates_invalid_persisted_options() {
-    let profile: RecordingProfile = serde_json::from_str(
-      r#"{
+  fn recording_profile_rejects_invalid_persisted_options() {
+    assert!(
+      serde_json::from_str::<RecordingProfile>(
+        r#"{
+        "popup":"all",
+        "auto_recording":"off",
+        "auto_split":"minutes3",
         "capture_frame_rate":"fps59",
         "export_frame_rate":"fps24",
-        "legacy_frame_rate":"bad",
         "quality":"lossless",
         "keyframe_interval_seconds":99,
         "pixel_scale":"triple",
         "gpu_acceleration":"unknown"
       }"#,
-    )
-    .unwrap();
-    assert_eq!(profile, RecordingProfile::default());
+      )
+      .is_err()
+    );
   }
 
   #[test]
-  fn reading_recording_profile_persists_repaired_values() {
-    let storage = temp_storage("recording_profile_repair");
+  fn reading_invalid_recording_profile_uses_default_without_rewriting_disk() {
+    let storage = temp_storage("recording_profile_invalid");
     let mut log = LogService::new();
-    fs::write(
-      storage.profile_recording_path(),
-      r#"{"capture_frame_rate":"fps59","pixel_scale":"triple","keyframe_interval_seconds":99}"#,
-    )
-    .unwrap();
+    let invalid = r#"{"capture_frame_rate":"fps59"}"#;
+    fs::write(storage.profile_recording_path(), invalid).unwrap();
 
+    assert_eq!(storage.read_recording_profile(&mut log), None);
     assert_eq!(
-      storage.read_recording_profile(&mut log),
-      Some(RecordingProfile::default())
+      storage.read_recording_profile_or_default(&mut log),
+      RecordingProfile::default()
     );
-    let value: Value =
-      serde_json::from_str(&fs::read_to_string(storage.profile_recording_path()).unwrap()).unwrap();
-    assert_eq!(value["capture_frame_rate"], "fps60");
-    assert_eq!(value["pixel_scale"], "original");
-    assert_eq!(value["keyframe_interval_seconds"], 2);
-    assert_eq!(value["gpu_acceleration"], "auto");
+    assert_eq!(
+      fs::read_to_string(storage.profile_recording_path()).unwrap(),
+      invalid
+    );
   }
 
   #[test]
   fn recording_export_frame_rate_prefers_recorded_value_and_supports_fixed_values() {
-    assert_eq!(
-      RecordingExportFrameRate::Recorded.resolve(Some(120), 30),
-      120
-    );
-    assert_eq!(RecordingExportFrameRate::Recorded.resolve(None, 30), 30);
-    assert_eq!(RecordingExportFrameRate::Fps60.resolve(Some(120), 30), 60);
+    assert_eq!(RecordingExportFrameRate::Recorded.resolve(120), 120);
+    assert_eq!(RecordingExportFrameRate::Fps60.resolve(120), 60);
   }
 
   #[test]
-  fn display_settings_repairs_only_missing_or_invalid_fields() {
+  fn invalid_display_settings_use_defaults_without_rewriting_disk() {
     let mut storage = temp_storage("display_settings_repair");
     let mut log = LogService::new();
-    fs::write(
-      storage.profile_display_settings_path(),
-      r#"{
-        "logo_mode": "neon",
-        "top_toolbar": "invalid",
-        "game_list_source": "mod",
-        "custom_field": 7
-      }"#,
-    )
-    .unwrap();
+    let invalid = r#"{"logo_mode":"neon","top_toolbar":"invalid","game_list_source":"mod"}"#;
+    fs::write(storage.profile_display_settings_path(), invalid).unwrap();
 
     let profile = storage.reload_display_settings_profile(&mut log);
-    assert_eq!(profile.logo_mode, DisplayLogoMode::Neon);
-    assert!(profile.top_toolbar);
-    assert_eq!(profile.game_list_source, DisplaySourceMode::Mod);
-    assert!(profile.game_list_warnings);
-    assert!(profile.top_toolbar_custom_text.is_empty());
-
-    let json: Value =
-      serde_json::from_str(&fs::read_to_string(storage.profile_display_settings_path()).unwrap())
-        .unwrap();
-    assert_eq!(json["custom_field"], 7);
-    assert_eq!(json["top_toolbar"], true);
-    assert_eq!(json["top_toolbar_custom_text"], "");
-    assert_eq!(json["screensaver_source"], "all");
+    assert_eq!(profile, DisplaySettingsProfile::default());
+    assert_eq!(
+      fs::read_to_string(storage.profile_display_settings_path()).unwrap(),
+      invalid
+    );
   }
 
   #[test]
-  fn display_settings_write_updates_cache_and_preserves_unknown_fields() {
+  fn display_settings_write_updates_cache_with_current_schema() {
     let mut storage = temp_storage("display_settings_write");
     let mut log = LogService::new();
-    fs::write(
-      storage.profile_display_settings_path(),
-      r#"{"custom_field":"keep"}"#,
-    )
-    .unwrap();
     let profile = DisplaySettingsProfile {
       game_list_source: DisplaySourceMode::Official,
       game_list_warnings: false,
@@ -1572,7 +1361,7 @@ mod tests {
     let json: Value =
       serde_json::from_str(&fs::read_to_string(storage.profile_display_settings_path()).unwrap())
         .unwrap();
-    assert_eq!(json["custom_field"], "keep");
+    assert!(json.get("custom_field").is_none());
     assert_eq!(json["game_list_source"], "official");
     assert_eq!(json["game_list_warnings"], false);
     assert_eq!(json["top_toolbar_custom_text"], "f%<fg:red>LIVE</fg>");

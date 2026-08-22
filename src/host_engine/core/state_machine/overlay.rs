@@ -23,7 +23,6 @@ pub struct OverlayState {
 /// 覆盖层类型枚举
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OverlayKind {
-  ConfirmExit,
   CoverContinue,
   ClearWarning,
   ExportLoading,
@@ -53,14 +52,6 @@ impl OverlayStackState {
       stack: Vec::new(),
       transitions: Vec::new(),
     }
-  }
-
-  pub fn is_empty(&self) -> bool {
-    self.stack.is_empty()
-  }
-
-  pub fn len(&self) -> usize {
-    self.stack.len()
   }
 
   pub fn top(&self) -> Option<&OverlayState> {
@@ -123,15 +114,6 @@ impl OverlayStackState {
     self.stack.iter().find(|overlay| overlay.kind == kind)
   }
 
-  /// 清空所有覆盖层
-  pub fn clear(&mut self) {
-    let was_empty = self.stack.is_empty();
-    self.stack.clear();
-    if !was_empty {
-      self.transitions.push(OverlayStackTransition::Stopped);
-    }
-  }
-
   pub fn drain_transitions(&mut self) -> Vec<OverlayStackTransition> {
     std::mem::take(&mut self.transitions)
   }
@@ -140,7 +122,6 @@ impl OverlayStackState {
 impl OverlayKind {
   fn priority(self) -> u8 {
     match self {
-      OverlayKind::ConfirmExit => 10,
       OverlayKind::CoverContinue => 20,
       OverlayKind::ClearWarning => 20,
       OverlayKind::ExportLoading => 20,
@@ -222,7 +203,7 @@ mod tests {
     stack.push(overlay(OverlayKind::LanguageLoading));
     stack.push(overlay(OverlayKind::LanguageLoading));
 
-    assert_eq!(stack.len(), 1);
+    assert_eq!(stack.stack.len(), 1);
     assert_eq!(stack.current_kind(), Some(OverlayKind::LanguageLoading));
   }
 

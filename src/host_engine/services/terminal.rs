@@ -13,8 +13,6 @@ use crossterm::terminal::{
   EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
 
-use super::{LogService, LogSource};
-
 /// 终端服务，管理原始模式和交替屏幕的进入与退出
 pub struct TerminalService {
   surface: Option<TerminalSurface>,
@@ -32,17 +30,23 @@ impl TerminalSurface {
     enable_raw_mode()?;
 
     let mut stdout = stdout();
+    let result = (|| {
+      execute!(stdout, EnterAlternateScreen)?;
+      execute!(stdout, EnableMouseCapture)?;
+      execute!(stdout, EnableFocusChange)?;
+      execute!(stdout, Hide)?;
+      stdout.flush()?;
 
-    execute!(stdout, EnterAlternateScreen)?;
-    execute!(stdout, EnableMouseCapture)?;
-    execute!(stdout, EnableFocusChange)?;
-    execute!(stdout, Hide)?;
-    stdout.flush()?;
+      Ok(Self {
+        stdout,
+        active: true,
+      })
+    })();
 
-    Ok(Self {
-      stdout,
-      active: true,
-    })
+    if result.is_err() {
+      TerminalService::force_restore();
+    }
+    result
   }
 
   fn writer(&mut self) -> &mut Stdout {
@@ -106,22 +110,13 @@ impl TerminalService {
   }
 
   /// 进入终端原始模式（启用交替屏幕、鼠标捕获和焦点事件）
-  pub fn enter(&mut self, services: &mut LogService) {
+  pub fn enter(&mut self) -> io::Result<()> {
     if self.surface.is_some() {
-      return;
+      return Ok(());
     }
 
-    match TerminalSurface::enter() {
-      Ok(surface) => {
-        self.surface = Some(surface);
-      }
-      Err(error) => {
-        services.error(
-          LogSource::Terminal,
-          format!("Failed to enter terminal mode: {}", error),
-        );
-      }
-    }
+    self.surface = Some(TerminalSurface::enter()?);
+    Ok(())
   }
 
   /// 退出终端原始模式

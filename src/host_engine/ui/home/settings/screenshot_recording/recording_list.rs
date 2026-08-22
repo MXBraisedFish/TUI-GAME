@@ -12,7 +12,7 @@ impl MediaListSpec for RecordingListSpec {
   const SUPPORTS_DURATION: bool = true;
 
   fn action_map() -> Vec<ActionMapEntry> {
-    let mut entries = actions(&[
+    actions(&[
       ("recording_list.scroll_up", "w"),
       ("recording_list.scroll_down", "s"),
       ("recording_list.scroll_left", "a"),
@@ -35,8 +35,7 @@ impl MediaListSpec for RecordingListSpec {
       ("recording_list.volume_up", "="),
       ("recording_list.zoom", "z"),
       ("recording_list.export", "1"),
-    ]);
-    entries
+    ])
   }
 
   fn left_hint_keys() -> &'static [&'static str] {

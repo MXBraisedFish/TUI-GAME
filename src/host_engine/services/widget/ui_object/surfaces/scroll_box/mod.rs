@@ -1479,7 +1479,7 @@ mod tests {
     let mut pool = UiObjectPool::new();
     let mut layout = LayoutService::new();
     layout.resize_physical(20, 15);
-    let id = service
+    let _id = service
       .create(
         &mut pool,
         ScrollBoxOptions {

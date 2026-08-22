@@ -309,7 +309,7 @@ impl HomeUi {
   }
 
   pub fn set_continue_game_name(&mut self, name: Option<String>) {
-    self.continue_game_name = name.map(|name| truncate_visible(&name, 6));
+    self.continue_game_name = name.map(|name| truncate_visible(&name, 12));
     if self.continue_game_name.is_none() && self.selected_index == 1 {
       self.selected_index = 0;
     }
@@ -369,7 +369,7 @@ impl HomeUi {
 
     std::array::from_fn(|i| {
       if i == 1 && self.continue_game_name.is_none() {
-        format!("f%<fg:bright_black>{}</fg>", labels[i])
+        format!("f%<fg:rgb(85,87,83)>{}</fg>", labels[i])
       } else if i == self.selected_index {
         let fg = if i >= 4 { "bright_red" } else { "bright_cyan" };
         format!("f%<fg:{}>❯ {} ❮</fg>", fg, labels[i])
@@ -597,7 +597,7 @@ mod tests {
   fn available_continue_game_can_be_selected_and_is_width_limited() {
     let mut ui = home();
     ui.set_continue_game_name(Some("继续游戏名称".to_string()));
-    assert_eq!(ui.continue_game_name.as_deref(), Some("继..."));
+    assert_eq!(ui.continue_game_name.as_deref(), Some("继续游戏名称"));
 
     ui.handle_event(&action("home.focus_continue_game"));
     assert_eq!(ui.selected_index, 1);

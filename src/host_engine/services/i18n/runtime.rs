@@ -6,6 +6,7 @@ use super::service::I18nService;
 use crate::host_engine::services::{LogService, LogSource, StorageService};
 
 const RUNTIME_NAMESPACES: &[&str] = &[
+  "boot_loading",
   "home",
   "host_key",
   "settings",
@@ -77,16 +78,23 @@ impl I18nService {
       }
     }
 
-    log.warn(
+    log.warn_message(
       LogSource::I18n,
-      "All disk language loads failed, falling back to embedded en_us".to_string(),
+      crate::host_engine::services::HostLogMessage::new(
+        "log_info.fallback.activated",
+        "{domain} entered fallback mode: {reason}",
+      )
+      .param("domain", "i18n")
+      .param("reason", "disk language resources are unavailable"),
     );
     self.load_embedded_fallback();
 
     if self.is_runtime_empty() {
-      log.error(
+      log.error_operation_failed(
         LogSource::I18n,
-        format!("Embedded language fallback for '{}' is empty!", fallback),
+        "load_embedded_language",
+        fallback,
+        "embedded language fallback is empty",
       );
     }
 
@@ -146,7 +154,7 @@ impl I18nService {
 
   fn load_namespace_file(
     storage: &StorageService,
-    log: &mut LogService,
+    _log: &mut LogService,
     language_code: &str,
     namespace: &str,
   ) -> Option<HashMap<String, String>> {
@@ -154,24 +162,12 @@ impl I18nService {
 
     let content = match fs::read_to_string(&path) {
       Ok(c) => c,
-      Err(e) => {
-        log.warn(
-          LogSource::I18n,
-          format!("Failed to read {}: {}", path.display(), e),
-        );
-        return None;
-      }
+      Err(_) => return None,
     };
 
     match serde_json::from_str::<HashMap<String, String>>(&content) {
       Ok(t) => Some(t),
-      Err(e) => {
-        log.warn(
-          LogSource::I18n,
-          format!("Failed to parse {}: {}", path.display(), e),
-        );
-        None
-      }
+      Err(_) => None,
     }
   }
 }

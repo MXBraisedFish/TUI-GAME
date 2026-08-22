@@ -320,9 +320,15 @@ pub(super) fn log_package_start_error(
     .package_log_path(package_id)
     .map(|path| path.display().to_string())
     .unwrap_or_else(|_| "<unavailable>".to_string());
-  services.log.error(
+  services.log.error_message(
     LogSource::Runtime,
-    format!("Package '{package_id}' failed to start; see {path}"),
+    HostLogMessage::new(
+      "log_info.session.faulted",
+      "{kind} session for {package} was isolated after a fault; see its package log.",
+    )
+    .param("kind", package_id.package_type.as_str())
+    .param("package", package_id.to_string())
+    .param("path", path),
   );
 }
 
@@ -578,12 +584,11 @@ pub(super) fn apply_screenshot_recording_command(
         &services.layout,
       );
       if let Err(error) = ui.reload(&path) {
-        services.log.error(
+        services.log.error_operation_failed(
           LogSource::Ui,
-          format!(
-            "failed to scan screenshot cache {}: {error}",
-            path.display()
-          ),
+          "scan_screenshot_cache",
+          path.display().to_string(),
+          error.to_string(),
         );
       }
       world.state.enter_ui_node(UiNodeState::screenshot_list());
@@ -597,9 +602,11 @@ pub(super) fn apply_screenshot_recording_command(
         &services.layout,
       );
       if let Err(error) = ui.reload(&path) {
-        services.log.error(
+        services.log.error_operation_failed(
           LogSource::Ui,
-          format!("failed to scan recording cache {}: {error}", path.display()),
+          "scan_recording_cache",
+          path.display().to_string(),
+          error.to_string(),
         );
       }
       world.state.enter_ui_node(UiNodeState::recording_list());
@@ -639,9 +646,11 @@ pub(super) fn apply_screenshot_list_command(
         ui.commit_rename(&directory, &old_name, &new_name, &mut services.text_input)
       {
         ui.rename_io_failed();
-        services.log.error(
+        services.log.error_operation_failed(
           LogSource::Ui,
-          format!("failed to rename screenshot {old_name} to {new_name}: {error}"),
+          "rename_screenshot",
+          format!("{old_name}->{new_name}"),
+          error.to_string(),
         );
       }
     }
@@ -680,9 +689,11 @@ pub(super) fn apply_screenshot_list_command(
         show_delete_blocked_popup(services, "screenshot_list", "screenshot_list.popup.no_del");
       } else if let Err(error) = ui.finish_delete(&path) {
         ui.cancel_delete();
-        services.log.error(
+        services.log.error_operation_failed(
           LogSource::Storage,
-          format!("failed to delete screenshot {}: {error}", path.display()),
+          "delete_screenshot",
+          path.display().to_string(),
+          error.to_string(),
         );
       }
     }
@@ -721,9 +732,11 @@ pub(super) fn apply_recording_list_command(
         ui.commit_rename(&directory, &old_name, &new_name, &mut services.text_input)
       {
         ui.rename_io_failed();
-        services.log.error(
+        services.log.error_operation_failed(
           LogSource::Ui,
-          format!("failed to rename recording {old_name} to {new_name}: {error}"),
+          "rename_recording",
+          format!("{old_name}->{new_name}"),
+          error.to_string(),
         );
       }
     }
@@ -744,14 +757,11 @@ pub(super) fn apply_recording_list_command(
         fonts,
         profile,
       ) {
-        services.log.error(
+        services.log.error_operation_failed(
           LogSource::Storage,
-          format!(
-            "failed to submit recording export for {} during {}: {}",
-            path.display(),
-            error.stage,
-            error.message
-          ),
+          format!("submit_recording_export:{}", error.stage),
+          path.display().to_string(),
+          error.message,
         );
       }
     }
@@ -776,9 +786,11 @@ pub(super) fn apply_recording_list_command(
         );
       } else if let Err(error) = ui.finish_delete(&path) {
         ui.cancel_delete();
-        services.log.error(
+        services.log.error_operation_failed(
           LogSource::Storage,
-          format!("failed to delete recording {}: {error}", path.display()),
+          "delete_recording",
+          path.display().to_string(),
+          error.to_string(),
         );
       }
     }
@@ -1305,9 +1317,11 @@ pub(super) fn apply_clear_warning_command(
         ClearWarningTarget::Data => services.storage.clear_data(&mut services.log),
       };
       if let Err(error) = result {
-        services.log.error(
+        services.log.error_operation_failed(
           LogSource::Storage,
-          format!("Failed to clear storage target {:?}: {}", target, error),
+          "clear_storage",
+          format!("{target:?}"),
+          error.to_string(),
         );
       } else if matches!(target, ClearWarningTarget::Mod | ClearWarningTarget::Data) {
         let package_language = services.i18n.current_language().to_string();
@@ -1373,9 +1387,12 @@ pub(super) fn apply_storage_management_view_command(
     }
     StorageManagementViewCommand::CopyAll(text) | StorageManagementViewCommand::CopyPath(text) => {
       if !services.clipboard.write_text(&text) {
-        services
-          .log
-          .warn(LogSource::Ui, "Clipboard write failed".to_string());
+        services.log.warn_operation_failed(
+          LogSource::Ui,
+          "write_clipboard",
+          "storage_management",
+          "clipboard backend rejected text",
+        );
       }
     }
   }
@@ -1628,9 +1645,11 @@ pub(super) fn apply_terminal_check_command(
           p.mouse = Some(mouse);
         })
       {
-        services.log.warn(
+        services.log.warn_operation_failed(
           LogSource::Storage,
-          format!("Failed to update terminal profile: {e}"),
+          "update_profile",
+          "terminal",
+          e.to_string(),
         );
       }
       sync_terminal_capabilities_from_profile(services);
@@ -1945,17 +1964,29 @@ pub(super) fn apply_export_loading_events(
         if *task_id == active_task =>
       {
         export_loading_ui.set_progress(&services.progress_bar, 1.0, 1.0);
-        services
-          .log
-          .info(LogSource::Storage, format!("导出成功: {}", path.display()));
+        services.log.info_message(
+          LogSource::Storage,
+          HostLogMessage::new(
+            "log_info.export.data_finished",
+            "Data export {id} finished: {path}",
+          )
+          .param("id", task_id.0.to_string())
+          .param("path", path.display().to_string()),
+        );
         finish_export_loading(export_loading, world);
       }
       crate::host_engine::services::ExportAsyncEvent::Failed { task_id, error }
         if *task_id == active_task =>
       {
-        services
-          .log
-          .error(LogSource::Storage, format!("导出失败: {error}"));
+        services.log.error_message(
+          LogSource::Storage,
+          HostLogMessage::new(
+            "log_info.export.data_failed",
+            "Data export {id} failed: {error}",
+          )
+          .param("id", task_id.0.to_string())
+          .param("error", error),
+        );
         finish_export_loading(export_loading, world);
       }
       _ => {}

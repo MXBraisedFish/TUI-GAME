@@ -10,9 +10,9 @@ pub use game_save::{BestGameSave, ContinueGameSave, GameSaveCapabilities, GameSa
 pub use profile::{
   ActionKeyMap, AutoRecordingMode, AutoSplitDuration, DisplayFpsLimit, DisplayLogoMode,
   DisplayOrderMode, DisplaySettingsProfile, DisplaySourceMode, GamePackageState,
-  KeyBindingMapGroup, KeyBindingsProfile, PackageDefaultState, PackageStateProfile,
-  RecordingExportFrameRate, RecordingExportQuality, RecordingFrameRate, RecordingGpuAcceleration,
-  RecordingPixelScale, RecordingPopupMode, RecordingProfile, SafeModeDefault,
-  ScreensaverPackageState, ScreenshotDoubleAction, ScreenshotProfile,
+  KeyBindingsProfile, PackageDefaultState, PackageStateProfile, RecordingExportFrameRate,
+  RecordingExportQuality, RecordingFrameRate, RecordingGpuAcceleration, RecordingPixelScale,
+  RecordingPopupMode, RecordingProfile, SafeModeDefault, ScreensaverPackageState,
+  ScreenshotDoubleAction, ScreenshotProfile,
 };
 pub use service::StorageService;

@@ -98,7 +98,6 @@ pub(super) fn parse_draw_text_params(
   let parses_rich_text = match text_mode {
     TextMode::Rich => true,
     TextMode::Auto => text.starts_with("f%"),
-    TextMode::Legacy => text.starts_with("f%") || rich_params.is_some(),
     TextMode::Plain => false,
   };
   let needs_user_keys = parses_rich_text && text.contains("{key:");

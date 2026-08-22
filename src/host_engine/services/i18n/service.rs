@@ -90,6 +90,12 @@ impl I18nService {
     template.replace("{value:missing_key}", &missing_key)
   }
 
+  /// Returns a loaded runtime namespace without applying the missing-key
+  /// fallback. This is used by services that keep a localized template cache.
+  pub fn runtime_namespace(&self, namespace: &str) -> Option<&HashMap<String, String>> {
+    self.runtime_texts.get(namespace)
+  }
+
   pub fn current_language_info(&self) -> Option<&LanguageInfo> {
     self.current_language_info.as_ref()
   }

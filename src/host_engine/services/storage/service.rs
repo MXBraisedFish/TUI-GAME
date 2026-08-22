@@ -73,6 +73,10 @@ impl StorageService {
     self.path(layout::TUI_LOG_FILE)
   }
 
+  pub fn package_log_path(&self) -> PathBuf {
+    self.path(layout::PACKAGE_LOG_FILE)
+  }
+
   pub fn mod_dir_path(&self) -> PathBuf {
     self.path(layout::DATA_MOD_DIR)
   }
@@ -253,9 +257,17 @@ fn resolve_root_dir(log: &mut LogService) -> PathBuf {
       return exe_dir.to_path_buf();
     }
   }
-  log.warn(
+  log.warn_message(
     LogSource::Boot,
-    "Could not resolve root directory, falling back to '.'",
+    crate::host_engine::services::HostLogMessage::new(
+      "log_info.fallback.activated",
+      "{domain} entered fallback mode: {reason}",
+    )
+    .param("domain", "storage_root")
+    .param(
+      "reason",
+      "application root could not be resolved; using '.'",
+    ),
   );
   PathBuf::from(".")
 }

@@ -415,10 +415,7 @@ fn export_recording_openh264(
   cancellation: &TaskCancellation,
 ) -> Result<(), VideoExportError> {
   let metadata = playback.metadata();
-  let frame_rate = task
-    .profile
-    .export_frame_rate
-    .resolve(metadata.frame_rate, task.profile.legacy_frame_rate);
+  let frame_rate = task.profile.export_frame_rate.resolve(metadata.frame_rate);
   let total_frames = sampled_frame_count(metadata.duration_us, frame_rate);
   let (pixel_width, pixel_height) = TerminalFrameRasterizer::dimensions(
     metadata.max_width,
@@ -550,10 +547,7 @@ fn export_recording_ffmpeg(
   cancellation: &TaskCancellation,
 ) -> Result<(), VideoExportError> {
   let metadata = playback.metadata();
-  let frame_rate = task
-    .profile
-    .export_frame_rate
-    .resolve(metadata.frame_rate, task.profile.legacy_frame_rate);
+  let frame_rate = task.profile.export_frame_rate.resolve(metadata.frame_rate);
   let total_frames = sampled_frame_count(metadata.duration_us, frame_rate);
   let (width, height) = TerminalFrameRasterizer::dimensions(
     metadata.max_width,
@@ -1200,15 +1194,15 @@ mod tests {
     let source_path = directory.join("recording.json");
     let output_path = directory.join("recording.mp4.tmp");
     let document = serde_json::json!({
-      "schema_version": 2,
+      "schema_version": crate::host_engine::services::MEDIA_MANIFEST_VERSION,
       "started_at": "2026-07-21T20:20:32.895Z",
       "finished_at": "2026-07-21T20:20:32.929Z",
       "frame_rate": 30,
       "canvas": { "max_width": 2, "max_height": 1 },
       "duration_us": { "active": 33_334, "paused": 0, "wall": 33_334 },
       "palette": [
-        { "text": "x", "foreground": { "type": "rgb", "value": [95, 215, 105] } },
-        { "text": "y", "foreground": { "type": "rgb", "value": [238, 205, 90] } }
+        { "text": "x", "foreground": { "type": "rgb", "value": [95, 215, 105] }, "background": null, "flags": 0, "continuation": false },
+        { "text": "y", "foreground": { "type": "rgb", "value": [238, 205, 90] }, "background": null, "flags": 0, "continuation": false }
       ],
       "initial": { "width": 2, "height": 1, "rows": [[[2, 0]]] },
       "events": [{ "time_us": 33_333, "size": [2, 1], "changes": [[0, 1, [1]]] }]
@@ -1299,7 +1293,7 @@ mod tests {
     }
     wav.finalize().unwrap();
     let document = serde_json::json!({
-      "schema_version": 3,
+      "schema_version": crate::host_engine::services::MEDIA_MANIFEST_VERSION,
       "started_at": "2026-07-21T20:20:32.895Z",
       "finished_at": "2026-07-21T20:20:32.995Z",
       "frame_rate": 30,
@@ -1313,7 +1307,7 @@ mod tests {
         "duration_us": 100_000
       },
       "palette": [
-        { "text": "x", "foreground": { "type": "rgb", "value": [95, 215, 105] } }
+        { "text": "x", "foreground": { "type": "rgb", "value": [95, 215, 105] }, "background": null, "flags": 0, "continuation": false }
       ],
       "initial": { "width": 2, "height": 1, "rows": [[[2, 0]]] },
       "events": []

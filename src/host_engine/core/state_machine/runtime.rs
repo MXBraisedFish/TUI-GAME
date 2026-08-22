@@ -51,10 +51,6 @@ impl RuntimeState {
     &mut self.overlays
   }
 
-  pub fn has_overlay(&self) -> bool {
-    !self.overlays.stack.is_empty()
-  }
-
   pub fn set_main_host(&mut self, main_host: MainHostState) {
     self.main_host = main_host;
   }

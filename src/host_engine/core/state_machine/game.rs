@@ -8,13 +8,8 @@ pub struct GameState {
   pub min_width: u32,
   pub min_height: u32,
   pub target_fps: u32,
-  pub game_loop: GameLoopState,
   pub return_host: Box<HostState>,
 }
-
-/// 游戏循环状态
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct GameLoopState;
 
 impl GameState {
   pub fn new(
@@ -29,16 +24,7 @@ impl GameState {
       min_width,
       min_height,
       target_fps,
-      game_loop: GameLoopState,
       return_host: Box::new(return_host),
     }
-  }
-
-  pub fn game_loop(&self) -> &GameLoopState {
-    &self.game_loop
-  }
-
-  pub fn game_loop_mut(&mut self) -> &mut GameLoopState {
-    &mut self.game_loop
   }
 }

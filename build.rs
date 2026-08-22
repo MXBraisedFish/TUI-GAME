@@ -11,17 +11,20 @@ fn main() {
 
   let mut ns_data: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
 
-  if en_us.is_dir() {
-    if let Ok(entries) = fs::read_dir(&en_us) {
-      for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().map_or(false, |e| e == "json") {
-          let ns = path.file_stem().unwrap().to_string_lossy().to_string();
-          if let Ok(content) = fs::read_to_string(&path) {
-            if let Ok(map) = serde_json::from_str::<BTreeMap<String, String>>(&content) {
-              ns_data.insert(ns, map);
-            }
-          }
+  if en_us.is_dir()
+    && let Ok(entries) = fs::read_dir(&en_us)
+  {
+    for entry in entries.flatten() {
+      let path = entry.path();
+      if path
+        .extension()
+        .is_some_and(|extension| extension == "json")
+      {
+        let ns = path.file_stem().unwrap().to_string_lossy().to_string();
+        if let Ok(content) = fs::read_to_string(&path)
+          && let Ok(map) = serde_json::from_str::<BTreeMap<String, String>>(&content)
+        {
+          ns_data.insert(ns, map);
         }
       }
     }

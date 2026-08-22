@@ -9,7 +9,7 @@ mod toolbar;
 
 use action_map::*;
 use commands::*;
-use engine_events::drain_engine_events;
+use engine_events::{drain_engine_events, reconcile_game_save_profile};
 use overlay::*;
 use render::route_render;
 use router::*;
@@ -19,17 +19,19 @@ use crate::host_engine::core::state_machine::{
   HostState, MainHostState, OverlayKind, OverlayStackTransition, RuntimeClosingState, UiNodeKind,
   UiNodeState,
 };
-use crate::host_engine::core::{ExitState, FrameScheduler, RuntimeWorld, set_crash_phase};
+use crate::host_engine::core::{
+  ExitState, FrameScheduler, HostFaultDomain, RuntimeWorld, set_crash_phase, with_fault_domain,
+};
 use crate::host_engine::services::{
   ActionKeyMap, ActionMapEntry, AutoRecordingMode, BorderStyle, DisplayLogoMode, DisplayOrderMode,
-  DrawTextParams, EngineServices, EngineTask, HostAreaKind, ImPolicy, InputActionEvent,
-  KeyBindingsProfile, KeyState, LogLevel, LogPrintOptions, LogSource, LuaActionState,
-  LuaEnqueueError, LuaErrorStage, LuaEventBroker, LuaEventData, LuaEventRoute, LuaHostCommand,
-  LuaSessionDiagnostics, LuaSessionError, LuaSessionKind, LuaSessionToken, LuaTaskOperation,
-  PackageEvent, PackageListEntry, PopupDismissEvent, PopupRequest, RandomGeneratorId, RandomSeed,
-  RecordingState, Rect, ScreenshotAsyncEvent, ScreenshotDoubleAction, ScreenshotService,
-  ScreenshotTask, Size, SystemEvent, TaskId, TextColor, UiEvent, UiObjectPoolOwner,
-  VideoAsyncEvent, VideoExportStage, translate_action_map,
+  DrawTextParams, EngineServices, EngineTask, HostAreaKind, HostLogMessage, ImPolicy,
+  InputActionEvent, KeyBindingsProfile, KeyState, LogLevel, LogPrintOptions, LogSource,
+  LuaActionState, LuaEnqueueError, LuaErrorStage, LuaEventBroker, LuaEventData, LuaEventRoute,
+  LuaHostCommand, LuaSessionDiagnostics, LuaSessionError, LuaSessionKind, LuaSessionToken,
+  LuaTaskOperation, PackageEvent, PackageListEntry, PopupDismissEvent, PopupRequest,
+  RandomGeneratorId, RandomSeed, RecordingState, Rect, ScreenshotAsyncEvent,
+  ScreenshotDoubleAction, ScreenshotService, ScreenshotTask, Size, SystemEvent, TaskId, TextColor,
+  UiEvent, UiObjectPoolOwner, VideoAsyncEvent, VideoExportStage, translate_action_map,
 };
 use crate::host_engine::ui::{
   ClearWarningCommand, ClearWarningTarget, ClearWarningUi, CoverContinueCommand, CoverContinueUi,
@@ -214,13 +216,6 @@ impl InputModePolicy {
     }
   }
 
-  fn raw_overlay() -> Self {
-    Self {
-      action_map_dispatch: false,
-      raw_key_capture: true,
-    }
-  }
-
   fn screenshot_overlay() -> Self {
     Self {
       action_map_dispatch: true,
@@ -231,16 +226,8 @@ impl InputModePolicy {
 
 /// 运行引擎主循环：初始化 UI 并循环处理输入、更新与渲染，直到退出。
 pub fn run(services: &mut EngineServices, world: &mut RuntimeWorld) -> ExitState {
-  services.terminal.enter(&mut services.log);
-
-  services
-    .input
-    .start_key_listener(&mut services.async_runtime);
-  services
-    .input
-    .start_system_listener(&mut services.async_runtime);
-  services.package.start_watcher(&mut services.async_runtime);
   let host_key_profile = load_host_key_action_map(services);
+  reconcile_game_save_profile(services);
 
   let mut scheduler = FrameScheduler::new(60);
   scheduler.set_target_fps(
@@ -255,6 +242,10 @@ pub fn run(services: &mut EngineServices, world: &mut RuntimeWorld) -> ExitState
   set_crash_phase(world.state.crash_phase());
   world.state.enter_runtime();
   set_crash_phase(world.state.crash_phase());
+  services.log.info_message(
+    LogSource::Runtime,
+    HostLogMessage::new("log_info.runtime.started", "Runtime event loop started."),
+  );
 
   let registry = services.i18n.language_registry().to_vec();
   let mut display_profile = services.storage.display_settings_profile().clone();
@@ -387,6 +378,8 @@ pub fn run(services: &mut EngineServices, world: &mut RuntimeWorld) -> ExitState
   {
     world.state.enter_ui_node(UiNodeState::terminal_check());
   }
+  let mut logged_ui = world.state.current_ui_kind();
+  let mut logged_overlay = world.state.current_overlay_kind();
 
   while !world.state.is_shutdown() && !world.is_stopped() {
     let frame = scheduler.begin_frame();
@@ -417,14 +410,18 @@ pub fn run(services: &mut EngineServices, world: &mut RuntimeWorld) -> ExitState
       .with_objects_mut(|objects| update_lua_object_pool(objects, time, animation, frame_delta));
     top_toolbar.update(frame_delta);
 
-    services
-      .engine_events
-      .extend(services.async_runtime.poll_events());
-    synchronize_lua_event_sessions(services, &mut lua_event_router);
-    let engine_events = drain_engine_events(services, &mut lua_event_router, frame);
+    let engine_events = with_fault_domain(HostFaultDomain::Async, || {
+      services
+        .engine_events
+        .extend(services.async_runtime.poll_events());
+      synchronize_lua_event_sessions(services, &mut lua_event_router);
+      drain_engine_events(services, &mut lua_event_router, frame)
+    });
 
-    services.input.begin_frame();
-    services.input.poll();
+    with_fault_domain(HostFaultDomain::Input, || {
+      services.input.begin_frame();
+      services.input.poll();
+    });
     apply_language_loading_package_events(
       &engine_events.package,
       &mut language_loading,
@@ -523,45 +520,47 @@ pub fn run(services: &mut EngineServices, world: &mut RuntimeWorld) -> ExitState
         &mut pending_screenshot_saves,
       );
     } else {
-      route_frame_input(
-        services,
-        world,
-        &mut home_ui,
-        &mut settings_ui,
-        &mut display_settings_ui,
-        &mut screensaver_list_ui,
-        &mut security_uis,
-        &mut storage_management_ui,
-        &mut storage_management_clear_ui,
-        &mut storage_management_export_ui,
-        &mut storage_management_view_ui,
-        language_select_ui.as_mut(),
-        &mut terminal_check_ui,
-        &mut mods_ui,
-        &mut game_list_ui,
-        &mut game_package_ui,
-        &mut screensaver_package_ui,
-        &mut input_demo_ui,
-        &mut window_size_ui,
-        &mut game_warning_ui,
-        &mut safe_mode_warning_ui,
-        &mut clear_warning_ui,
-        &mut cover_continue_ui,
-        &mut export_settings_ui,
-        &mut screenshot_capture_ui,
-        &mut exit_warning_ui,
-        &mut export_loading_ui,
-        &mut language_loading_ui,
-        &mut language_loading,
-        &mut export_loading,
-        &mut pending_screenshot_saves,
-        &mut pending_screenshot_hotkey,
-        &mut pending_recording_hotkey,
-        &mut pending_screensaver_hotkey,
-        &mut pending_toolbar_hotkey,
-        &mut lua_event_router,
-        frame,
-      );
+      with_fault_domain(HostFaultDomain::Input, || {
+        route_frame_input(
+          services,
+          world,
+          &mut home_ui,
+          &mut settings_ui,
+          &mut display_settings_ui,
+          &mut screensaver_list_ui,
+          &mut security_uis,
+          &mut storage_management_ui,
+          &mut storage_management_clear_ui,
+          &mut storage_management_export_ui,
+          &mut storage_management_view_ui,
+          language_select_ui.as_mut(),
+          &mut terminal_check_ui,
+          &mut mods_ui,
+          &mut game_list_ui,
+          &mut game_package_ui,
+          &mut screensaver_package_ui,
+          &mut input_demo_ui,
+          &mut window_size_ui,
+          &mut game_warning_ui,
+          &mut safe_mode_warning_ui,
+          &mut clear_warning_ui,
+          &mut cover_continue_ui,
+          &mut export_settings_ui,
+          &mut screenshot_capture_ui,
+          &mut exit_warning_ui,
+          &mut export_loading_ui,
+          &mut language_loading_ui,
+          &mut language_loading,
+          &mut export_loading,
+          &mut pending_screenshot_saves,
+          &mut pending_screenshot_hotkey,
+          &mut pending_recording_hotkey,
+          &mut pending_screensaver_hotkey,
+          &mut pending_toolbar_hotkey,
+          &mut lua_event_router,
+          frame,
+        );
+      });
     }
     apply_screenshot_operation_feedback(services, &mut pending_screenshot_saves);
     apply_video_submission_feedback(services);
@@ -616,39 +615,44 @@ pub fn run(services: &mut EngineServices, world: &mut RuntimeWorld) -> ExitState
       world.state.closing_state(),
       Some(RuntimeClosingState::Exception { .. })
     ) {
-      route_update(
-        services,
-        world,
-        &mut home_ui,
-        &mut settings_ui,
-        &mut display_settings_ui,
-        &mut screensaver_list_ui,
-        &mut security_uis,
-        &mut storage_management_ui,
-        &mut storage_management_clear_ui,
-        &mut storage_management_export_ui,
-        &mut storage_management_view_ui,
-        language_select_ui.as_mut(),
-        &mut terminal_check_ui,
-        &mut mods_ui,
-        &mut game_list_ui,
-        &mut game_package_ui,
-        &mut screensaver_package_ui,
-        &mut input_demo_ui,
-        &mut safe_mode_warning_ui,
-        &mut clear_warning_ui,
-        &mut export_settings_ui,
-        &mut screenshot_capture_ui,
-        &mut export_loading_ui,
-        &mut language_loading_ui,
-        &mut language_loading,
-        &mut export_loading,
-      );
-      update_lua_sessions(services, world, &mut lua_event_router, frame_delta);
+      with_fault_domain(HostFaultDomain::Ui, || {
+        route_update(
+          services,
+          world,
+          &mut home_ui,
+          &mut settings_ui,
+          &mut display_settings_ui,
+          &mut screensaver_list_ui,
+          &mut security_uis,
+          &mut storage_management_ui,
+          &mut storage_management_clear_ui,
+          &mut storage_management_export_ui,
+          &mut storage_management_view_ui,
+          language_select_ui.as_mut(),
+          &mut terminal_check_ui,
+          &mut mods_ui,
+          &mut game_list_ui,
+          &mut game_package_ui,
+          &mut screensaver_package_ui,
+          &mut input_demo_ui,
+          &mut safe_mode_warning_ui,
+          &mut clear_warning_ui,
+          &mut export_settings_ui,
+          &mut screenshot_capture_ui,
+          &mut export_loading_ui,
+          &mut language_loading_ui,
+          &mut language_loading,
+          &mut export_loading,
+        );
+      });
+      with_fault_domain(HostFaultDomain::Lua, || {
+        update_lua_sessions(services, world, &mut lua_event_router, frame_delta)
+      });
     }
     sync_input_method_policy(services);
     services.input_method.update(world.clock.delta_time());
     restore_input_modes_if_scope_changed(services, world, &mut input_mode_scope);
+    log_host_view_changes(services, world, &mut logged_ui, &mut logged_overlay);
 
     if world.state.is_shutdown() || world.is_stopped() {
       break;
@@ -712,20 +716,18 @@ pub fn run(services: &mut EngineServices, world: &mut RuntimeWorld) -> ExitState
     draw_popup(services);
     let text_force_redraw = services.canvas.take_render_requested();
     let composed = services.compositor.compose(&services.canvas);
-    let presented = if let Err(error) = services.presenter.present(
-      &composed,
-      &mut services.terminal,
-      text_force_redraw,
-      input_cursor,
-    ) {
-      services.log.error(
-        LogSource::Render,
-        format!("Frame presentation failed: {error}"),
-      );
-      false
-    } else {
+    let presented = with_fault_domain(HostFaultDomain::Render, || {
+      services
+        .presenter
+        .present(
+          &composed,
+          &mut services.terminal,
+          text_force_redraw,
+          input_cursor,
+        )
+        .unwrap_or_else(|error| panic!("frame presentation failed: {error}"));
       true
-    };
+    });
     if presented {
       if world.state.current_overlay_kind() != Some(OverlayKind::ScreenshotCapture) {
         services
@@ -769,6 +771,138 @@ pub fn run(services: &mut EngineServices, world: &mut RuntimeWorld) -> ExitState
     let _ = stop_recording(services);
   }
 
+  services.log.info_message(
+    LogSource::Runtime,
+    HostLogMessage::new(
+      "log_info.runtime.stopped",
+      "Runtime event loop stopped with exit mode {mode}.",
+    )
+    .param("mode", "shutdown-requested"),
+  );
+
+  ExitState::new()
+}
+
+fn log_host_view_changes(
+  services: &mut EngineServices,
+  world: &RuntimeWorld,
+  logged_ui: &mut Option<UiNodeKind>,
+  logged_overlay: &mut Option<OverlayKind>,
+) {
+  let current_ui = world.state.current_ui_kind();
+  if current_ui != *logged_ui {
+    services.log.info_message(
+      LogSource::Ui,
+      HostLogMessage::new(
+        "log_info.ui.changed",
+        "Host UI changed from {from} to {to}.",
+      )
+      .param("from", format_optional_state(*logged_ui))
+      .param("to", format_optional_state(current_ui)),
+    );
+    *logged_ui = current_ui;
+  }
+
+  let current_overlay = world.state.current_overlay_kind();
+  if current_overlay != *logged_overlay {
+    services.log.info_message(
+      LogSource::Overlay,
+      HostLogMessage::new(
+        "log_info.overlay.changed",
+        "Overlay state changed from {from} to {to}.",
+      )
+      .param("from", format_optional_state(*logged_overlay))
+      .param("to", format_optional_state(current_overlay)),
+    );
+    *logged_overlay = current_overlay;
+  }
+}
+
+fn format_optional_state<T: std::fmt::Debug>(state: Option<T>) -> String {
+  state.map_or_else(|| "none".to_string(), |value| format!("{value:?}"))
+}
+
+/// Runs the deliberately small exception screen after a supervised Runtime
+/// fault. Ordinary UI, Lua and business updates stay stopped; terminal resize,
+/// focus-aware input and the exception countdown remain alive.
+pub fn run_exception(services: &mut EngineServices, world: &mut RuntimeWorld) -> ExitState {
+  if !world.state.is_runtime() {
+    world.state.enter_runtime();
+  }
+  world.state.request_exception_shutdown();
+  services.input.clear();
+  load_exit_warning_action_map(services, false);
+
+  let mut ui = ExitWarningUi::init(&services.progress_bar, &services.hit_area);
+  let mut scheduler = FrameScheduler::new(30);
+  let mut remaining: u8 = 3;
+  let mut elapsed = Duration::ZERO;
+
+  while remaining > 0 && !world.state.is_shutdown() {
+    let _frame = scheduler.begin_frame();
+    world.clock.tick();
+    let delta = world.clock.delta_time();
+    elapsed = elapsed.saturating_add(delta);
+    let elapsed_seconds = elapsed.as_secs().min(u8::MAX as u64) as u8;
+    if elapsed_seconds > 0 {
+      elapsed = elapsed.saturating_sub(Duration::from_secs(elapsed_seconds as u64));
+      remaining = remaining.saturating_sub(elapsed_seconds);
+      world
+        .state
+        .set_closing_state(RuntimeClosingState::Exception {
+          seconds_left: remaining,
+        });
+    }
+
+    services.input.begin_frame();
+    services.input.poll();
+    services.input.poll_resize_events(|width, height| {
+      services.layout.resize_physical(width, height);
+      services.canvas.resize(width, height);
+      services.canvas.request_render();
+      services.presenter.request_render();
+    });
+    services.input.dispatch_action_events(&mut services.log);
+    let exit_now = std::iter::from_fn(|| services.input.next_action_event()).any(|event| {
+      ui.handle_event(
+        ExitWarningMode::Exception {
+          seconds_left: remaining,
+        },
+        &UiEvent::Action(event),
+      ) == Some(ExitWarningCommand::ExitNow)
+    });
+    if exit_now || remaining == 0 {
+      world.state.enter_shutdown();
+      break;
+    }
+
+    services.canvas.begin_frame(&services.layout);
+    ui.render(
+      &mut services.render,
+      &mut services.canvas,
+      &services.layout,
+      &services.i18n,
+      &services.progress_bar,
+      &services.hit_area,
+      ExitWarningMode::Exception {
+        seconds_left: remaining,
+      },
+      None,
+      None,
+    );
+    let force_redraw = services.canvas.take_render_requested();
+    let composed = services.compositor.compose(&services.canvas);
+    if let Err(error) =
+      services
+        .presenter
+        .present(&composed, &mut services.terminal, force_redraw, None)
+    {
+      panic!("exception page presentation failed: {error}");
+    }
+    scheduler.wait_for_next_frame();
+  }
+
+  world.state.enter_shutdown();
   ExitState::new()
 }
 
@@ -1571,6 +1705,39 @@ fn route_frame_input(
       language_loading,
       _export_loading,
     );
+  } else if world.state.current_overlay_kind() == Some(OverlayKind::CoverContinue) {
+    load_cover_continue_action_map(services);
+    services.input.dispatch_action_events(&mut services.log);
+    route_input_events(
+      services,
+      world,
+      home_ui,
+      settings_ui,
+      display_settings_ui,
+      screensaver_list_ui,
+      security_uis,
+      storage_management_ui,
+      storage_management_clear_ui,
+      storage_management_export_ui,
+      storage_management_view_ui,
+      language_select_ui,
+      terminal_check_ui,
+      mods_ui,
+      game_list_ui,
+      game_package_ui,
+      screensaver_package_ui,
+      input_demo_ui,
+      window_size_ui,
+      safe_mode_warning_ui,
+      clear_warning_ui,
+      cover_continue_ui,
+      export_settings_ui,
+      screenshot_capture_ui,
+      _export_loading_ui,
+      language_loading_ui,
+      language_loading,
+      _export_loading,
+    );
   } else if world.state.current_overlay_kind() == Some(OverlayKind::ExportSettings) {
     if services.text_input.is_active() {
       // 输入中不 dispatch action——避免 Enter 被当作 action 而打断 IME 组字
@@ -1881,9 +2048,11 @@ fn handle_lua_queue_overflow(
 
 fn log_lua_enqueue_error(services: &mut EngineServices, error: LuaEnqueueError) {
   if !matches!(error, LuaEnqueueError::QueueOverflow(_)) {
-    services.log.debug(
+    services.log.warn_operation_failed(
       LogSource::Lua,
-      format!("Lua event was not enqueued: {error:?}"),
+      "queue_lua_event",
+      "session_event_queue",
+      format!("{error:?}"),
     );
   }
 }
@@ -2195,14 +2364,14 @@ fn handle_lua_fault(
   let message = format_lua_fault_message(&error, diagnostics.as_ref());
   log_lua_session_message(services, error.session_kind, "error", message);
   if let Some(package) = &package {
-    let log_location = services
-      .log
-      .package_log_path(package)
-      .map(|path| path.display().to_string())
-      .unwrap_or_else(|_| "the package log".to_string());
-    services.log.error(
+    services.log.error_message(
       LogSource::Runtime,
-      format!("Package '{package}' stopped after a runtime fault; see '{log_location}'"),
+      HostLogMessage::new(
+        "log_info.session.faulted",
+        "{kind} session for {package} was isolated after a fault; see its package log.",
+      )
+      .param("kind", error.session_kind.as_str())
+      .param("package", package.to_string()),
     );
   }
   match error.session_kind {
@@ -2320,12 +2489,12 @@ fn log_lua_session_message(
       _ => services.log.info_package(&package, LogSource::Lua, message),
     }
   } else {
-    match level {
-      "error" => services.log.error(LogSource::Lua, message),
-      "warn" => services.log.warn(LogSource::Lua, message),
-      "debug" => services.log.debug(LogSource::Lua, message),
-      _ => services.log.info(LogSource::Lua, message),
-    }
+    services.log.error_operation_failed(
+      LogSource::Lua,
+      "route_package_log",
+      format!("{kind:?}"),
+      message,
+    );
   }
 }
 
@@ -2357,7 +2526,12 @@ fn print_lua_session_message(
       .log
       .print_package(&package, source, message, options);
   } else {
-    services.log.info(LogSource::Lua, message);
+    services.log.warn_operation_failed(
+      LogSource::Lua,
+      "route_package_print",
+      format!("{kind:?}"),
+      message,
+    );
   }
 }
 
@@ -2507,10 +2681,6 @@ fn toggle_screensaver(
   }
 
   let Some(entry) = select_screensaver(services, random_id) else {
-    services.log.info(
-      LogSource::Runtime,
-      "Screensaver hotkey ignored: no enabled screensaver",
-    );
     services.input.clear();
     return;
   };
@@ -2613,9 +2783,11 @@ fn handle_host_chord_input(
           if let Some(capture_id) = services.recording.audio_capture()
             && let Err(error) = services.audio.pause_capture(capture_id)
           {
-            services.log.warn(
+            services.log.warn_operation_failed(
               LogSource::Audio,
-              format!("failed to pause recording audio capture: {error}"),
+              "pause_recording_capture",
+              capture_id.0.to_string(),
+              error.to_string(),
             );
           }
           show_recording_popup(services, RecordingPopupKind::Pause);
@@ -2626,9 +2798,11 @@ fn handle_host_chord_input(
           if let Some(capture_id) = services.recording.audio_capture()
             && let Err(error) = services.audio.resume_capture(capture_id)
           {
-            services.log.warn(
+            services.log.warn_operation_failed(
               LogSource::Audio,
-              format!("failed to resume recording audio capture: {error}"),
+              "resume_recording_capture",
+              capture_id.0.to_string(),
+              error.to_string(),
             );
           }
           show_recording_popup(services, RecordingPopupKind::Resume);
@@ -2730,7 +2904,15 @@ fn toggle_recording(services: &mut EngineServices, auto: &mut AutoRecordingRunti
     RecordingState::Stopped => {
       if start_recording(services) {
         auto.manually_stopped = false;
-        services.log.info(LogSource::Runtime, "Recording started");
+        services.log.info_message(
+          LogSource::Runtime,
+          HostLogMessage::new(
+            "log_info.external.operation",
+            "Host {operation} operation entered {state}.",
+          )
+          .param("operation", "recording")
+          .param("state", "started"),
+        );
         show_recording_popup(services, RecordingPopupKind::Start);
       }
     }
@@ -2738,9 +2920,15 @@ fn toggle_recording(services: &mut EngineServices, auto: &mut AutoRecordingRunti
       if stop_recording(services) {
         auto.manually_stopped = true;
         auto.restart_after_split = false;
-        services
-          .log
-          .info(LogSource::Runtime, "Recording stopped; saving JSON");
+        services.log.info_message(
+          LogSource::Runtime,
+          HostLogMessage::new(
+            "log_info.external.operation",
+            "Host {operation} operation entered {state}.",
+          )
+          .param("operation", "recording")
+          .param("state", "finalizing"),
+        );
         show_recording_popup(services, RecordingPopupKind::Stop);
       }
     }
@@ -2750,9 +2938,11 @@ fn toggle_recording(services: &mut EngineServices, auto: &mut AutoRecordingRunti
 
 fn start_recording(services: &mut EngineServices) -> bool {
   let Some(frame) = services.recording.capture_last_frame() else {
-    services.log.warn(
+    services.log.warn_operation_failed(
       LogSource::Runtime,
-      "Recording start ignored: no presented frame is available",
+      "start_recording",
+      "last_presented_frame",
+      "no frame is available",
     );
     return false;
   };
@@ -2770,13 +2960,16 @@ fn start_recording(services: &mut EngineServices) -> bool {
     return false;
   }
   if let Some(path) = services.recording.pending_audio_path() {
+    let path_display = path.display().to_string();
     match services.audio.start_capture(path) {
       Ok(capture_id) => {
         let _ = services.recording.attach_audio_capture(capture_id);
       }
-      Err(error) => services.log.warn(
+      Err(error) => services.log.warn_operation_failed(
         LogSource::Audio,
-        format!("recording started without audio because capture could not start: {error}"),
+        "start_recording_capture",
+        path_display,
+        error.to_string(),
       ),
     }
   }
@@ -2788,9 +2981,11 @@ fn stop_recording(services: &mut EngineServices) -> bool {
     && let Err(error) = services.audio.stop_capture(capture_id)
   {
     let _ = services.recording.detach_audio_capture(capture_id);
-    services.log.warn(
+    services.log.warn_operation_failed(
       LogSource::Audio,
-      format!("recording audio capture could not be finalized: {error}"),
+      "finalize_recording_capture",
+      capture_id.0.to_string(),
+      error.to_string(),
     );
   }
   services.recording.stop(&services.async_runtime)
@@ -2827,9 +3022,14 @@ fn update_auto_recording(services: &mut EngineServices, auto: &mut AutoRecording
 
   if auto.should_start_host(services.recording.state()) && start_recording(services) {
     auto.host_started = true;
-    services.log.info(
+    services.log.info_message(
       LogSource::Runtime,
-      "Recording started automatically for host session",
+      HostLogMessage::new(
+        "log_info.external.operation",
+        "Host {operation} operation entered {state}.",
+      )
+      .param("operation", "automatic_recording")
+      .param("state", "started"),
     );
     show_recording_popup(services, RecordingPopupKind::Start);
   }
@@ -2996,9 +3196,11 @@ fn start_screenshot_capture(
   screenshot_ui: &mut ScreenshotCaptureUi,
 ) {
   let Some(frame) = services.screenshot.capture_last_frame() else {
-    services.log.warn(
+    services.log.warn_operation_failed(
       LogSource::Render,
-      "Screenshot requested before first frame was presented",
+      "start_screenshot",
+      "last_presented_frame",
+      "no frame is available",
     );
     services.input.clear();
     return;
@@ -3020,9 +3222,11 @@ fn run_quick_screenshot_action(
   pending_screenshot_saves: &mut HashMap<TaskId, PendingScreenshotSave>,
 ) {
   let Some(frame) = services.screenshot.capture_last_frame() else {
-    services.log.warn(
+    services.log.warn_operation_failed(
       LogSource::Render,
-      "Screenshot requested before first frame was presented",
+      "quick_screenshot",
+      "last_presented_frame",
+      "no frame is available",
     );
     return;
   };
@@ -3172,9 +3376,11 @@ pub(super) fn copy_screenshot_text(
   let text = ScreenshotService::plain_text(frame, rect);
   let copied = services.clipboard.write_text(&text);
   if !copied {
-    services.log.warn(
+    services.log.warn_operation_failed(
       LogSource::Storage,
-      "Failed to copy screenshot text to clipboard",
+      "copy_screenshot_text",
+      "clipboard",
+      "clipboard rejected the text",
     );
   }
   copied
@@ -3188,9 +3394,11 @@ pub(super) fn copy_screenshot_rich_text(
   let text = ScreenshotService::rich_text(frame, rect);
   let copied = services.clipboard.write_text(&text);
   if !copied {
-    services.log.warn(
+    services.log.warn_operation_failed(
       LogSource::Storage,
-      "Failed to copy screenshot rich text to clipboard",
+      "copy_screenshot_rich_text",
+      "clipboard",
+      "clipboard rejected the text",
     );
   }
   copied

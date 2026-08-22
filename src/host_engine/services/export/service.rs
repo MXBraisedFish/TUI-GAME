@@ -151,9 +151,11 @@ impl ExportService {
   ) -> io::Result<PathBuf> {
     let src_dir = scope.dir_path(storage);
     if !src_dir.is_dir() {
-      log.warn(
+      log.warn_operation_failed(
         crate::host_engine::services::LogSource::Storage,
-        format!("导出源目录不存在: {}", src_dir.display()),
+        "export_archive",
+        src_dir.display().to_string(),
+        "source directory does not exist",
       );
       return Err(io::Error::new(
         io::ErrorKind::NotFound,
@@ -173,9 +175,14 @@ impl ExportService {
       self.export_entries(temporary, format, &entries, || false, |_| {})
     })?;
 
-    log.info(
+    log.info_message(
       crate::host_engine::services::LogSource::Storage,
-      format!("导出完成: {}", out_path.display()),
+      crate::host_engine::services::HostLogMessage::new(
+        "log_info.external.operation",
+        "Host {operation} operation entered {state}.",
+      )
+      .param("operation", "export_archive")
+      .param("state", format!("completed:{}", out_path.display())),
     );
 
     Ok(out_path)

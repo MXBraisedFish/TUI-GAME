@@ -9,7 +9,6 @@ pub(super) struct RuntimeEngineEvents {
   pub export: Vec<ExportAsyncEvent>,
   pub screenshot: Vec<ScreenshotAsyncEvent>,
   pub video: Vec<VideoAsyncEvent>,
-  pub network: Vec<NetworkEvent>,
 }
 
 pub(super) fn drain_engine_events(
@@ -21,22 +20,19 @@ pub(super) fn drain_engine_events(
   let mut export_events = Vec::new();
   let mut screenshot_events = Vec::new();
   let mut video_events = Vec::new();
-  let mut network_events = Vec::new();
 
   for event in services.engine_events.drain() {
     if let Err(error) = lua_events.route_engine_event(frame, &event) {
       match error {
-        LuaEnqueueError::StaleTaskCompletion(task_id) => services.log.debug(
+        LuaEnqueueError::StaleTaskCompletion(_) | LuaEnqueueError::StaleAudioEvent(_) => {}
+        error => services.log.warn_message(
           LogSource::Lua,
-          format!("Discarded stale Lua task completion: {task_id:?}"),
-        ),
-        LuaEnqueueError::StaleAudioEvent(audio_id) => services.log.debug(
-          LogSource::Lua,
-          format!("Discarded stale Lua audio event: {audio_id:?}"),
-        ),
-        error => services.log.warn(
-          LogSource::Lua,
-          format!("Lua async event routing rejected: {error:?}"),
+          HostLogMessage::new(
+            "log_info.fallback.activated",
+            "{domain} entered fallback mode: {reason}",
+          )
+          .param("domain", "lua-event-router")
+          .param("reason", format!("{error:?}")),
         ),
       }
     }
@@ -49,28 +45,7 @@ pub(super) fn drain_engine_events(
           .handle_async_event(event, &mut services.log);
         if matches!(event, PackageEvent::ScanFinished { .. }) {
           synchronize_key_bindings_profile(services);
-          let games = services
-            .package
-            .games()
-            .into_iter()
-            .filter_map(|package| {
-              let game = package.game.as_ref()?;
-              Some(GameSaveCapabilities {
-                package_id: package.id.clone(),
-                save_enabled: game.save,
-                score_enabled: game.score.as_ref().is_some_and(|score| score.enabled),
-              })
-            })
-            .collect::<Vec<_>>();
-          if let Err(error) = services
-            .storage
-            .reconcile_game_save_capabilities(&games, &mut services.log)
-          {
-            services.log.error(
-              LogSource::Storage,
-              format!("Failed to reconcile game save capabilities: {error}"),
-            );
-          }
+          reconcile_game_save_profile(services);
         }
         if matches!(event, PackageEvent::WatchChanged { .. }) {
           let _ = services.package.request_rescan(&services.async_runtime);
@@ -91,19 +66,26 @@ pub(super) fn drain_engine_events(
             total_rows,
           }),
           ScreenshotAsyncEvent::Saved { task_id, png_path } => {
-            services.log.info(
+            services.log.info_message(
               LogSource::Storage,
-              format!(
-                "Screenshot task {task_id:?} saved PNG: {}",
-                png_path.display()
-              ),
+              HostLogMessage::new(
+                "log_info.export.image_finished",
+                "Image export {id} finished: {path}",
+              )
+              .param("id", format!("{task_id:?}"))
+              .param("path", png_path.display().to_string()),
             );
             screenshot_events.push(ScreenshotAsyncEvent::Saved { task_id, png_path });
           }
           ScreenshotAsyncEvent::Failed { task_id, error } => {
-            services.log.warn(
+            services.log.warn_message(
               LogSource::Storage,
-              format!("Screenshot task {task_id:?} failed: {error}"),
+              HostLogMessage::new(
+                "log_info.export.image_failed",
+                "Image export {id} failed: {error}",
+              )
+              .param("id", format!("{task_id:?}"))
+              .param("error", &error),
             );
             screenshot_events.push(ScreenshotAsyncEvent::Failed { task_id, error });
           }
@@ -113,15 +95,25 @@ pub(super) fn drain_engine_events(
         services.recording.handle_engine_event(&event);
         match event {
           crate::host_engine::services::RecordingAsyncEvent::Saved { task_id, path } => {
-            services.log.info(
+            services.log.info_message(
               LogSource::Storage,
-              format!("Recording task {task_id:?} saved: {}", path.display()),
+              HostLogMessage::new(
+                "log_info.external.operation",
+                "Host {operation} operation entered {state}.",
+              )
+              .param("operation", format!("recording-{task_id:?}"))
+              .param("state", format!("saved: {}", path.display())),
             );
           }
           crate::host_engine::services::RecordingAsyncEvent::Failed { task_id, error } => {
-            services.log.warn(
+            services.log.warn_message(
               LogSource::Storage,
-              format!("Recording task {task_id:?} failed: {error}"),
+              HostLogMessage::new(
+                "log_info.fallback.activated",
+                "{domain} entered fallback mode: {reason}",
+              )
+              .param("domain", format!("recording-{task_id:?}"))
+              .param("reason", error),
             );
           }
         }
@@ -131,99 +123,54 @@ pub(super) fn drain_engine_events(
         match &event {
           VideoAsyncEvent::Saved {
             task_id,
-            source_path,
+            source_path: _,
             mp4_path,
-          } => services.log.info(
+          } => services.log.info_message(
             LogSource::Storage,
-            format!(
-              "Video export task {task_id:?} saved {} from {}",
-              mp4_path.display(),
-              source_path.display()
-            ),
+            HostLogMessage::new(
+              "log_info.export.video_finished",
+              "Video export {id} finished: {path}",
+            )
+            .param("id", format!("{task_id:?}"))
+            .param("path", mp4_path.display().to_string()),
           ),
           VideoAsyncEvent::Failed {
             task_id,
-            source_path,
-            output_path,
             stage,
             error,
-          } => services.log.warn(
+            ..
+          } => services.log.warn_message(
             LogSource::Storage,
-            format!(
-              "Video export task {task_id:?} failed during {stage}: source={}, output={}, error={error}",
-              source_path.display(),
-              output_path.display()
-            ),
+            HostLogMessage::new(
+              "log_info.export.video_failed",
+              "Video export {id} failed during {stage}: {error}",
+            )
+            .param("id", format!("{task_id:?}"))
+            .param("stage", format!("{stage:?}"))
+            .param("error", error),
           ),
-          VideoAsyncEvent::Preparing { task_id } => services.log.info(
-            LogSource::Storage,
-            format!("Video export task {task_id:?} started preparing"),
-          ),
-          VideoAsyncEvent::Encoder { task_id, encoder } => services.log.info(
-            LogSource::Storage,
-            format!("Video export task {task_id:?} using encoder: {encoder}"),
-          ),
-          VideoAsyncEvent::Progress { .. } | VideoAsyncEvent::Finalizing { .. } => {}
+          VideoAsyncEvent::Preparing { .. }
+          | VideoAsyncEvent::Encoder { .. }
+          | VideoAsyncEvent::Progress { .. }
+          | VideoAsyncEvent::Finalizing { .. } => {}
         }
         video_events.push(event);
       }
       EngineEvent::Network(event) => {
         services.network.handle_engine_event(&event);
         match &event {
-          NetworkEvent::Started {
-            task_id,
-            method,
-            url,
-          } => services.log.debug(
+          NetworkEvent::Started { .. } | NetworkEvent::Finished { .. } => {}
+          NetworkEvent::Failed { task_id, error, .. } => services.log.warn_message(
             LogSource::Engine,
-            format!(
-              "Network task {task_id:?} started: {} {}",
-              method.as_str(),
-              redact_network_url(url)
-            ),
+            HostLogMessage::new(
+              "log_info.network.failed",
+              "Host network request {id} failed with {code}.",
+            )
+            .param("id", format!("{task_id:?}"))
+            .param("code", error.code.as_str()),
           ),
-          NetworkEvent::Finished {
-            task_id,
-            method,
-            response,
-          } => services.log.debug(
-            LogSource::Engine,
-            format!(
-              "Network task {task_id:?} finished: {} {} -> {}",
-              method.as_str(),
-              redact_network_url(&response.final_url),
-              response.status
-            ),
-          ),
-          NetworkEvent::Failed {
-            task_id,
-            method,
-            url,
-            error,
-          } => services.log.warn(
-            LogSource::Engine,
-            format!(
-              "Network task {task_id:?} failed during {}: {} {} ({})",
-              error.stage(),
-              method.as_str(),
-              redact_network_url(url),
-              error.code.as_str()
-            ),
-          ),
-          NetworkEvent::Cancelled {
-            task_id,
-            method,
-            url,
-          } => services.log.debug(
-            LogSource::Engine,
-            format!(
-              "Network task {task_id:?} cancelled: {} {}",
-              method.as_str(),
-              redact_network_url(url)
-            ),
-          ),
+          NetworkEvent::Cancelled { .. } => {}
         }
-        network_events.push(event);
       }
       EngineEvent::Audio(event) => {
         services.audio.handle_engine_event(&event);
@@ -231,32 +178,31 @@ pub(super) fn drain_engine_events(
           .recording
           .handle_audio_event(&event, &services.async_runtime);
         match &event {
-          AudioAsyncEvent::Failed {
-            pool_id,
-            audio_id,
-            error,
-          } => services.log.warn(
+          AudioAsyncEvent::Failed { error, .. } => services.log.warn_message(
             LogSource::Audio,
-            format!(
-              "Audio object {audio_id:?} in pool {pool_id:?} failed: {}",
-              error.code.as_str()
-            ),
+            HostLogMessage::new(
+              "log_info.fallback.activated",
+              "{domain} entered fallback mode: {reason}",
+            )
+            .param("domain", "audio-object")
+            .param("reason", error.code.as_str()),
           ),
-          AudioAsyncEvent::BackendFailed { error } => services.log.warn(
+          AudioAsyncEvent::BackendFailed { error } => services.log.warn_message(
             LogSource::Audio,
-            format!("Audio backend unavailable: {}", error.code.as_str()),
+            HostLogMessage::new(
+              "log_info.audio.unavailable",
+              "Audio output is unavailable; playback was disabled: {error}",
+            )
+            .param("error", error.code.as_str()),
           ),
-          AudioAsyncEvent::CaptureFailed {
-            capture_id,
-            path,
-            error,
-          } => services.log.warn(
+          AudioAsyncEvent::CaptureFailed { error, .. } => services.log.warn_message(
             LogSource::Audio,
-            format!(
-              "Audio capture {capture_id:?} failed for {}: {}",
-              path.display(),
-              error.code.as_str()
-            ),
+            HostLogMessage::new(
+              "log_info.fallback.activated",
+              "{domain} entered fallback mode: {reason}",
+            )
+            .param("domain", "audio-capture")
+            .param("reason", error.code.as_str()),
           ),
           AudioAsyncEvent::Ready { .. }
           | AudioAsyncEvent::Started { .. }
@@ -271,14 +217,12 @@ pub(super) fn drain_engine_events(
       | EngineEvent::Image(_)
       | EngineEvent::Time(_)
       | EngineEvent::TaskFinished { .. } => {}
-      EngineEvent::TaskFailed { id, error } => {
-        services.log.warn(
-          LogSource::Engine,
-          format!("Async task {id:?} failed: {error}"),
-        );
-      }
+      // 具体服务已经产生带业务上下文的终态事件；通用失败事件不重复写日志。
+      EngineEvent::TaskFailed { .. } => {}
       EngineEvent::Log { source, message } => {
-        services.log.warn(source, message);
+        services
+          .log
+          .warn_operation_failed(source, "async_task", "engine_event", message);
       }
     }
   }
@@ -288,15 +232,36 @@ pub(super) fn drain_engine_events(
     export: export_events,
     screenshot: screenshot_events,
     video: video_events,
-    network: network_events,
   }
 }
 
-fn redact_network_url(url: &str) -> String {
-  let Ok(mut url) = reqwest::Url::parse(url) else {
-    return "<invalid-url>".to_string();
-  };
-  url.set_query(None);
-  url.set_fragment(None);
-  url.to_string()
+pub(super) fn reconcile_game_save_profile(services: &mut EngineServices) {
+  let games = services
+    .package
+    .games()
+    .into_iter()
+    .filter_map(|package| {
+      let game = package.game.as_ref()?;
+      Some(GameSaveCapabilities {
+        package_id: package.id.clone(),
+        save_enabled: game.save,
+        score_enabled: game.score.as_ref().is_some_and(|score| score.enabled),
+      })
+    })
+    .collect::<Vec<_>>();
+  if let Err(error) = services
+    .storage
+    .reconcile_game_save_capabilities(&games, &mut services.log)
+  {
+    services.log.error_message(
+      LogSource::Storage,
+      HostLogMessage::new(
+        "log_info.storage.operation_failed",
+        "Storage operation {operation} failed for {path}: {error}",
+      )
+      .param("operation", "reconcile-game-save")
+      .param("path", "data/profiles/game_save.json")
+      .param("error", error.to_string()),
+    );
+  }
 }

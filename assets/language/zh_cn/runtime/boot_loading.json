@@ -1,0 +1,11 @@
+{
+  "boot_loading.title": "TUI GAME 正在启动",
+  "boot_loading.stage.storage": "存储与日志",
+  "boot_loading.stage.terminal": "终端与显示",
+  "boot_loading.stage.language": "语言资源",
+  "boot_loading.stage.services": "核心服务",
+  "boot_loading.stage.packages": "游戏与屏保包",
+  "boot_loading.stage.listeners": "输入与热加载监听",
+  "boot_loading.stage.runtime": "Runtime 与 UI",
+  "boot_loading.stage.ready": "准备完成"
+}

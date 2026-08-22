@@ -1,10 +1,10 @@
 use std::{collections::BTreeMap, fs, io};
 
-use serde::{Deserialize, Deserializer, Serialize, de::Error as _};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::{StorageService, atomic_write};
-use crate::host_engine::services::{LogService, LogSource, PackageId, PackageSource, PackageType};
+use crate::host_engine::services::{LogService, LogSource, PackageId};
 
 const MAX_GAME_SAVE_PROFILE_BYTES: u64 = 16 * 1024 * 1024;
 
@@ -15,51 +15,15 @@ pub struct GameSaveCapabilities {
   pub score_enabled: bool,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct ContinueGameSave {
   pub package: PackageId,
   pub data: Value,
 }
 
-impl<'de> Deserialize<'de> for ContinueGameSave {
-  fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-  where
-    D: Deserializer<'de>,
-  {
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum Wire {
-      Current {
-        package: PackageId,
-        data: Value,
-      },
-      Legacy {
-        source: String,
-        package_id: String,
-        data: Value,
-      },
-    }
-    match Wire::deserialize(deserializer)? {
-      Wire::Current { package, data } => Ok(Self { package, data }),
-      Wire::Legacy {
-        source,
-        package_id,
-        data,
-      } => Ok(Self {
-        package: PackageId::new(
-          parse_source(&source)
-            .ok_or_else(|| D::Error::custom(format!("unknown legacy package source '{source}'")))?,
-          PackageType::Game,
-          package_id,
-        )
-        .map_err(D::Error::custom)?,
-        data,
-      }),
-    }
-  }
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct BestGameSave {
   pub best_string: String,
   pub data: Value,
@@ -80,10 +44,9 @@ impl TryFrom<Value> for BestGameSave {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct GameSaveProfile {
-  #[serde(default)]
   pub continue_slot: Option<ContinueGameSave>,
-  #[serde(default, deserialize_with = "deserialize_best")]
   pub best: BTreeMap<String, BestGameSave>,
 }
 
@@ -94,39 +57,6 @@ impl Default for GameSaveProfile {
       best: BTreeMap::new(),
     }
   }
-}
-
-fn parse_source(value: &str) -> Option<PackageSource> {
-  match value {
-    "official" => Some(PackageSource::Official),
-    "mod" => Some(PackageSource::Mod),
-    _ => None,
-  }
-}
-
-fn deserialize_best<'de, D>(deserializer: D) -> Result<BTreeMap<String, BestGameSave>, D::Error>
-where
-  D: Deserializer<'de>,
-{
-  let raw = BTreeMap::<String, Value>::deserialize(deserializer)?;
-  let mut result = BTreeMap::new();
-  for (key, value) in raw {
-    if let Some(source) = parse_source(&key) {
-      let legacy = serde_json::from_value::<BTreeMap<String, BestGameSave>>(value)
-        .map_err(D::Error::custom)?;
-      for (mod_id, best) in legacy {
-        let id = PackageId::new(source, PackageType::Game, mod_id).map_err(D::Error::custom)?;
-        result.insert(id.storage_key(), best);
-      }
-    } else {
-      PackageId::from_storage_key(&key).map_err(D::Error::custom)?;
-      result.insert(
-        key,
-        serde_json::from_value(value).map_err(D::Error::custom)?,
-      );
-    }
-  }
-  Ok(result)
 }
 
 impl StorageService {
@@ -144,10 +74,14 @@ impl StorageService {
       })
       .and_then(|content| serde_json::from_str(&content).map_err(io::Error::other))
       .unwrap_or_else(|error| {
-        log.warn(
-          LogSource::Storage,
-          format!("Failed to load game save profile: {error}"),
-        );
+        if error.kind() != io::ErrorKind::NotFound {
+          log.warn_operation_failed(
+            LogSource::Storage,
+            "load_profile",
+            "game_save",
+            error.to_string(),
+          );
+        }
         GameSaveProfile::default()
       });
     *self.game_save.borrow_mut() = profile;
@@ -273,9 +207,11 @@ impl StorageService {
       ));
     }
     atomic_write(&self.profile_game_save_path(), &content, true).map_err(|error| {
-      log.error(
+      log.error_operation_failed(
         LogSource::Storage,
-        format!("Failed to write game save profile: {error}"),
+        "write_profile",
+        "game_save",
+        error.to_string(),
       );
       error
     })?;
@@ -287,6 +223,7 @@ impl StorageService {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::host_engine::services::{PackageSource, PackageType};
 
   #[test]
   fn continue_slot_is_shared_and_best_records_are_per_game() {

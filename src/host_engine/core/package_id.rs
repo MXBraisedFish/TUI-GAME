@@ -63,14 +63,6 @@ impl PackageId {
       self.mod_id
     )
   }
-
-  pub fn from_storage_key(value: &str) -> Result<Self, String> {
-    let mut parts = value.splitn(3, '/');
-    let source = PackageSource::from_str(parts.next().unwrap_or_default())?;
-    let package_type = PackageType::from_str(parts.next().unwrap_or_default())?;
-    let mod_id = parts.next().ok_or("package id is missing mod_id")?;
-    Self::new(source, package_type, mod_id)
-  }
 }
 
 impl std::fmt::Display for PackageId {
@@ -86,14 +78,6 @@ impl PackageSource {
       Self::Mod => "mod",
     }
   }
-
-  fn from_str(value: &str) -> Result<Self, String> {
-    match value {
-      "official" => Ok(Self::Official),
-      "mod" => Ok(Self::Mod),
-      _ => Err(format!("unknown package source '{value}'")),
-    }
-  }
 }
 
 impl PackageType {
@@ -101,14 +85,6 @@ impl PackageType {
     match self {
       Self::Game => "game",
       Self::Screensaver => "screensaver",
-    }
-  }
-
-  fn from_str(value: &str) -> Result<Self, String> {
-    match value {
-      "game" => Ok(Self::Game),
-      "screensaver" => Ok(Self::Screensaver),
-      _ => Err(format!("unknown package type '{value}'")),
     }
   }
 }

@@ -2,8 +2,8 @@ use crate::host_engine::services::text_layout::TextWrapMode;
 use crate::host_engine::services::{
   ActionMapEntry, CanvasService, DrawTextParams, HitAreaEvent, HitAreaId, HitAreaOptions,
   HitAreaService, I18nService, KeyState, LayoutService, MouseButton, Rect, RenderService,
-  RichTextParams, RuntimeObjectPool, RuntimeObjectPoolOwner, UiEvent, UiObjectPool,
-  UiObjectPoolOwner,
+  RichTextParams, RuntimeObjectPool, RuntimeObjectPoolOwner, TextAlign, TextMode, UiEvent,
+  UiObjectPool, UiObjectPoolOwner,
 };
 
 const NS: &str = "cover_continue";
@@ -107,6 +107,7 @@ impl CoverContinueUi {
     let tip = i18n.get_runtime_text(NS, "cover_continue.tip");
     let tip_size = layout.get_draw_text_size(&DrawTextParams {
       text: tip.clone(),
+      text_mode: TextMode::Rich,
       params: Some(params.clone()),
       wrap_mode: TextWrapMode::Auto,
       max_width: Some(max_width),
@@ -136,7 +137,9 @@ impl CoverContinueUi {
         x,
         y,
         text: tip,
+        text_mode: TextMode::Rich,
         params: Some(params.clone()),
+        line_align: TextAlign::Center,
         wrap_mode: TextWrapMode::Auto,
         max_width: Some(block_width),
         ..Default::default()
@@ -144,10 +147,14 @@ impl CoverContinueUi {
     );
     let start_y = y.saturating_add(tip_size.height.max(1)).saturating_add(1);
     let back_y = start_y.saturating_add(1);
+    let start_width = layout.get_text_width(&start, Some(&params));
+    let back_width = layout.get_text_width(&back, Some(&params));
+    let start_x = size.width.saturating_sub(start_width) / 2;
+    let back_x = size.width.saturating_sub(back_width) / 2;
     render.draw_host_text(
       canvas,
       &DrawTextParams {
-        x,
+        x: start_x,
         y: start_y,
         text: start.clone(),
         params: Some(params.clone()),
@@ -157,7 +164,7 @@ impl CoverContinueUi {
     render.draw_host_text(
       canvas,
       &DrawTextParams {
-        x,
+        x: back_x,
         y: back_y,
         text: back.clone(),
         params: Some(params.clone()),
@@ -170,7 +177,7 @@ impl CoverContinueUi {
       canvas,
       layout,
       self.start_area,
-      x,
+      start_x,
       start_y,
       &start,
       &params,
@@ -180,7 +187,7 @@ impl CoverContinueUi {
       canvas,
       layout,
       self.back_area,
-      x,
+      back_x,
       back_y,
       &back,
       &params,

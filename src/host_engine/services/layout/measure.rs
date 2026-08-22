@@ -2,11 +2,24 @@ use super::types::Size;
 use crate::host_engine::services::DrawTextParams;
 use crate::host_engine::services::RichTextParams;
 use crate::host_engine::services::text_layout;
+use crate::host_engine::services::text_layout::TextMode;
 
 /// 计算文本的渲染尺寸
 pub fn get_text_size(text: &str, params: Option<&RichTextParams>) -> Size {
-  let mut draw_params = DrawTextParams::new(0, 0, text.to_string());
+  let mut draw_params = DrawTextParams::new(
+    0,
+    0,
+    if params.is_some() {
+      text.strip_prefix("f%").unwrap_or(text)
+    } else {
+      text
+    }
+    .to_string(),
+  );
   draw_params.params = params.cloned();
+  if params.is_some() {
+    draw_params.text_mode = TextMode::Rich;
+  }
   get_draw_text_size(&draw_params)
 }
 
@@ -66,7 +79,7 @@ mod tests {
   }
 
   #[test]
-  fn legacy_text_measure_uses_draw_text_layout() {
+  fn plain_text_measure_uses_draw_text_layout() {
     assert_eq!(
       get_text_size("ab\ncd", None),
       Size {
@@ -74,5 +87,14 @@ mod tests {
         height: 2
       }
     );
+  }
+
+  #[test]
+  fn host_parameterized_text_is_measured_as_formatted_text() {
+    let mut params = RichTextParams::default();
+    params.values.insert("action".into(), "[Enter]".into());
+
+    assert_eq!(get_text_width("{value:action}", Some(&params)), 7);
+    assert_eq!(get_text_width("f%{value:action}", Some(&params)), 7);
   }
 }

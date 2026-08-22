@@ -54,7 +54,7 @@ pub const PROFILE_GAME_SAVE_FILE: &str = "data/profiles/game_save.json";
 
 pub const TUI_LOG_FILE: &str = "data/log/tui_log.log";
 
-pub const LEGACY_TUI_LOG_FILE: &str = "data/log/tui_log.txt";
+pub const PACKAGE_LOG_FILE: &str = "data/log/package.log";
 
 pub const DEFAULT_LANGUAGE_CODE: &str = "en_us";
 
@@ -97,7 +97,7 @@ pub const DEFAULT_FILES: &[(&str, &str)] = &[
   ),
   (
     PROFILE_RECORDING_FILE,
-    r#"{"popup":"all","auto_recording":"off","auto_split":"minutes10","capture_frame_rate":"fps60","export_frame_rate":"recorded","legacy_frame_rate":30,"quality":"balanced","keyframe_interval_seconds":2,"pixel_scale":"original","gpu_acceleration":"auto"}"#,
+    r#"{"popup":"all","auto_recording":"off","auto_split":"minutes3","capture_frame_rate":"fps60","export_frame_rate":"recorded","quality":"balanced","keyframe_interval_seconds":2,"pixel_scale":"original","gpu_acceleration":"auto"}"#,
   ),
   (
     PROFILE_DISPLAY_SETTINGS_FILE,
@@ -109,8 +109,9 @@ pub const DEFAULT_FILES: &[(&str, &str)] = &[
   ),
   (
     PROFILE_GAME_SAVE_FILE,
-    r#"{"continue_slot":null,"best":{"official":{},"mod":{}}}"#,
+    r#"{"continue_slot":null,"best":{}}"#,
   ),
   (TUI_LOG_FILE, ""),
+  (PACKAGE_LOG_FILE, ""),
   (LANGUAGE_REGISTRY_FILE, "{}"),
 ];

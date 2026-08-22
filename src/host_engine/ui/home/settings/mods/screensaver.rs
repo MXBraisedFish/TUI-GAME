@@ -2168,26 +2168,22 @@ impl ScreensaverPackageUi {
       .map(|key| i18n.get_runtime_text("screensaver_pack", key));
 
     let mut lines = vec![String::new()];
-    let mut widths = vec![0usize];
+    let mut current_width = 0usize;
     let limit = max_width as usize;
     for item in items {
       let item_w = UnicodeWidthStr::width(rich.visible_text(&item, Some(&params)).as_str());
-      let gap = if lines.last().is_some_and(|line| line.is_empty()) {
-        0
-      } else {
-        2
-      };
-      if lines.len() == 1 && widths[0] > 0 && widths[0] + gap + item_w > limit {
+      let gap = usize::from(current_width > 0) * 2;
+      if current_width > 0 && current_width.saturating_add(gap).saturating_add(item_w) > limit {
         lines.push(String::new());
-        widths.push(0);
+        current_width = 0;
       }
       let last = lines.len() - 1;
       if !lines[last].is_empty() {
         lines[last].push_str("  ");
-        widths[last] += 2;
+        current_width += 2;
       }
       lines[last].push_str(&item);
-      widths[last] += item_w;
+      current_width += item_w;
     }
     lines
   }

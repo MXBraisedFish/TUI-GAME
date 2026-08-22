@@ -272,8 +272,6 @@ impl InputDemoUi {
     }
   }
 
-  pub fn apply_layout(&mut self, _layout: &LayoutService) {}
-
   pub fn leave(&mut self, audio: &mut AudioService) {
     if let Some(audio_id) = self.audio_id.take() {
       let _ = audio.stop(self.objects.audio_mut(), audio_id);

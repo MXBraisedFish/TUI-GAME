@@ -38,121 +38,99 @@ pub(crate) mod widget;
 mod write_barrier;
 
 pub use animation::{
-  AnimationBinding, AnimationCallbackId, AnimationCallbackRequest, AnimationClip, AnimationClock,
-  AnimationColor, AnimationEasing, AnimationEndMode, AnimationError, AnimationEvent,
-  AnimationEventKind, AnimationHandle, AnimationId, AnimationInterpolation, AnimationKeyframe,
-  AnimationMarker, AnimationOwner, AnimationPlaybackOptions, AnimationProperty,
-  AnimationRepeatCount, AnimationRepeatMode, AnimationRepeatOptions, AnimationService,
-  AnimationSource, AnimationTarget, AnimationTargetRouter, AnimationTrack, AnimationUpdate,
-  AnimationValue, AnimationValueId, AnimationValueKind, AnimationWrite, AnimationWriteOperation,
-  CellEffectId, CharacterEffectService, CharacterFrame, EffectParameterId, GameInstanceId,
-  GameObjectRef, PlaybackDirection, PlaybackState, TweenDefinition, UiObjectKind, UiObjectRef,
-  UiPoolId,
+  AnimationBinding, AnimationClock, AnimationEasing, AnimationEvent, AnimationEventKind,
+  AnimationHandle, AnimationId, AnimationInterpolation, AnimationOwner, AnimationPlaybackOptions,
+  AnimationProperty, AnimationRepeatCount, AnimationRepeatMode, AnimationRepeatOptions,
+  AnimationService, AnimationSource, AnimationTarget, AnimationValue, CharacterEffectService,
+  TweenDefinition,
 };
 pub use async_runtime::{
-  AsyncRuntime, EngineEvent, EngineTask, FileEvent, FileTask, ImageEvent, ImageTask,
-  ManagedThreadId, SleepTask, TaskId, TaskState, TimeAsyncEvent,
+  AsyncRuntime, EngineEvent, EngineTask, FileEvent, FileTask, ImageEvent, SleepTask, TaskId,
+  TaskState, TimeAsyncEvent,
 };
 pub use audio::{
-  AudioAsyncEvent, AudioCaptureId, AudioError, AudioErrorCode, AudioId, AudioObject,
-  AudioObjectPool, AudioPoolId, AudioService, AudioSource, AudioState, AudioType, AudioTypeId,
-  ResolvedAudioFile,
+  AudioAsyncEvent, AudioCaptureId, AudioError, AudioErrorCode, AudioId, AudioObjectPool,
+  AudioPoolId, AudioService, AudioSource, AudioState, ResolvedAudioFile,
 };
 pub use canvas::{CanvasCell, CanvasService};
 pub use clipboard::ClipboardService;
-pub use code_highlight::{
-  CodeHighlightService, CodeHighlightTheme, CodeHighlightToken, CodeLanguage, CodeTokenKind,
-};
+pub use code_highlight::{CodeHighlightService, CodeHighlightTheme};
 pub use event::EngineEventQueue;
 pub use export::{ExportAsyncEvent, ExportService, ExportTask};
 pub use ffmpeg::{FfmpegInstallation, FfmpegService};
 pub use file::FileService;
-pub use host_object::{HostArea, HostAreaId, HostAreaKind, HostObjectPool};
+pub use host_object::{HostAreaKind, HostObjectPool};
 pub use i18n::{I18nService, LanguageRegistryEntry};
 pub use image::{ImageConvertParams, ImageService};
 pub use input::{
   ActionMapEntry, InputActionEvent, InputEventType, InputService, Key, KeyEvent, KeyEventKind,
   KeyState, MouseButton, MouseEvent, MouseEventKind, RawKeyEvent, ScrollDirection, SystemEvent,
-  TerminalKeyCode, TerminalKeyEvent, canonical_key_token, format_key_display, key_token,
-  translate_action_map,
+  TerminalKeyCode, TerminalKeyEvent, format_key_display, key_token, translate_action_map,
 };
 pub use input_method::{ImPolicy, InputMethodService};
 pub use layout::{LayoutService, Rect, Size};
-pub use log::{LogLevel, LogPrintOptions, LogService, LogSessionId, LogSessionKind, LogSource};
+pub use log::{
+  HostLogMessage, LogLevel, LogPrintOptions, LogService, LogSessionId, LogSessionKind, LogSource,
+};
 pub use lua::{
-  GameService, LuaActionState, LuaAnimationEvent, LuaAnimationEventKind, LuaApiConfig,
-  LuaApiContext, LuaAudioEvent, LuaAudioEventKind, LuaBudgetKind, LuaCallbackLifetime,
-  LuaDrawCommand, LuaDrawTarget, LuaEnqueueError, LuaErrorStage, LuaEventBroker,
-  LuaEventCallbackId, LuaEventData, LuaEventDelivery, LuaEventError, LuaEventErrorCode,
-  LuaEventRoute, LuaExecutionBudget, LuaExecutionLimitKind, LuaExecutionStats, LuaFileEntry,
-  LuaFileEvent, LuaFileOperation, LuaFileOutcome, LuaHitAreaEvent, LuaHostCommand,
-  LuaHyperlinkEvent, LuaI18nEvent, LuaI18nEventKind, LuaImageEvent, LuaImageOutcome,
-  LuaMarkdownEvent, LuaNetworkBody, LuaNetworkEvent, LuaNetworkOutcome, LuaObjectPool, LuaPolicy,
-  LuaRuntimeEvent, LuaScrollBoxEvent, LuaService, LuaSession, LuaSessionDiagnostics,
-  LuaSessionError, LuaSessionKind, LuaSessionSpec, LuaSessionState, LuaSessionToken,
-  LuaTaskOperation, LuaTextInputEvent, LuaTimerEvent, LuaTimerEventKind, LuaTimerKind,
-  MAX_LUA_EVENTS_PER_FRAME, MAX_LUA_FILE_TASKS_PER_SESSION, MAX_LUA_NETWORK_TASKS_PER_SESSION,
-  MAX_LUA_PENDING_EVENTS, ScreensaverService,
+  GameService, LuaActionState, LuaApiConfig, LuaDrawCommand, LuaDrawTarget, LuaEnqueueError,
+  LuaErrorStage, LuaEventBroker, LuaEventData, LuaEventRoute, LuaExecutionStats, LuaFileOperation,
+  LuaHostCommand, LuaI18nEventKind, LuaObjectPool, LuaPolicy, LuaService, LuaSessionDiagnostics,
+  LuaSessionError, LuaSessionKind, LuaSessionSpec, LuaSessionToken, LuaTaskOperation,
+  ScreensaverService,
 };
 pub use network::{
-  NetworkError, NetworkErrorCode, NetworkEvent, NetworkHeader, NetworkMethod, NetworkRequest,
-  NetworkRequestBody, NetworkRequestStatus, NetworkResponse, NetworkResponseBody,
-  NetworkResponseMode, NetworkService, NetworkSubmitError, NetworkTask,
+  NetworkError, NetworkErrorCode, NetworkEvent, NetworkMethod, NetworkResponse,
+  NetworkResponseBody, NetworkResponseMode, NetworkService,
 };
 pub use package::{
   PackageAsset, PackageEvent, PackageId, PackageInfo, PackageListEntry, PackageService,
   PackageSource, PackageType,
 };
-pub use popup::{PopupDismissEvent, PopupRequest, PopupService, PopupView};
+pub use popup::{PopupDismissEvent, PopupRequest, PopupService};
 pub use random::RandomService;
 pub use recording::{
-  RecordingAsyncEvent, RecordingAudioMetadata, RecordingPlayback, RecordingPlaybackMetadata,
-  RecordingService, RecordingSnapshot, RecordingState, RecordingTask, load_recording_playback,
-  load_recording_playback_metadata,
+  RecordingAsyncEvent, RecordingPlayback, RecordingService, RecordingState,
+  load_recording_playback, load_recording_playback_metadata,
 };
 pub use render::{BorderCharacter, BorderStyle, CustomBorder, RenderService};
 pub use render_pipeline::{ComposedCell, ComposedFrame, FrameCompositor, FramePresenter};
 pub use rich_text::{
-  RichText, RichTextParams, RichTextSegment, RichTextService, TerminalColor, TextColor, TextStyle,
+  RichTextParams, RichTextSegment, RichTextService, TerminalColor, TextColor, TextStyle,
   parse_text_color,
 };
 pub use screenshot::{ScreenshotAsyncEvent, ScreenshotRect, ScreenshotService, ScreenshotTask};
 pub use storage::{
-  ActionKeyMap, AutoRecordingMode, AutoSplitDuration, BestGameSave, ContinueGameSave,
-  DisplayFpsLimit, DisplayLogoMode, DisplayOrderMode, DisplaySettingsProfile, DisplaySourceMode,
-  GamePackageState, GameSaveCapabilities, GameSaveProfile, KeyBindingsProfile, PackageDefaultState,
-  PackageStateProfile, RecordingExportFrameRate, RecordingExportQuality, RecordingFrameRate,
-  RecordingGpuAcceleration, RecordingPixelScale, RecordingPopupMode, RecordingProfile,
-  SafeModeDefault, ScreensaverPackageState, ScreenshotDoubleAction, ScreenshotProfile,
-  StorageService,
+  ActionKeyMap, AutoRecordingMode, AutoSplitDuration, BestGameSave, DisplayFpsLimit,
+  DisplayLogoMode, DisplayOrderMode, DisplaySettingsProfile, DisplaySourceMode, GamePackageState,
+  GameSaveCapabilities, KeyBindingsProfile, PackageDefaultState, PackageStateProfile,
+  RecordingExportFrameRate, RecordingExportQuality, RecordingFrameRate, RecordingGpuAcceleration,
+  RecordingPixelScale, RecordingPopupMode, RecordingProfile, SafeModeDefault,
+  ScreensaverPackageState, ScreenshotDoubleAction, ScreenshotProfile, StorageService,
 };
 pub use terminal::TerminalService;
 pub use text_layout::{DrawTextParams, TextAlign, TextMode, TextWrapMode};
 pub use time::TimeService;
 pub use ui::{UiEvent, UiObjectPool, UiObjectPoolOwner, UiService};
 pub use unicode::UnicodeService;
-pub use version::{HOST_API_VERSION, HOST_VERSION, PACKAGE_MANIFEST_VERSION};
-pub use video::{
-  VideoAsyncEvent, VideoExportError, VideoExportProgress, VideoExportStage, VideoExportStatus,
-  VideoExportTask, VideoService,
+pub use version::{
+  HOST_API_VERSION, HOST_VERSION, IMAGE_CACHE_FORMAT_VERSION, MEDIA_MANIFEST_VERSION,
 };
+pub use video::{VideoAsyncEvent, VideoExportStage, VideoService};
 pub use widget::{
-  DelayTimerEvent, DelayTimerId, DelayTimerOptions, HitAreaEvent, HitAreaId, HitAreaOptions,
-  HitAreaService, HyperlinkEvent, HyperlinkId, HyperlinkOptions, HyperlinkService, MarkdownEvent,
-  MarkdownRenderParams, MarkdownService, MarkdownTheme, MarkdownViewId, MarkdownViewOptions,
-  Overflow, ProgressBarFillOrigin, ProgressBarId, ProgressBarOptions, ProgressBarSegmentStyle,
-  ProgressBarService, RandomAlgorithm, RandomConfiguration, RandomConfiguredRange,
-  RandomGeneratedValue, RandomGeneratorId, RandomSeed, RandomSnapshot, RepeatMode,
-  RepeatTimerEvent, RepeatTimerId, RepeatTimerOptions, RuntimeObjectPool, RuntimeObjectPoolOwner,
-  ScrollBoxEvent, ScrollBoxId, ScrollBoxOptions, ScrollBoxService, ScrollbarLayout,
-  ScrollbarPolicy, ScrollbarSide, ScrollbarStyle, ScrollbarVisibility, SliceId, SliceLength,
-  SliceOptions, SliceRect, SliceService, SurfaceId, TableAlign, TableBorderMode, TableBorderStyle,
-  TableCell, TableColumn, TableDrawParams, TableId, TableOptions, TableOverflow, TableRow,
-  TableService, TableStyle, TextInputCursorShape, TextInputEvent, TextInputId, TextInputMode,
-  TextInputOptions, TextInputRenderParams, TextInputService, TimeCallbackId, TimeCallbackRequest,
-  TimerEvent, TimerId, TimerMode, TimerOptions, TimerState, VerticalAlign,
+  DelayTimerEvent, HitAreaEvent, HitAreaId, HitAreaOptions, HitAreaService, HyperlinkEvent,
+  HyperlinkService, MarkdownEvent, MarkdownRenderParams, MarkdownService, MarkdownViewId,
+  MarkdownViewOptions, Overflow, ProgressBarFillOrigin, ProgressBarId, ProgressBarOptions,
+  ProgressBarSegmentStyle, ProgressBarService, RandomConfiguration, RandomConfiguredRange,
+  RandomGeneratedValue, RandomGeneratorId, RandomSeed, RepeatTimerEvent, RepeatTimerId,
+  RuntimeObjectPool, RuntimeObjectPoolOwner, ScrollBoxEvent, ScrollBoxId, ScrollBoxOptions,
+  ScrollBoxService, ScrollbarLayout, ScrollbarPolicy, ScrollbarStyle, ScrollbarVisibility, SliceId,
+  SliceLength, SliceOptions, SliceRect, SliceService, SurfaceId, TableBorderMode, TableColumn,
+  TableDrawParams, TableId, TableOptions, TableOverflow, TableRow, TableService, TableStyle,
+  TextInputCursorShape, TextInputEvent, TextInputId, TextInputMode, TextInputOptions,
+  TextInputRenderParams, TextInputService, TimerEvent, TimerId, TimerState,
 };
-pub use write_barrier::{WriteBarrier, WriteBarrierSnapshot};
+pub use write_barrier::WriteBarrier;
 
 /// 引擎核心服务集合，持有所有子服务的实例
 pub struct EngineServices {
@@ -209,6 +187,7 @@ impl EngineServices {
     let mut log = LogService::new();
     let storage = StorageService::new(&mut log);
     let _ = log.set_output_path(storage.tui_log_path());
+    let _ = log.set_package_scan_output_path(storage.package_log_path());
     let image_cache_dir = storage.path("data/cache/images");
     let ffmpeg = FfmpegService::new(
       storage.root_dir().to_path_buf(),

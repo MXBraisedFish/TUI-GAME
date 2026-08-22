@@ -2,7 +2,6 @@ use std::time::{Duration, Instant};
 
 /// 引擎时钟，追踪帧时间增量与运行时长
 pub struct EngineClock {
-  epoch: Instant,
   last_tick: Instant,
   dt: Duration,
 }
@@ -12,7 +11,6 @@ impl EngineClock {
     let now = Instant::now();
 
     Self {
-      epoch: now,
       last_tick: now,
       dt: Duration::ZERO,
     }
@@ -27,9 +25,5 @@ impl EngineClock {
 
   pub fn delta_time(&self) -> Duration {
     self.dt
-  }
-
-  pub fn elapsed(&self) -> Duration {
-    self.epoch.elapsed()
   }
 }
