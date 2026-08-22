@@ -2716,31 +2716,53 @@ mod tests {
   }
 
   #[test]
-  fn loader_isolates_modules_and_rejects_unsafe_sources() {
+  fn loader_matches_module_semantics_and_rejects_unsafe_sources() {
     let source = valid_script(
       r#"
         private_state = "main-only"
         function Init(ctx)
-          local first = loader.load("module")
-          local second = loader.load{ path = "module.lua" }
-          local third = loader.load("./module")
-          debug.assert{ value = first.value == 1 and second.value == 1 and third.value == 1 }
+          local first, first_gap, first_tail = loader.require("cached")
+          local second, second_gap, second_tail = loader.require{ path = "./cached.lua" }
           debug.assert{
-            value = first.leaked == nil and second.leaked == nil and third.leaked == nil,
+            value = first == second and first.count == 1 and first.leaked == "main-only",
           }
-          debug.assert{ value = loader.load_execute("value") == 42 }
+          debug.assert{
+            value = first_gap == nil and second_gap == nil and first_tail == 3 and second_tail == 3,
+          }
+
+          local fresh_first = loader.dofile("fresh")
+          local fresh_second = loader.dofile{ path = "./fresh.lua" }
+          debug.assert{
+            value = fresh_first ~= fresh_second
+              and fresh_first.count == 1 and fresh_second.count == 2,
+          }
+
+          local compiled_first = loader.loadfile("compiled")
+          local compiled_second = loader.loadfile{ path = "compiled.lua" }
+          debug.assert{
+            value = type(compiled_first) == "function"
+              and type(compiled_second) == "function"
+              and compiled_first ~= compiled_second
+              and compiled_count == nil,
+          }
+          local compiled_result_first = compiled_first()
+          local compiled_result_second = compiled_second()
+          debug.assert{
+            value = compiled_result_first ~= compiled_result_second
+              and compiled_result_first.count == 1 and compiled_result_second.count == 2,
+          }
 
           local traversal_ok = debug.pcall{
-            func = function() loader.load("../outside") end,
+            func = function() loader.require("../outside") end,
           }
           local extension_ok = debug.pcall{
-            func = function() loader.load("module.txt") end,
+            func = function() loader.dofile("module.txt") end,
           }
           local bytecode_ok = debug.pcall{
-            func = function() loader.load("bytecode.lua") end,
+            func = function() loader.loadfile("bytecode.lua") end,
           }
           local cycle_ok = debug.pcall{
-            func = function() loader.load("cycle") end,
+            func = function() loader.require("cycle") end,
           }
           debug.assert{
             value = not traversal_ok.ok and not extension_ok.ok and not bytecode_ok.ok
@@ -2752,16 +2774,25 @@ mod tests {
     let session_spec = spec(&source, LuaSessionKind::Game);
     let scripts_root = session_spec.entry_path.parent().unwrap();
     fs::write(
-      scripts_root.join("module.lua"),
-      "instance_count = (instance_count or 0) + 1\nreturn { value = instance_count, leaked = private_state }",
+      scripts_root.join("cached.lua"),
+      "required_count = (required_count or 0) + 1\nreturn { count = required_count, leaked = private_state }, nil, 3",
     )
     .unwrap();
-    fs::write(scripts_root.join("value.lua"), "return 42").unwrap();
+    fs::write(
+      scripts_root.join("fresh.lua"),
+      "dofile_count = (dofile_count or 0) + 1\nreturn { count = dofile_count }",
+    )
+    .unwrap();
+    fs::write(
+      scripts_root.join("compiled.lua"),
+      "compiled_count = (compiled_count or 0) + 1\nreturn { count = compiled_count }",
+    )
+    .unwrap();
     fs::write(scripts_root.join("module.txt"), "return {}").unwrap();
     fs::write(scripts_root.join("bytecode.lua"), [0x1b, b'L', b'u', b'a']).unwrap();
     fs::write(
       scripts_root.join("cycle.lua"),
-      "return loader.load('cycle')",
+      "return loader.require('cycle')",
     )
     .unwrap();
 

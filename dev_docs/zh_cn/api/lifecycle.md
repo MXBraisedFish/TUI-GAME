@@ -10,15 +10,15 @@
 
 ### 回调
 
-| 回调名        | 说明         |
-| ------------- | ------------ |
-| `Init`        | 初始化       |
-| `HandleEvent` | 事件处理     |
-| `Update`      | 物理帧更新   |
-| `UpdateFrame` | 帧更新       |
-| `Render`      | 绘制         |
-| `SaveGame`    | 保存游戏数据 |
-| `SaveBest`    | 保存最佳记录 |
+| 回调名        | 说明                                           | 索引                        |
+| ------------- | ---------------------------------------------- | --------------------------- |
+| `Init`        | 初始化游戏或屏保                               | [Init](#Init)               |
+| `HandleEvent` | 事件处理                                       | [HandleEvent](#HandleEvent) |
+| `Update`      | 物理帧更新，固定步长调用                       | [Update](#Update)           |
+| `UpdateFrame` | 帧更新，随着系统帧调用                         | [UpdateFrame](#UpdateFrame) |
+| `Render`      | 绘制当前画面                                   | [Render](#Render)           |
+| `SaveGame`    | 保存游戏数据，供玩家"继续游戏"后传递初始化数据 | [SaveGame](#SaveGame)       |
+| `SaveBest`    | 保存最佳记录数据，用于游戏列表展示             | [SaveBest](#SaveBest)       |
 
 ---
 
@@ -266,76 +266,6 @@ end
 
 ---
 
-## `SaveGame`
-
-保存游戏数据，供玩家"继续游戏"后传递初始化数据。
-
-> 仅游戏脚本可用。
-> 仅 `package.json` 中 `game.save` 为 `true` 时可用。
-
-### 调用
-
-```lua
-function SaveGame()
-  return value
-end
-```
-
-### 参数
-
-无。
-
-### 返回
-
-需要保存的游戏数据。
-
-| 类型 | 说明     |
-| ---- | -------- |
-| any  | 游戏数据 |
-
-**额外说明**
-
-- 尽管返回值为任意类型，但必须返回一个可序列化的值，例如 `Function` 类型就不可以。
-- 仅返回一个值。
-
-### 示例
-
-```lua
-function Init(ctx)
-  debug.print { message = serialization.json_encode(ctx) }
-  -- 初始化逻辑
-end
-
-function SaveGame()
-  -- 保存前的数据处理
-  coin = 10
-  return coin
-end
-```
-
-输出：
-
-> X 为占位符
-
-```json
-{
-  "package_id": "test",
-  "package_type": "game",
-  "base": {
-    "width": X,
-    "height": X
-  },
-  "api_version": 1,
-  "start_mode": "new",
-  "best_data": {
-    "best_string": "string",
-    "score": X
-  }
-}
-```
-
----
-
 ## `Render`
 
 绘制当前画面。
@@ -368,3 +298,148 @@ end
 ![lifecycle.Render示例](../image/lifecycle_Render_example.png)
 
 ---
+
+## `SaveGame`
+
+保存游戏数据，供玩家"继续游戏"后传递初始化数据。
+
+> 仅游戏脚本可用。
+> 仅 `package.json` 中 `game.save` 为 `true` 时可用，且必须实现。
+> 通过 `game.save_game` 调用。
+
+### 调用
+
+```lua
+function SaveGame()
+  return value
+end
+```
+
+### 参数
+
+无。
+
+### 返回
+
+需要保存的游戏数据。
+
+| 类型 | 说明     |
+| ---- | -------- |
+| any  | 游戏数据 |
+
+**额外说明**
+
+- 整个返回值必须可序列化。
+- 仅返回一个值。
+
+### 示例
+
+```lua
+function Init(ctx)
+  debug.print { message = serialization.json_encode(ctx) }
+  -- 初始化逻辑
+end
+
+function SaveGame()
+  -- 保存前的数据处理
+  coin = 10
+  return coin
+end
+```
+
+输出：
+
+> X 为占位符
+
+```json
+{
+  "package_id": "test",
+  "package_type": "game",
+  "base": {
+    "height": X,
+    "width": X
+  },
+  "api_version": 1,
+  "start_mode": "continue",
+  "continue_data": 10
+}
+```
+
+---
+
+## `SaveBest`
+
+保存最佳记录数据，用于游戏列表展示，并在后续包含在传递的初始化数据中。
+
+> 仅游戏脚本可用。
+> 仅 `package.json` 中 `game.best.enabled` 为 `true` 时可用，且必须实现。
+> 通过 `game.save_best` 调用。
+
+### 调用
+
+```lua
+function SaveBest()
+  return {
+    best_string = string,
+    any...
+  }
+end
+```
+
+### 参数
+
+无。
+
+### 返回
+
+返回需要保存的最佳记录数据表。
+
+| 类型  | 说明         |
+| ----- | ------------ |
+| table | 最佳记录数据 |
+
+**额外说明**
+
+- 返回值表必须包含 `best_string` 字段，类型为 `string`，用于游戏列表展示。
+- 整个返回值必须可序列化。
+
+### 示例
+
+```lua
+function Init(ctx)
+  debug.print { message = serialization.json_encode(ctx) }
+  -- 初始化逻辑
+end
+
+function SaveBest()
+  -- 保存前的数据处理
+  coin = 10
+  return {
+    best_string = "Coin" .. coin,
+    coin = coin
+  }
+end
+```
+
+输出：
+
+> X 为占位符
+
+```json
+{
+  "package_id": "test",
+  "package_type": "game",
+  "base": {
+    "height": X,
+    "width": X
+  },
+  "api_version": 1,
+  "start_mode": "new",
+  "best_data": {
+    "best_string": "Coin 10",
+    "coin": 10
+  }
+}
+```
+
+![lifecycle.BestScore示例](../image/lifecycle_BestScore_example.png)

@@ -35,7 +35,8 @@ pub fn get_text_height(text: &str, params: Option<&RichTextParams>) -> u16 {
 
 /// 计算带排版参数的文本渲染尺寸
 pub fn get_draw_text_size(params: &DrawTextParams) -> Size {
-  let (width, height) = text_layout::measure_draw_text(params);
+  let params = params.host_formatted();
+  let (width, height) = text_layout::measure_draw_text(params.as_ref());
   Size { width, height }
 }
 

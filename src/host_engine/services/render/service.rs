@@ -81,7 +81,8 @@ impl RenderService {
 
   /// 在宿主层上绘制文本（用于顶层 UI 元素）。
   pub(crate) fn draw_host_text(&mut self, canvas: &mut CanvasService, params: &DrawTextParams) {
-    self.draw_text_target(canvas, Target::Host, params);
+    let params = params.host_formatted();
+    self.draw_text_target(canvas, Target::Host, params.as_ref());
   }
 
   pub(crate) fn draw_host_text_at(
@@ -91,12 +92,14 @@ impl RenderService {
     y: i32,
     params: &DrawTextParams,
   ) {
-    self.draw_text_target_at(canvas, Target::Host, x, y, params);
+    let params = params.host_formatted();
+    self.draw_text_target_at(canvas, Target::Host, x, y, params.as_ref());
   }
 
   /// 在宿主最高层上绘制文本。
   pub(crate) fn draw_top_text(&mut self, canvas: &mut CanvasService, params: &DrawTextParams) {
-    self.draw_text_target(canvas, Target::Top, params);
+    let params = params.host_formatted();
+    self.draw_text_target(canvas, Target::Top, params.as_ref());
   }
 
   pub(crate) fn draw_top_text_at(
@@ -106,7 +109,8 @@ impl RenderService {
     y: i32,
     params: &DrawTextParams,
   ) {
-    self.draw_text_target_at(canvas, Target::Top, x, y, params);
+    let params = params.host_formatted();
+    self.draw_text_target_at(canvas, Target::Top, x, y, params.as_ref());
   }
 
   /// 在基础层上绘制填充矩形。

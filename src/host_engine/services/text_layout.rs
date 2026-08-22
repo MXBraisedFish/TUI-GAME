@@ -2,6 +2,7 @@ use crate::host_engine::services::rich_text::{
   RichTextParams, RichTextSegment, RichTextService, TextColor, TextStyle,
 };
 use crate::host_engine::services::unicode::graphemes;
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use unicode_linebreak::BreakOpportunity;
 
@@ -127,6 +128,24 @@ impl DrawTextParams {
       hidden: self.hidden,
       dim: self.dim,
     }
+  }
+
+  /// 宿主 UI 传入富文本参数时已经明确要求格式化解析。
+  ///
+  /// Lua 绘制不会调用此方法，因此 Lua 的 `AUTO` 模式仍只识别带 `f%` 前缀的文本。
+  pub(crate) fn host_formatted(&self) -> Cow<'_, Self> {
+    if self.params.is_none() || self.text_mode != TextMode::Auto {
+      return Cow::Borrowed(self);
+    }
+
+    let mut formatted = self.clone();
+    formatted.text = formatted
+      .text
+      .strip_prefix("f%")
+      .unwrap_or(&formatted.text)
+      .to_string();
+    formatted.text_mode = TextMode::Rich;
+    Cow::Owned(formatted)
   }
 }
 
@@ -647,6 +666,28 @@ mod tests {
 
   fn line_width(text: &str) -> usize {
     graphemes(text).iter().map(|g| g.display_width).sum()
+  }
+
+  #[test]
+  fn host_formatted_resolves_unprefixed_key_parameters() {
+    let mut rich_params = RichTextParams::default();
+    rich_params
+      .key_actions
+      .insert("warning.back".into(), vec![vec!["esc".into()]]);
+    let params = DrawTextParams {
+      text: "{key:warning.back} return".into(),
+      params: Some(rich_params),
+      ..Default::default()
+    };
+
+    let formatted = params.host_formatted();
+    let visible = layout_text_lines(formatted.as_ref())
+      .into_iter()
+      .flat_map(|line| line.items.into_iter().map(|item| item.text))
+      .collect::<String>();
+
+    assert_eq!(formatted.text_mode, TextMode::Rich);
+    assert_eq!(visible, "[Esc] return");
   }
 
   #[test]

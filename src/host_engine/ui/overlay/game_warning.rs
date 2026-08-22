@@ -144,3 +144,21 @@ impl RuntimeObjectPoolOwner for GameWarningUi {
     &mut self.runtime_objects
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use super::{GameWarningCommand, GameWarningUi};
+  use crate::host_engine::services::{InputActionEvent, InputEventType, KeyState, UiEvent};
+
+  #[test]
+  fn back_action_returns_to_game_list() {
+    let ui = GameWarningUi::init();
+    let command = ui.handle_event(&UiEvent::Action(InputActionEvent {
+      event_type: InputEventType::Keyboard,
+      action: "game_warning.back".to_string(),
+      state: KeyState::Pressed,
+    }));
+
+    assert_eq!(command, Some(GameWarningCommand::Back));
+  }
+}
