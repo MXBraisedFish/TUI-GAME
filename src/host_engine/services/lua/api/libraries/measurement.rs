@@ -10,23 +10,24 @@ pub(super) fn measurement(lua: &Lua, state: SharedApiState) -> mlua::Result<Tabl
     let state = state.clone();
     source.raw_set(
       name,
-      lua.create_function(move |_, values: MultiValue| {
+      lua.create_function(move |lua, values: MultiValue| {
         let method = match result {
           0 => "measurement.get_text_size",
           1 => "measurement.get_text_width",
           _ => "measurement.get_text_height",
         };
-        let table = text_parameters(method, values)?;
-        parse_draw_target(&table, method, &state)?;
+        let table = measurement_text_parameters(method, values)?;
         let params = parse_draw_text_params(&table, method, &state.borrow().context, false)?;
         let (width, height) = crate::host_engine::services::text_layout::measure_draw_text(&params);
         match result {
-          0 => Ok(MultiValue::from_vec(vec![
-            Value::Integer(width as i64),
-            Value::Integer(height as i64),
-          ])),
-          1 => Ok(MultiValue::from_vec(vec![Value::Integer(width as i64)])),
-          _ => Ok(MultiValue::from_vec(vec![Value::Integer(height as i64)])),
+          0 => {
+            let size = lua.create_table()?;
+            size.raw_set("width", width)?;
+            size.raw_set("height", height)?;
+            Ok(Value::Table(size))
+          }
+          1 => Ok(Value::Integer(width as i64)),
+          _ => Ok(Value::Integer(height as i64)),
         }
       })?,
     )?;
@@ -34,7 +35,7 @@ pub(super) fn measurement(lua: &Lua, state: SharedApiState) -> mlua::Result<Tabl
   readonly::proxy(lua, source)
 }
 
-pub(super) fn text_parameters(method: &str, values: MultiValue) -> mlua::Result<Table> {
+pub(super) fn draw_text_parameters(method: &str, values: MultiValue) -> mlua::Result<Table> {
   args::named(
     method,
     values,
@@ -61,6 +62,24 @@ pub(super) fn text_parameters(method: &str, values: MultiValue) -> mlua::Result<
       "dim",
       "text_mode",
       "slice_layer",
+    ],
+  )
+}
+
+fn measurement_text_parameters(method: &str, values: MultiValue) -> mlua::Result<Table> {
+  args::named(
+    method,
+    values,
+    &[
+      "text",
+      "horizontal_align",
+      "auto_wrap",
+      "word_wrap",
+      "max_height",
+      "max_width",
+      "overflow_marker",
+      "rich_params",
+      "text_mode",
     ],
   )
 }

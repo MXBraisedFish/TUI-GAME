@@ -1856,6 +1856,98 @@ mod tests {
   }
 
   #[test]
+  fn measurement_api_returns_documented_types_and_uses_draw_text_layout() {
+    let source = valid_script(
+      r#"
+        function Init(ctx)
+          local size, extra = measurement.get_text_size{
+            text = "Hello\n世界",
+          }
+          debug.assert{ value = type{ value = size } == "table" }
+          debug.assert{ value = size.width == 5 and size.height == 2 }
+          debug.assert{ value = extra == nil }
+          debug.assert{
+            value = measurement.get_text_width{
+              text = "abcdef",
+              max_width = 3,
+              auto_wrap = true,
+              word_wrap = false,
+            } == 3,
+          }
+          debug.assert{
+            value = measurement.get_text_height{
+              text = "abcdef",
+              max_width = 3,
+              max_height = 1,
+              overflow_marker = "..",
+              auto_wrap = true,
+              word_wrap = false,
+            } == 1,
+          }
+          local rich = measurement.get_text_size{
+            text = "f%{value:name}",
+            rich_params = { name = "终端" },
+            text_mode = string.AUTO,
+            horizontal_align = align.RIGHT,
+          }
+          debug.assert{ value = rich.width == 4 and rich.height == 1 }
+          local empty = measurement.get_text_size{ text = "" }
+          debug.assert{ value = empty.width == 0 and empty.height == 0 }
+        end
+      "#,
+    );
+    LuaSession::load(spec(&source, LuaSessionKind::Game), LuaPolicy::default()).unwrap();
+  }
+
+  #[test]
+  fn measurement_api_rejects_position_style_target_and_invalid_layout_parameters() {
+    let source = valid_script(
+      r#"
+        function Init(ctx)
+          local function fails(func)
+            return not debug.pcall{ func = func }.ok
+          end
+
+          debug.assert{ value = fails(function()
+            measurement.get_text_width{ text = "text", x = 0 }
+          end) }
+          debug.assert{ value = fails(function()
+            measurement.get_text_width{ text = "text", bold = true }
+          end) }
+          debug.assert{ value = fails(function()
+            measurement.get_text_width{ text = "text", fg = color.RED }
+          end) }
+          debug.assert{ value = fails(function()
+            measurement.get_text_width{ text = "text", slice_layer = "base" }
+          end) }
+          debug.assert{ value = fails(function()
+            measurement.get_text_width{ text = "text", max_width = 0 }
+          end) }
+          debug.assert{ value = fails(function()
+            measurement.get_text_width{ text = "text", max_height = 65536 }
+          end) }
+          debug.assert{ value = fails(function()
+            measurement.get_text_width{ text = "text", max_width = 1.5 }
+          end) }
+          debug.assert{ value = fails(function()
+            measurement.get_text_width{ text = "text", auto_wrap = "true" }
+          end) }
+          debug.assert{ value = fails(function()
+            measurement.get_text_width{ text = "text", horizontal_align = "bottom" }
+          end) }
+          debug.assert{ value = fails(function()
+            measurement.get_text_width{ text = "text", text_mode = "unknown" }
+          end) }
+          debug.assert{ value = fails(function()
+            measurement.get_text_width{}
+          end) }
+        end
+      "#,
+    );
+    LuaSession::load(spec(&source, LuaSessionKind::Game), LuaPolicy::default()).unwrap();
+  }
+
+  #[test]
   fn text_parsing_only_attaches_the_key_map_requested_by_rich_text() {
     let source = valid_script(
       r#"
@@ -1957,12 +2049,27 @@ mod tests {
             fmt = "<i2c3",
             values = { 513, "abc" },
           }
-          local number, text, next_position = serialization.binary_unpack{
+          local unpacked = serialization.binary_unpack{
             fmt = "<i2c3",
-            s = packed,
+            data = packed,
           }
           debug.assert{
-            value = number == 513 and text == "abc" and next_position == 6,
+            value = unpacked.values[1] == 513
+              and unpacked.values[2] == "abc"
+              and unpacked.next_pos == 6,
+          }
+
+          local xml = serialization.xml_encode{
+            root = {
+              _attr = { version = "1.0" },
+              child = { "Hello", _attr = { id = 1 } },
+            },
+          }
+          local xml_data = serialization.xml_decode(xml)
+          debug.assert{
+            value = xml_data.root._attr.version == "1.0"
+              and xml_data.root.child._attr.id == "1"
+              and xml_data.root.child._text == "Hello",
           }
 
           local encoded = encoding.base64_encode("TUI GAME")
@@ -2021,11 +2128,99 @@ mod tests {
               )
             end,
           }
+          local mismatched_xml_ok = debug.pcall{
+            func = function()
+              serialization.xml_decode("<root><child></root>")
+            end,
+          }
+          local mixed_xml_ok = debug.pcall{
+            func = function()
+              serialization.xml_decode("<root><child/>text</root>")
+            end,
+          }
           local hex_ok = debug.pcall{
             func = function() encoding.hex_decode("0xz1") end,
           }
           debug.assert{
-            value = not cyclic_ok.ok and not sparse_ok.ok and not entity_ok.ok and not hex_ok.ok,
+            value = not cyclic_ok.ok
+              and not sparse_ok.ok
+              and not entity_ok.ok
+              and not mismatched_xml_ok.ok
+              and not mixed_xml_ok.ok
+              and not hex_ok.ok,
+          }
+        end
+      "#,
+    );
+    LuaSession::load(spec(&source, LuaSessionKind::Game), LuaPolicy::default()).unwrap();
+  }
+
+  #[test]
+  fn serialization_formats_follow_the_public_parameter_and_result_protocol() {
+    let source = valid_script(
+      r#"
+        function Init(ctx)
+          local json = serialization.json_encode{
+            value = { name = "TUI", enabled = true, values = { 1, 2 } },
+          }
+          local json_value = serialization.json_decode{ s = json }
+          debug.assert{
+            value = json_value.name == "TUI" and json_value.values[2] == 2,
+          }
+
+          local csv = serialization.csv_encode{
+            rows = { { "name", "score" }, { "player", 9 } },
+          }
+          local csv_value = serialization.csv_decode(csv)
+          debug.assert{
+            value = csv_value[2][1] == "player" and csv_value[2][2] == "9",
+          }
+
+          local yaml = serialization.yaml_encode{
+            value = { name = "TUI", enabled = true },
+          }
+          local yaml_value = serialization.yaml_decode(yaml)
+          debug.assert{ value = yaml_value.name == "TUI" and yaml_value.enabled }
+
+          local toml = serialization.toml_encode{
+            value = { name = "TUI", version = 1 },
+          }
+          local toml_value = serialization.toml_decode(toml)
+          debug.assert{
+            value = toml_value.name == "TUI" and toml_value.version == 1,
+          }
+
+          local ini = serialization.ini_encode{
+            server = { host = "127.0.0.1", port = 8080 },
+          }
+          local ini_value = serialization.ini_decode(ini)
+          debug.assert{
+            value = ini_value.server.host == "127.0.0.1"
+              and ini_value.server.port == "8080",
+          }
+
+          local first = serialization.binary_pack{
+            fmt = "<I2z",
+            values = { 513, "ok" },
+          }
+          local all = first .. first
+          local unpacked_first = serialization.binary_unpack{
+            fmt = "<I2z",
+            data = all,
+          }
+          local unpacked_second = serialization.binary_unpack{
+            fmt = "<I2z",
+            data = all,
+            pos = unpacked_first.next_pos,
+          }
+          debug.assert{
+            value = unpacked_first.values[1] == 513
+              and unpacked_first.values[2] == "ok"
+              and unpacked_second.values[1] == 513
+              and unpacked_second.values[2] == "ok",
+          }
+          debug.assert{
+            value = serialization.binary_packsize("<I2c2x") == 5,
           }
         end
       "#,
@@ -2258,7 +2453,7 @@ mod tests {
       r#"
         function Init(ctx)
           local sqrt_ok = debug.pcall{ func = function() math.sqrt(-1) end }
-          local pow_ok = debug.pcall{ func = function() math.pow{ left = -1, right = 0.5 } end }
+          local pow_ok = debug.pcall{ func = function() math.pow{ x = -1, y = 0.5 } end }
           local value = {}
           local cursor = value
           for index = 1, 33 do
@@ -2280,6 +2475,130 @@ mod tests {
               and not unknown_ok.ok
               and packed.n == 3 and packed[1] == "first" and packed[3] == nil,
           }
+        end
+      "#,
+    );
+    LuaSession::load(spec(&source, LuaSessionKind::Game), LuaPolicy::default()).unwrap();
+  }
+
+  #[test]
+  fn math_api_matches_documented_names_types_and_boundaries() {
+    let source = valid_script(
+      r#"
+        function Init(ctx)
+          local function near(left, right, tolerance)
+            return math.abs(left - right) < tolerance
+          end
+          local function fails(func)
+            return not debug.pcall{ func = func }.ok
+          end
+
+          debug.assert{ value = math.number_type(math.PI) == "float" }
+          debug.assert{ value = math.number_type(math.E) == "float" }
+          debug.assert{ value = math.POSITIVE_INFINITE == math.INFINITE }
+          debug.assert{ value = math.POSITIVE_INFINITE > math.MAX_INTEGER }
+          debug.assert{ value = math.NEGATIVE_INFINITE < math.MIN_INTEGER }
+          debug.assert{ value = math.number_type(math.MAX_INTEGER) == "integer" }
+          debug.assert{ value = math.number_type(math.MIN_INTEGER) == "integer" }
+          debug.assert{ value = near(math.DEG * math.PI, 180.0, 0.000000000001) }
+          debug.assert{ value = near(math.RAD * 180.0, math.PI, 0.000000000001) }
+
+          debug.assert{ value = type(math.lg) == "function" }
+          debug.assert{ value = type(math.ln) == "function" }
+          debug.assert{ value = type(math.number_type) == "function" }
+          debug.assert{ value = math.log10 == nil and math.type == nil }
+
+          debug.assert{ value = math.abs(-5) == 5 and math.number_type(math.abs(-5)) == "float" }
+          debug.assert{ value = math.ceil(3.1) == 4 and math.number_type(math.ceil(3.1)) == "integer" }
+          debug.assert{ value = math.floor(-3.1) == -4 and math.number_type(math.floor(-3.1)) == "integer" }
+          debug.assert{ value = math.round(3.5) == 4 and math.round(-3.5) == -4 }
+          debug.assert{ value = math.round_to{ value = 3.14159, digits = 2 } == 3.14 }
+          debug.assert{ value = math.round_to{ value = 12345, digits = -2 } == 12300 }
+          debug.assert{ value = math.round_to{ value = 1e308, digits = 1 } == 1e308 }
+
+          debug.assert{ value = math.fmod{ x = 7, y = 3 } == 1 }
+          debug.assert{ value = math.fmod{ x = -7, y = 3 } == -1 }
+          debug.assert{ value = math.fmod{ x = math.MIN_INTEGER, y = -1 } == 0 }
+          debug.assert{ value = math.number_type(math.fmod{ x = 7, y = 3 }) == "integer" }
+          debug.assert{ value = math.pow{ x = 2, y = 3 } == 8 }
+          debug.assert{ value = near(math.exp(1), math.E, 0.000000000001) }
+          debug.assert{ value = math.log{ value = 8, base = 2 } == 3 }
+          debug.assert{ value = math.lg(100) == 2 }
+          debug.assert{ value = near(math.ln(math.E), 1, 0.000000000001) }
+          debug.assert{ value = math.sqrt(9) == 3 }
+          debug.assert{ value = math.ldexp{ x = 3, exp = 2 } == 12 }
+          debug.assert{ value = math.ldexp{ x = 0, exp = math.MAX_INTEGER } == 0 }
+          debug.assert{ value = math.ldexp{ x = 1, exp = math.MIN_INTEGER } == 0 }
+
+          local split = math.frexp(12.8)
+          debug.assert{
+            value = near(split.mantissa, 0.8, 0.000000000001)
+              and split.exponent == 4
+              and math.number_type(split.exponent) == "integer",
+          }
+          local largest = math.frexp(1.7976931348623157e308)
+          debug.assert{
+            value = largest.mantissa >= 0.5 and largest.mantissa < 1.0
+              and largest.exponent == 1024,
+          }
+
+          debug.assert{ value = near(math.sin(math.PI / 2), 1, 0.000000000001) }
+          debug.assert{ value = near(math.cos(0), 1, 0.000000000001) }
+          debug.assert{ value = near(math.tan(0), 0, 0.000000000001) }
+          debug.assert{ value = near(math.asin(1), math.PI / 2, 0.000000000001) }
+          debug.assert{ value = near(math.acos(1), 0, 0.000000000001) }
+          debug.assert{ value = near(math.atan(1), math.PI / 4, 0.000000000001) }
+          debug.assert{ value = near(math.atan2{ y = 1, x = 1 }, math.PI / 4, 0.000000000001) }
+          debug.assert{ value = near(math.deg(math.PI), 180, 0.000000000001) }
+          debug.assert{ value = near(math.rad(180), math.PI, 0.000000000001) }
+          debug.assert{ value = math.normalize_angle(450) == 90 }
+          debug.assert{ value = math.normalize_angle(-90) == 270 }
+          debug.assert{ value = math.number_type(math.normalize_angle(0)) == "float" }
+
+          debug.assert{ value = math.max{ 1, 5, 3 } == 5 }
+          debug.assert{ value = math.min{ values = { 1, -2, 3 } } == -2 }
+          local parts = math.modf(3.14)
+          debug.assert{
+            value = parts.integer_part == 3
+              and math.number_type(parts.integer_part) == "integer"
+              and near(parts.fractional_part, 0.14, 0.000000000001),
+          }
+          debug.assert{ value = math.tointeger(3.0) == 3 }
+          debug.assert{ value = math.tointeger(3.14) == nil }
+          debug.assert{ value = math.tointeger(9223372036854775808.0) == nil }
+          debug.assert{ value = math.number_type("3") == nil }
+          debug.assert{ value = math.ult{ left = -1, right = 0 } == false }
+          debug.assert{ value = math.approx_equal{ left = 0.1 + 0.2, right = 0.3 } }
+          debug.assert{ value = math.approx_equal{ left = 1.0, right = 1.005, epsilon = 0.01 } }
+          debug.assert{ value = not math.approx_equal{ left = 1.0, right = 1.01, epsilon = 0.001 } }
+          debug.assert{ value = math.approx_equal{ left = -0.0, right = 0.0, epsilon = 0.0 } }
+          debug.assert{ value = near(math.percent{ value = 5, total = 16 }, 0.3125, 0.000000000001) }
+          debug.assert{ value = near(math.percent{ value = 5, total = 16, as_percent = true }, 31.25, 0.000000000001) }
+
+          debug.assert{ value = math.factorial(0) == 1 }
+          debug.assert{ value = math.number_type(math.factorial{ n = 5 }) == "float" }
+          debug.assert{ value = math.factorial(170) > 7e306 }
+          debug.assert{ value = math.combination{ n = 5, k = 2 } == 10 }
+          debug.assert{ value = math.number_type(math.combination{ n = 5, k = 2 }) == "integer" }
+
+          debug.assert{ value = fails(function() math.abs(math.INFINITE) end) }
+          debug.assert{ value = fails(function() math.ceil(1e20) end) }
+          debug.assert{ value = fails(function() math.round_to{ value = 1, digits = 309 } end) }
+          debug.assert{ value = fails(function() math.fmod{ x = 1, y = 0 } end) }
+          debug.assert{ value = fails(function() math.fmod{ x = 9223372036854775808.0, y = 1 } end) }
+          debug.assert{ value = fails(function() math.pow{ left = 2, right = 3 } end) }
+          debug.assert{ value = fails(function() math.ldexp{ x = 1, exp = math.MAX_INTEGER } end) }
+          debug.assert{ value = fails(function() math.log{ value = 2 } end) }
+          debug.assert{ value = fails(function() math.sqrt(-1) end) }
+          debug.assert{ value = fails(function() math.asin(2) end) }
+          debug.assert{ value = fails(function() math.max{} end) }
+          debug.assert{ value = fails(function() math.max{ values = { [1] = 1, [3] = 3, n = 3 } } end) }
+          debug.assert{ value = fails(function() math.modf(1e20) end) }
+          debug.assert{ value = fails(function() math.approx_equal{ left = math.INFINITE, right = 1 } end) }
+          debug.assert{ value = fails(function() math.approx_equal{ left = 1, right = 1, epsilon = -1 } end) }
+          debug.assert{ value = fails(function() math.approx_equal{ left = 1, right = 1, extra = true } end) }
+          debug.assert{ value = fails(function() math.factorial(171) end) }
+          debug.assert{ value = fails(function() math.combination{ n = 67, k = 33 } end) }
         end
       "#,
     );

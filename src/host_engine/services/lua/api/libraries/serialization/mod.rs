@@ -24,7 +24,7 @@ fn install_json(lua: &Lua, source: &Table) -> mlua::Result<()> {
     "json_encode",
     lua.create_function(|_, values: MultiValue| {
       let method = "serialization.json_encode";
-      let value = args::one(method, "t", values)?;
+      let value = args::one(method, "value", values)?;
       let value = value::lua_to_json(value, method)?;
       value::bounded_text(
         method,
@@ -49,7 +49,7 @@ fn install_csv(lua: &Lua, source: &Table) -> mlua::Result<()> {
     "csv_encode",
     lua.create_function(|_, values: MultiValue| {
       let method = "serialization.csv_encode";
-      let data = value::lua_to_json(args::one(method, "t", values)?, method)?;
+      let data = value::lua_to_json(args::one(method, "rows", values)?, method)?;
       let serde_json::Value::Array(rows) = data else {
         return Err(args::message(method, "expected a two-dimensional array"));
       };
@@ -104,7 +104,7 @@ fn install_yaml(lua: &Lua, source: &Table) -> mlua::Result<()> {
     "yaml_encode",
     lua.create_function(|_, values: MultiValue| {
       let method = "serialization.yaml_encode";
-      let data = value::lua_to_json(args::one(method, "t", values)?, method)?;
+      let data = value::lua_to_json(args::one(method, "value", values)?, method)?;
       let text =
         serde_yaml::to_string(&data).map_err(|_| args::message(method, "YAML encoding failed"))?;
       value::bounded_text(method, text)
@@ -130,7 +130,7 @@ fn install_toml(lua: &Lua, source: &Table) -> mlua::Result<()> {
     "toml_encode",
     lua.create_function(|_, values: MultiValue| {
       let method = "serialization.toml_encode";
-      let data = value::lua_to_json(args::one(method, "t", values)?, method)?;
+      let data = value::lua_to_json(args::one(method, "value", values)?, method)?;
       if !data.is_object() {
         return Err(args::message(method, "TOML root must be an object table"));
       }

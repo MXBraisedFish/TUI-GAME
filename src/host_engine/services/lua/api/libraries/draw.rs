@@ -7,7 +7,7 @@ pub(super) fn draw(lua: &Lua, state: SharedApiState) -> mlua::Result<Table> {
     "text",
     lua.create_function(move |_, values: MultiValue| {
       let method = "draw.text";
-      let table = text_parameters(method, values)?;
+      let table = draw_text_parameters(method, values)?;
       let target = parse_draw_target(&table, method, &text_state)?;
       let params = {
         let state = text_state.borrow();

@@ -165,7 +165,7 @@ pub fn integer(value: Value, method: &str, name: &str) -> mlua::Result<i64> {
   match value {
     Value::Integer(value) => Ok(value),
     Value::Number(value) if value.is_finite() && value.fract() == 0.0 => {
-      if value < i64::MIN as f64 || value > i64::MAX as f64 {
+      if value < i64::MIN as f64 || value >= 9_223_372_036_854_775_808.0 {
         Err(invalid(method, name, "integer", &Value::Number(value)))
       } else {
         Ok(value as i64)

@@ -329,7 +329,15 @@ fn run_audio_runtime(command_rx: Receiver<AudioCommand>, event_tx: Sender<Engine
     .spawn(move || run_capture_writer(capture_rx, capture_event_tx))
     .ok();
 
+  let stream_error_reported = Arc::new(AtomicBool::new(false));
+  let stream_error_event_tx = event_tx.clone();
+  let callback_error_reported = stream_error_reported.clone();
   let mut output = DeviceSinkBuilder::from_default_device()
+    .map(|builder| {
+      builder.with_error_callback(move |_error| {
+        report_backend_failure_once(&stream_error_event_tx, &callback_error_reported);
+      })
+    })
     .and_then(DeviceSinkBuilder::open_stream)
     .ok();
   let capture_state = Arc::new(CaptureTapState::default());
@@ -1163,6 +1171,18 @@ fn send_object_error(
   );
 }
 
+fn report_backend_failure_once(event_tx: &Sender<EngineEvent>, already_reported: &AtomicBool) {
+  if already_reported.swap(true, Ordering::AcqRel) {
+    return;
+  }
+  send_event(
+    event_tx,
+    AudioAsyncEvent::BackendFailed {
+      error: AudioError::sanitized(AudioErrorCode::BackendUnavailable),
+    },
+  );
+}
+
 fn send_event(event_tx: &Sender<EngineEvent>, event: AudioAsyncEvent) {
   let _ = event_tx.send(EngineEvent::Audio(event));
 }
@@ -1319,5 +1339,21 @@ mod tests {
     drop(live_reference);
     assert!(reserve_cache_space(&mut cache, 1));
     assert!(!cache.contains_key(&key));
+  }
+
+  #[test]
+  fn backend_stream_errors_are_reported_once_through_engine_events() {
+    let (event_tx, event_rx) = unbounded();
+    let already_reported = AtomicBool::new(false);
+
+    report_backend_failure_once(&event_tx, &already_reported);
+    report_backend_failure_once(&event_tx, &already_reported);
+
+    assert!(matches!(
+      event_rx.recv().unwrap(),
+      EngineEvent::Audio(AudioAsyncEvent::BackendFailed { error })
+        if error.code == AudioErrorCode::BackendUnavailable
+    ));
+    assert!(event_rx.try_recv().is_err());
   }
 }

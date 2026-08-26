@@ -42,8 +42,8 @@ mod table;
 mod utf8;
 
 use measurement::{
-  draw_target_size, parse_color, parse_draw_target, parse_draw_text_params, positive_u16,
-  text_parameters,
+  draw_target_size, draw_text_parameters, parse_color, parse_draw_target, parse_draw_text_params,
+  positive_u16,
 };
 use string::{rich_text_params, text_parameter};
 use utf8::resolve_index;

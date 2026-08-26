@@ -63,11 +63,11 @@ pub(super) fn install(lua: &Lua, source: &Table) -> mlua::Result<()> {
     "binary_unpack",
     lua.create_function(|lua, values: MultiValue| {
       let method = "serialization.binary_unpack";
-      let table = args::named(method, values, &["fmt", "s", "pos"])?;
+      let table = args::named(method, values, &["fmt", "data", "pos"])?;
       let format = args::string(args::required(&table, method, "fmt")?, method, "fmt")?;
-      let data_value = args::required(&table, method, "s")?;
+      let data_value = args::required(&table, method, "data")?;
       let Value::String(data) = data_value else {
-        return Err(args::invalid(method, "s", "string", &data_value));
+        return Err(args::invalid(method, "data", "string", &data_value));
       };
       if data.as_bytes().len() > args::MAX_API_STRING_BYTES {
         return Err(args::message(method, "input exceeds 1 MiB"));
@@ -79,17 +79,21 @@ pub(super) fn install(lua: &Lua, source: &Table) -> mlua::Result<()> {
         return Err(args::message(method, "pos is outside the input string"));
       }
       let operations = parse_format(&format, method)?;
-      let mut results = Vec::new();
+      let results = lua.create_table()?;
+      let mut result_index = 1;
       for operation in operations {
         offset = aligned_offset(offset, operation)?;
         if let Some(value) =
           unpack_operation(lua, operation, &data.as_bytes(), &mut offset, method)?
         {
-          results.push(value);
+          results.raw_set(result_index, value)?;
+          result_index += 1;
         }
       }
-      results.push(Value::Integer((offset + 1) as i64));
-      Ok(MultiValue::from_vec(results))
+      let result = lua.create_table()?;
+      result.raw_set("values", results)?;
+      result.raw_set("next_pos", offset + 1)?;
+      Ok(result)
     })?,
   )?;
 
