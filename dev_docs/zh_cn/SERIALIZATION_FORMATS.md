@@ -8,17 +8,16 @@
 
 ## 目录
 
-| 章节              | 说明                         | 索引                                    |
-| ----------------- | ---------------------------- | --------------------------------------- |
-| 可序列化的 Lua 值 | 哪些 Lua 值可被序列化        | [可序列化的 Lua 值](#可序列化的-lua-值) |
-| JSON              | JSON 格式的编码与解码        | [JSON](#json)                           |
-| TOML              | TOML 格式的编码与解码        | [TOML](#toml)                           |
-| YAML              | YAML 格式的编码与解码        | [YAML](#yaml)                           |
-| CSV               | CSV 格式的编码与解码         | [CSV](#csv)                             |
-| XML               | XML 格式的编码与解码         | [XML](#xml)                             |
-| INI               | INI 格式的编码与解码         | [INI](#ini)                             |
-| 二进制打包        | 按格式串打包与解包二进制数据 | [二进制打包](#二进制打包)               |
-| 格式选择建议      | 不同场景下的格式推荐         | [格式选择建议](#格式选择建议)           |
+| 章节       | 说明                 | 索引                      |
+| ---------- | -------------------- | ------------------------- |
+| 通用规则   | 所有序列化的通用规则 | [通用规则](#通用规则)     |
+| JSON       | JSON 格式            | [JSON](#json)             |
+| TOML       | TOML 格式            | [TOML](#toml)             |
+| YAML       | YAML 格式            | [YAML](#yaml)             |
+| CSV        | CSV 格式             | [CSV](#csv)               |
+| XML        | XML 格式             | [XML](#xml)               |
+| INI        | INI 格式             | [INI](#ini)               |
+| 二进制数据 | 二进制数据           | [二进制数据](#二进制数据) |
 
 ## 链接
 
@@ -29,36 +28,52 @@
 
 ---
 
-## 可序列化的 Lua 值
+## 通用规则
 
-| Lua 类型  | 编码结果             |
-| --------- | -------------------- |
-| `nil`     | 转换为对应格式的空值 |
-| `boolean` | 布尔值               |
-| `integer` | 整数                 |
-| `number`  | 浮点数               |
-| `string`  | 字符串               |
-| 数组表    | 数组/序列            |
-| 对象表    | 对象/映射            |
+- 所有反序列化中 `null` 会被转换为 Lua 值 `nil`，但 Lua 解析器本身会忽略值 `nil`。
+
+**示例**
+
+```json
+{
+  "test": 1,
+  "is_null": null // Lua 为 { test = 1}
+}
+```
 
 ---
 
 ## JSON
 
+### 根结构要求
+
+JSON 的根值**可为任意可序列化的值**。
+
+```lua
+data = any...
+```
+
 ### 数据结构映射
 
-| Lua                | JSON           |
-| ------------------ | -------------- |
-| `nil`              | `null`         |
-| `boolean`          | `true`/`false` |
-| `integer`/`number` | number         |
-| `string`           | string         |
-| 数组表             | array          |
-| 对象表             | object         |
+**双向映射**
+
+> 该部分值的映射可逆
+
+| Lua       | JSON      |
+| --------- | --------- |
+| `nil`     | `null`    |
+| `boolean` | `boolean` |
+| `integer` | `integer` |
+| `number`  | `float`   |
+| `string`  | `string`  |
+| 数组表    | 数组      |
+| 对象表    | 对象      |
 
 ### 示例
 
 **正确结构**
+
+序列化：
 
 ```lua
 data = {
@@ -77,12 +92,12 @@ debug.print { message = json }
 { "enabled": true, "name": "TUI GAME", "values": [1, 2, 3] }
 ```
 
-解码：
+反序列化：
 
 ```lua
 json = '{"name":"TUI GAME","values":[1,2,3]}'
 data = serialization.json_decode(json)
-debug.print { message = data.name }  -- TUI GAME
+debug.print { message = tostring(data.name) }  -- TUI GAME
 ```
 
 输出：
@@ -103,7 +118,7 @@ TUI GAME
 }
 ```
 
-> 数组表不连续
+> 数组表不连续，存在数据空洞
 
 ```lua
 {
@@ -112,15 +127,15 @@ TUI GAME
 }
 ```
 
-> Lua 值 `nil` 被当做可显式的 `null`
+> `null` 被当做可显式的 Lua 值 `nil`
+
+```json
+{
+  "is_null": null
+}
+```
 
 ```lua
--- lua
-{
-  is_null = nil
-}
-
--- json
 {}
 ```
 
@@ -130,25 +145,43 @@ TUI GAME
 
 ### 根结构要求
 
-TOML 的根值**必须是对象表**，不能是数组或基本类型。
+TOML 的根值**必须是对象表**。
 
 ```lua
 data = {
-  key = value
+  key = value,
+  ...
 }
 ```
 
 ### 数据结构映射
 
-| Lua                | JSON           |
-| ------------------ | -------------- |
-| `boolean`          | `true`/`false` |
-| `integer`/`number` | number         |
-| `string`           | string         |
-| 数组表             | array          |
-| 对象表             | table          |
+**双向映射**
 
-### 正确示例
+> 该部分值的映射可逆
+
+| Lua       | TOML      |
+| --------- | --------- |
+| `boolean` | `boolean` |
+| `integer` | `integer` |
+| `number`  | `float`   |
+| `string`  | `string`  |
+| 数组表    | 数组      |
+| 对象表    | 表        |
+
+**单向映射**
+
+> 该部分值的映射不可逆
+
+| Lua      | 方向 | TOML   |
+| -------- | :--: | ------ |
+| `string` | $←$  | `date` |
+
+### 示例
+
+**正确示例**
+
+序列化：
 
 ```lua
 data = {
@@ -170,65 +203,80 @@ width = 120
 height = 40
 ```
 
-解码：
+反序列化：：
 
 ```lua
 toml = 'title = "TUI GAME"\n[window]\nwidth = 120'
 data = serialization.toml_decode(toml)
-debug.print { message = data.window.width }  -- 120
+debug.print { message = tostring(data.window.width) }
 ```
 
-### 错误示例
+输出：
 
-> **错误 1：根值为数组**
->
-> ```lua
-> data = { 1, 2, 3 }
-> serialization.toml_encode(data)  -- 失败
-> ```
+```text
+120
+```
 
-> **错误 2：表中包含 `nil`**
->
-> TOML 不支持空值，任何位置出现 `nil` 都会导致编码失败。
+**错误示例**
 
-> **错误 3：对象键为非字符串**
->
-> ```lua
-> data = { [1] = "value" }  -- 数字键不被允许
-> ```
+> 根值类型错误
+
+```lua
+{ 1, 2, 3 }
+```
+
+> 对象键为非字符串
+
+```lua
+{ [2] = "value" }
+```
+
+> 误认为单向映射值可逆
+
+```toml
+date = 2026-10-01T15:20:45
+```
+
+```lua
+"2026-10-01T15:20:45" -- 被转换为字符串，且不可再转回日期类型
+```
 
 ---
 
 ## YAML
 
-YAML 适用于人工编辑的复杂层级数据，可读性高。本库仅支持能够安全转换为 JSON 的子集。
+### 根结构要求
+
+YAML 的根值**必须是对象表**。
+
+```lua
+data = {
+  key = value,
+  ...
+}
+```
 
 ### 数据结构映射
 
-- YAML sequence → 数组表
-- YAML mapping → 对象表
-- YAML null → Lua `nil`
+**双向映射**
 
-### 支持的值
+> 该部分值的映射可逆
 
-- 空值、布尔值、有限数字、UTF-8 字符串
-- 连续序列、字符串键映射
+| Lua       | YAML      |
+| --------- | --------- |
+| `nil`     | `null`    |
+| `boolean` | `boolean` |
+| `integer` | `integer` |
+| `number`  | `float`   |
+| `string`  | `string`  |
+| 数组表    | 序列      |
+| 对象表    | 映射      |
 
-### 不支持的特性
+### 示例
 
-- 自定义标签（如 `!type`）
-- 复杂映射键
-- 注释、锚点、缩进风格（解码后不保留）
-- 任何 YAML 标签会直接拒绝整个文档
+**正确示例**
 
-### 方法
-
-| 方法          | 参数         | 返回值   | 说明                  |
-| ------------- | ------------ | -------- | --------------------- |
-| `yaml_encode` | `value: any` | `string` | 将 Lua 值编码为 YAML  |
-| `yaml_decode` | `s: string`  | `any`    | 将 YAML 解码为 Lua 值 |
-
-### 正确示例
+序列化：
 
 ```lua
 data = {
@@ -251,76 +299,88 @@ tags:
   - lua
 ```
 
-解码：
+反序列化：：
 
 ```lua
 yaml = "name: TUI GAME\ntags:\n- tui\n- lua"
 data = serialization.yaml_decode(yaml)
-debug.print { message = data.tags[1] }  -- tui
+debug.print { message = tostring(data.tags[1]) }
 ```
 
-### 错误示例
+输出：
 
-> **错误 1：YAML 中包含自定义标签**
->
-> ```yaml
-> name: !person TUI
-> ```
->
-> 解码时遇到任何标签都会拒绝整个文档。
+```text
+tui
+```
 
-> **错误 2：映射键不是字符串**
->
-> 复杂映射键无法安全转换为 Lua 对象表。
+**错误示例**
 
-> **错误 3：依赖 YAML 的隐式类型推断**
->
-> 跨格式转换时，应明确使用字符串、数字或布尔值，避免依赖解析器的自动推断。
+> 原始数据中包含自定义标签
+
+```yaml
+name: !person TUI # 反序列化不支持自定义标签
+```
+
+> 映射键不是字符串
+
+```yaml
+1: one
+```
+
+> `null` 被当做可显式的 Lua 值 `nil`
+
+```yaml
+is_null: null # Lua 为 {}
+```
 
 ---
 
 ## CSV
 
-CSV 适用于规则的二维表格数据，不保存字段类型。
+### 根结构要求
 
-### 数据结构要求
-
-CSV 的输入必须是**二维连续数组**：
+CSV 的根值**必须是二维数组表**。
 
 ```lua
-rows = {
-  { "name", "score" },
-  { "Alice", 95 },
-  { "Bob", 87 }
+data = {
+  {string...},
+  ...
 }
 ```
 
-- 第一层是行数组，第二层是每行的列数组
-- 所有行必须具有相同的列数
-- 每个单元格只能是：字符串、整数/有限浮点数、布尔值、空值
-- 单元格不能是表、函数、线程或 userdata
+### 数据结构映射
 
-### 文本格式
+**双向映射**
 
-- 字段分隔符：逗号 `,`
-- 引号字符：双引号 `"`
-- 包含逗号、双引号或换行的字段自动加引号
-- 字段内部的双引号通过重复双引号转义
+> 该部分值的映射可逆
 
-### 方法
+| Lua      | YAML     |
+| -------- | -------- |
+| `string` | `string` |
 
-| 方法         | 参数          | 返回值   | 说明                  |
-| ------------ | ------------- | -------- | --------------------- |
-| `csv_encode` | `rows: table` | `string` | 将二维数组编码为 CSV  |
-| `csv_decode` | `s: string`   | `table`  | 将 CSV 解码为二维数组 |
+**单向映射**
 
-### 正确示例
+> 该部分值的映射不可逆
+
+| Lua       | 方向 | CSV      |
+| --------- | :--: | -------- |
+| `boolean` | $→$  | `string` |
+| `integer` | $→$  | `string` |
+| `number`  | $→$  | `string` |
+| `nil`     | $→$  | 空文本   |
+| `string`  | $←$  | 空文本   |
+
+### 示例
+
+**正确示例**
+
+序列化：
 
 ```lua
 rows = {
-  { "name", "description" },
-  { "TUI GAME", "terminal, Lua and games" },
-  { "quote", 'He said "Hello"' }
+  { "name", "age", "work" },
+  { "Alice", 12, false },
+  { "Bob", 30, true }
 }
 
 csv = serialization.csv_encode(rows)
@@ -330,112 +390,178 @@ debug.print { message = csv }
 输出：
 
 ```csv
-name,description
-TUI GAME,"terminal, Lua and games"
-quote,"He said ""Hello"""
+name,age,work
+Alice,12,false
+Bob,30,true
 ```
 
-解码：
+反序列化：：
 
 ```lua
-csv = "name,score\nAlice,95\nBob,87"
+csv = "name,age,work\nAlice,12,false\nBob,30,true"
 rows = serialization.csv_decode(csv)
-debug.print { message = rows[2][1] }  -- Alice
+debug.print { message = tostring(rows[2][1]) }
+debug.print { message = tostring(type(rows[2][2])) }
 ```
 
-### 错误示例
+输出：
 
-> **错误 1：各行列数不一致**
->
-> ```lua
-> rows = {
->   { "name", "score" },
->   { "Alice" }  -- 只有1列，与第一行2列不一致
-> }
-> ```
+```text
+Alice
+string
+```
 
-> **错误 2：单元格中包含表**
->
-> ```lua
-> rows = {
->   { "name", { "nested" } }  -- 单元格不能是表
-> }
-> ```
+**错误示例**
 
-> **错误 3：空表表示空 CSV**
->
-> 空 Lua 表 `{}` 被识别为对象而非空数组，不适用于表达空 CSV。
+> 各行列数不一致（表头和表内列数需一致）
+
+```lua
+{
+  { "name", "age" },
+  { "Alice" }
+}
+```
+
+> 单元格中包含表（不可嵌套）
+
+```lua
+{
+  { "name", { "nested" } }
+}
+```
+
+> 误认为单向映射值可逆（转换后均为字符串）
+
+```csv
+true -- Lua 为 "true"
+1    -- Lua 为 "1"
+```
 
 ---
 
 ## XML
 
-XML 适用于具有明确标签结构的数据，支持元素、属性和重复节点。
+### 根结构要求
 
-XML 使用专门的表映射规则，不同于普通 JSON 表映射。
-
-### 根元素
-
-编码输入必须是**只包含一个命名元素**的表：
+XML 的根值**必须遵循特定的表结构**。
 
 ```lua
 data = {
-  root = {
-    child = "Hello"
+  root = {            -- 根标签
+    _attr = {         -- 属性
+      key = value
+      ...
+    },
+    _text = value,    -- 子元素（与子标签冲突，见下文）
+    element = { ... } -- 子标签（与子元素冲突，见下文）
   }
 }
 ```
 
-对应：
+XML 结构：
 
 ```xml
-<root><child>Hello</child></root>
-```
-
-### 元素文本
-
-标量值直接作为元素文本：
-
-```lua
-{ root = "Hello" }
-```
-
-也可以使用 `_text` 字段：
-
-```lua
-{ root = { _text = "Hello" } }
-```
-
-连续数组项会依次拼接为文本（不插入分隔符）：
-
-```lua
-{ root = { "Hello", " ", "TUI" } }  -- → <root>Hello TUI</root>
+<root key = value>
+  value                  <!-- 与子标签冲突，见下文 -->
+  <element>...</element> <!-- 与子元素冲突，见下文 -->
+</root>
 ```
 
 ### 属性
 
-属性保存在 `_attr` 表中：
+属性保存在对象键 `_attr` 表中。
+
+**示例**
+
+序列化：
 
 ```lua
-{
+data = {
   root = {
-    _attr = { version = "1.0", enabled = true },
+    _attr = {
+      version = "1.0",
+      enabled = true
+    },
     _text = "Hello"
   }
 }
+
+xml = serialization.xml_encode(data)
+debug.print { message = xml }
 ```
 
-对应：
+输出：
 
 ```xml
 <root enabled="true" version="1.0">Hello</root>
 ```
 
-属性值只能是 `nil`、布尔值、有限数字或 UTF-8 字符串。
-
 ### 子元素
 
-普通字符串键表示子元素：
+子元素保存在对象键 `_text` 中，或直接保存在根标签中。
+
+> 子标签与子元素冲突，当存在子元素时，根标签不可包含子标签。
+
+**示例**
+
+序列化：
+
+```lua
+data1 = {
+  root = {
+    _text = "Hello"
+  }
+}
+
+data2 = {
+  root = "Hello"
+}
+
+xml1 = serialization.xml_encode(data1)
+debug.print { message = xml1 }
+
+xml2 = serialization.xml_encode(data2)
+debug.print { message = xml2 }
+```
+
+输出：
+
+```xml
+<root>Hello</root>
+<root>Hello</root>
+```
+
+#### 数据结构映射
+
+**双向映射**
+
+> 该部分值的映射可逆
+
+| Lua      | XML      |
+| -------- | -------- |
+| `string` | `string` |
+
+**单向映射**
+
+> 该部分值的映射不可逆
+
+| Lua       | 方向 | CSV      |
+| --------- | :--: | -------- |
+| `boolean` | $→$  | `string` |
+| `integer` | $→$  | `string` |
+| `number`  | $→$  | `string` |
+| `nil`     | $→$  | 空文本   |
+| `string`  | $←$  | 空文本   |
+
+### 子标签
+
+其他任何键作为子标签。
+
+> 子标签与子元素冲突，当存在子标签时，根标签不可包含子元素。
+
+**示例**
+
+序列化：
 
 ```lua
 {
@@ -444,64 +570,44 @@ data = {
     score = 95
   }
 }
-```
 
-同名子元素使用非空连续数组表示：
-
-```lua
 {
   players = {
     player = {
-      { name = "Alice" },
+      { name = "Alice" }, -- 同名使用连续数组表示
       { name = "Bob" }
     }
   }
 }
 ```
 
-对应：
+苏处：
 
 ```xml
+<player>
+  <name>Alice</name>
+  <score>95</score>
+</player>
+
 <players>
   <player><name>Alice</name></player>
   <player><name>Bob</name></player>
 </players>
 ```
 
-### 禁止混合内容
-
-一个元素**不能同时包含文本和子元素**：
-
-```lua
--- 不合法
-{
-  root = {
-    _text = "before",
-    child = "value"
-  }
-}
-```
-
-### 名称要求
-
-- 第一个字符：Unicode 字母或 `_`
-- 后续字符：Unicode 字母、数字、`_`、`-` 或 `.`
-- 不允许空名称
-- 不支持命名空间前缀（冒号）
-- `_attr` 和 `_text` 是保留字段
-
 ### 转义规则
 
-编码时自动转义：`&`→`&amp;`、`<`→`&lt;`、`>`→`&gt;`、`"`→`&quot;`、`'`→`&apos;`
-
-### 方法
-
-| 方法         | 参数           | 返回值   | 说明                 |
-| ------------ | -------------- | -------- | -------------------- |
-| `xml_encode` | `value: table` | `string` | 将 Lua 值编码为 XML  |
-| `xml_decode` | `s: string`    | `table`  | 将 XML 解码为 Lua 值 |
+| 原字符 | 转义符   |
+| ------ | -------- |
+| `&`    | `&amp;`  |
+| `<`    | `&lt;`   |
+| `>`    | `&gt;`   |
+| `"`    | `&quot;` |
+| `'`    | `&apos;` |
 
 ### 正确示例
+
+序列化：
 
 ```lua
 data = {
@@ -524,7 +630,7 @@ debug.print { message = xml }
 <root version="1.0"><item><name>Alice</name></item><item><name>Bob</name></item></root>
 ```
 
-解码：
+反序列化：：
 
 ```lua
 xml = '<root version="1.0"><item>A</item><item>B</item></root>'
@@ -534,7 +640,7 @@ debug.print { message = data.root.item[1] }  -- A
 
 ### 错误示例
 
-> **错误 1：根表包含多个元素**
+> **错误 1：根表包含多个子元素**
 >
 > ```lua
 > data = {
@@ -545,7 +651,7 @@ debug.print { message = data.root.item[1] }  -- A
 >
 > 根表只能有一个键。
 
-> **错误 2：元素同时包含文本和子元素**
+> **错误 2：子元素同时包含文本和子子元素**
 >
 > ```lua
 > {
@@ -556,7 +662,7 @@ debug.print { message = data.root.item[1] }  -- A
 > }
 > ```
 
-> **错误 3：元素名包含冒号**
+> **错误 3：子元素名包含冒号**
 >
 > ```lua
 > { ["ns:root"] = "value" }  -- 命名空间前缀不支持
@@ -610,7 +716,7 @@ port=8080
 ### 支持的值类型
 
 - `nil` → 编码为空文本
-- `boolean` → `true`/`false`
+- `boolean` → `boolean`
 - `integer` 或有限 `number`
 - UTF-8 字符串（不能包含换行）
 
@@ -664,7 +770,7 @@ host = 127.0.0.1
 port = 8080
 ```
 
-解码：
+反序列化：：
 
 ```lua
 ini = "[server]\nhost=127.0.0.1\nport=8080"
@@ -778,16 +884,3 @@ debug.print { message = tostring(size) }
 > **错误 3：`pos` 超出数据范围**
 >
 > 指定的起始位置超出了二进制数据的长度。
-
----
-
-## 格式选择建议
-
-| 需求                   | 推荐格式 | 原因                               |
-| ---------------------- | -------- | ---------------------------------- |
-| 通用数据交换           | JSON     | 结构明确，跨语言兼容最好           |
-| 人工编辑的程序配置     | TOML     | 配置层级清晰，标量类型明确         |
-| 人工编辑的复杂层级数据 | YAML     | 可读性高，但应限制在安全子集       |
-| 规则二维表格           | CSV      | 适合表格数据，不保存字段类型       |
-| 元素、属性和重复节点   | XML      | 适合具有明确标签结构的数据         |
-| 简单键值配置           | INI      | 结构简单，但只有一层节且不保留类型 |
