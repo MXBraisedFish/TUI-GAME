@@ -1,8 +1,8 @@
-# 序列化规范
+# 序列化格式规范
 
 ## 前言
 
-国际化语言旨在保证多语言的适配，让不同国家和地区的玩家在阅读文本时无障碍。Tui Game 提供了一套完整的国际化语言规范，本文档将详细介绍其资源结构、文件格式及 API 使用方法。
+序列化与反序列化是数据持久化与跨环境交换的基础机制，负责在 Lua 值与存储格式之间建立双向映射。本文档旨在定义上述转换过程中所遵循的数据格式规范，确保序列化与反序列化行为的一致性和兼容性。
 
 ---
 
@@ -30,16 +30,16 @@
 
 ## 通用规则
 
-- 所有反序列化中 `null` 会被转换为 Lua 值 `nil`，但 Lua 解析器本身会忽略值 `nil`。
+- 所有序列化操作最后返回的均为字符串类型，只有被写入到对应的文件当中才会被解析。
+- 所有文件类型中的空值（例如 `null`，`~` 等），转换后的 `nil` 不会被 Lua 值解析器保留；反之 `nil` 并不会被转换为对应的空值，而是留空。
 
-**示例**
+  **示例**
 
-```json
-{
-  "test": 1,
-  "is_null": null // Lua 为 { test = 1}
-}
-```
+  ```lua
+  {
+    is_null = nil -- JSON 为 {}
+  }
+  ```
 
 ---
 
@@ -61,13 +61,21 @@ data = any...
 
 | Lua       | JSON      |
 | --------- | --------- |
-| `nil`     | `null`    |
 | `boolean` | `boolean` |
 | `integer` | `integer` |
 | `number`  | `float`   |
 | `string`  | `string`  |
 | 数组表    | 数组      |
 | 对象表    | 对象      |
+
+**单向映射**
+
+> 该部分值的映射不可逆
+
+| Lua   | 方向 | JSON   |
+| ----- | :--: | ------ |
+| `nil` | $→$  | 空字段 |
+| `nil` | $←$  | `null` |
 
 ### 示例
 
@@ -127,16 +135,12 @@ TUI GAME
 }
 ```
 
-> `null` 被当做可显式的 Lua 值 `nil`
-
-```json
-{
-  "is_null": null
-}
-```
+> `nil` 被当做可显式的 `null`
 
 ```lua
-{}
+{
+  is_null = nil -- JSON 为 {}
+}
 ```
 
 ---
@@ -264,13 +268,22 @@ data = {
 
 | Lua       | YAML      |
 | --------- | --------- |
-| `nil`     | `null`    |
 | `boolean` | `boolean` |
 | `integer` | `integer` |
 | `number`  | `float`   |
 | `string`  | `string`  |
 | 数组表    | 序列      |
 | 对象表    | 映射      |
+
+**单向映射**
+
+> 该部分值的映射不可逆
+
+| Lua      | 方向 | YAML         |
+| -------- | :--: | ------------ |
+| `string` | $←$  | `date`       |
+| `nil`    | $→$  | 空字段       |
+| `nil`    | $←$  | `null` / `~` |
 
 ### 示例
 
@@ -327,10 +340,12 @@ name: !person TUI # 反序列化不支持自定义标签
 1: one
 ```
 
-> `null` 被当做可显式的 Lua 值 `nil`
+> `nil` 被当做可显式的 `null`
 
-```yaml
-is_null: null # Lua 为 {}
+```lua
+{
+  is_null = nil -- YAML 为空文件
+}
 ```
 
 ---
@@ -367,7 +382,6 @@ data = {
 | `boolean` | $→$  | `string` |
 | `integer` | $→$  | `string` |
 | `number`  | $→$  | `string` |
-| `nil`     | $→$  | 空文本   |
 | `string`  | $←$  | 空文本   |
 
 ### 示例
@@ -413,7 +427,7 @@ string
 
 **错误示例**
 
-> 各行列数不一致（表头和表内列数需一致）
+> 各行列数不一致
 
 ```lua
 {
@@ -422,7 +436,7 @@ string
 }
 ```
 
-> 单元格中包含表（不可嵌套）
+> 过度嵌套
 
 ```lua
 {
@@ -430,7 +444,7 @@ string
 }
 ```
 
-> 误认为单向映射值可逆（转换后均为字符串）
+> 误认为单向映射值可逆
 
 ```csv
 true -- Lua 为 "true"
@@ -447,7 +461,7 @@ XML 的根值**必须遵循特定的表结构**。
 
 ```lua
 data = {
-  root = {            -- 根标签
+  root = {            -- 根标签（仅一个）
     _attr = {         -- 属性
       key = value
       ...
@@ -466,6 +480,28 @@ XML 结构：
   <element>...</element> <!-- 与子元素冲突，见下文 -->
 </root>
 ```
+
+### 数据结构映射
+
+**双向映射**
+
+> 该部分值的映射可逆
+
+| Lua      | XML      |
+| -------- | -------- |
+| `string` | `string` |
+
+**单向映射**
+
+> 该部分值的映射不可逆
+
+| Lua       | 方向 | XML      |
+| --------- | :--: | -------- |
+| `boolean` | $→$  | `string` |
+| `integer` | $→$  | `string` |
+| `number`  | $→$  | `string` |
+| `nil`     | $→$  | 单标签   |
+| `string`  | $←$  | 单标签   |
 
 ### 属性
 
@@ -498,9 +534,9 @@ debug.print { message = xml }
 
 ### 子元素
 
-子元素保存在对象键 `_text` 中，或直接保存在根标签中。
+子元素保存在对象键 `_text` 中，或直接保存在对象键中。
 
-> 子标签与子元素冲突，当存在子元素时，根标签不可包含子标签。
+> 子标签与子元素冲突，当存在子元素时，该标签不可包含子标签。
 
 **示例**
 
@@ -531,33 +567,11 @@ debug.print { message = xml2 }
 <root>Hello</root>
 ```
 
-#### 数据结构映射
-
-**双向映射**
-
-> 该部分值的映射可逆
-
-| Lua      | XML      |
-| -------- | -------- |
-| `string` | `string` |
-
-**单向映射**
-
-> 该部分值的映射不可逆
-
-| Lua       | 方向 | CSV      |
-| --------- | :--: | -------- |
-| `boolean` | $→$  | `string` |
-| `integer` | $→$  | `string` |
-| `number`  | $→$  | `string` |
-| `nil`     | $→$  | 空文本   |
-| `string`  | $←$  | 空文本   |
-
 ### 子标签
 
 其他任何键作为子标签。
 
-> 子标签与子元素冲突，当存在子标签时，根标签不可包含子元素。
+> 子标签与子元素冲突，当存在子标签时，该标签不可包含子元素。
 
 **示例**
 
@@ -574,7 +588,7 @@ debug.print { message = xml2 }
 {
   players = {
     player = {
-      { name = "Alice" }, -- 同名使用连续数组表示
+      { name = "Alice" }, -- 同名使用连续数组表表示
       { name = "Bob" }
     }
   }
@@ -605,7 +619,9 @@ debug.print { message = xml2 }
 | `"`    | `&quot;` |
 | `'`    | `&apos;` |
 
-### 正确示例
+### 示例
+
+**正确示例**
 
 序列化：
 
@@ -627,125 +643,98 @@ debug.print { message = xml }
 输出：
 
 ```xml
-<root version="1.0"><item><name>Alice</name></item><item><name>Bob</name></item></root>
+<root version="1.0">
+  <item>
+    <name>Alice</name>
+  </item>
+  <item>
+    <name>Bob</name>
+  </item>
+</root>
 ```
 
-反序列化：：
+反序列化：
 
 ```lua
 xml = '<root version="1.0"><item>A</item><item>B</item></root>'
 data = serialization.xml_decode(xml)
-debug.print { message = data.root.item[1] }  -- A
+debug.print { message = tostring(data.root.item[1].name) }
 ```
 
-### 错误示例
+输出：
 
-> **错误 1：根表包含多个子元素**
->
-> ```lua
-> data = {
->   root1 = "value1",
->   root2 = "value2"
-> }
-> ```
->
-> 根表只能有一个键。
+```
+Alice
+```
 
-> **错误 2：子元素同时包含文本和子子元素**
->
-> ```lua
-> {
->   root = {
->     _text = "before",
->     child = "value"
->   }
-> }
-> ```
+**错误示例**
 
-> **错误 3：子元素名包含冒号**
->
-> ```lua
-> { ["ns:root"] = "value" }  -- 命名空间前缀不支持
-> ```
+> 根标签不唯一
+
+```lua
+data = {
+  root1 = "value1",
+  root2 = "value2"
+}
+```
+
+> 标签同时包含子标签和子元素
+
+```lua
+{
+  root = {
+    _text = "before",
+    child = "value"
+  }
+}
+```
+
+> 子元素使用命名空间语法
+
+```xml
+<ns:root>value</ns:root> <!-- 反序列化不支持命名空间语法 -->
+```
 
 ---
 
 ## INI
 
-INI 适用于简单的键值配置，只支持一层节，不保留类型。
+### 根结构要求
 
-### 数据结构要求
-
-- 根值必须是对象表
-- 根表中的标量字段 → 全局键
-- 根表中的对象字段 → 节
+INI 的根值**必须是对象表**。
 
 ```lua
 data = {
-  application = "TUI GAME",
-  server = {
-    host = "127.0.0.1",
-    port = 8080
-  }
+  key = value,
+  ...
 }
 ```
 
-对应：
+### 数据结构映射
 
-```ini
-application=TUI GAME
+**双向映射**
 
-[server]
-host=127.0.0.1
-port=8080
-```
+> 该部分值的映射可逆
 
-### 层级限制
+| Lua      | INI      |
+| -------- | -------- |
+| `string` | `string` |
+| 对象表   | 节       |
 
-- 只支持根级全局键和一层节
-- 节内只能包含标量键值
-- 不支持节内继续嵌套
-- 不支持数组
+**单向映射**
 
-### 键名和节名要求
+> 该部分值的映射不可逆
 
-- 不能为空
-- 不能包含换行
-- 不能包含 `[`、`]`、`=`、`;`、`#`
+| Lua       | 方向 | INI      |
+| --------- | :--: | -------- |
+| `boolean` | $→$  | `string` |
+| `integer` | $→$  | `string` |
+| `number`  | $→$  | `string` |
+| `nil`     | $→$  | 空字段   |
 
-### 支持的值类型
+### 示例
 
-- `nil` → 编码为空文本
-- `boolean` → `boolean`
-- `integer` 或有限 `number`
-- UTF-8 字符串（不能包含换行）
-
-### 重要：类型丢失
-
-INI 不保存原始类型，**所有解码值均为 Lua 字符串**：
-
-```ini
-enabled=true
-count=10
-```
-
-解码后：
-
-```lua
-{
-  enabled = "true",  -- 字符串，不是布尔值
-  count = "10"       -- 字符串，不是整数
-}
-```
-
-### 方法
-
-| 方法         | 参数        | 返回值   | 说明                 |
-| ------------ | ----------- | -------- | -------------------- |
-| `ini_encode` | `t: table`  | `string` | 将 Lua 表编码为 INI  |
-| `ini_decode` | `s: string` | `table`  | 将 INI 解码为 Lua 表 |
-
-### 正确示例
+**正确示例**
 
 ```lua
 data = {
@@ -775,46 +764,50 @@ port = 8080
 ```lua
 ini = "[server]\nhost=127.0.0.1\nport=8080"
 data = serialization.ini_decode(ini)
-debug.print { message = data.server.host }  -- "127.0.0.1"（字符串）
+debug.print { message = data.server.host }
 ```
 
-### 错误示例
+输出：
 
-> **错误 1：节内嵌套子表**
->
-> ```lua
-> data = {
->   server = {
->     network = {
->       host = "127.0.0.1"  -- 不支持二级嵌套
->     }
->   }
-> }
-> ```
+```text
+127.0.0.1
+```
 
-> **错误 2：键名包含 `=`**
->
-> 键名不能包含等号，否则解析会出错。
+**错误示例**
 
-> **错误 3：字符串值包含换行**
->
-> INI 不支持多行值。
+> 过度嵌套
+
+```lua
+data = {
+  server = {
+    network = {
+      host = "127.0.0.1" -- ini 最多嵌套两层
+    }
+  }
+}
+```
+
+> 键为空值
+
+```ini
+; 键不可为空
+key = 
+```
+
+> 键名包含非法字符
+
+```ini
+; 键名不可包含 # / ; / = / [ / ]
+key# = value
+```
 
 ---
 
-## 二进制打包
+## 二进制数据
 
-用于按格式字符串打包和解包二进制数据。
+## 示例
 
-### 方法
-
-| 方法              | 参数                                         | 返回值                               | 说明                 |
-| ----------------- | -------------------------------------------- | ------------------------------------ | -------------------- |
-| `binary_pack`     | `{fmt: string, values: table}`               | `string`                             | 按格式串打包数据     |
-| `binary_unpack`   | `{fmt: string, data: string, pos?: integer}` | `{values: table, next_pos: integer}` | 从二进制串解包数据   |
-| `binary_packsize` | `fmt: string`                                | `integer`                            | 返回打包所需总字节数 |
-
-### 正确示例
+**正确示例**
 
 打包：
 
@@ -823,6 +816,7 @@ bytes = serialization.binary_pack {
   fmt = "<I4 I4",
   values = { 100, 200 }
 }
+
 debug.print { message = "packed " .. tostring(#bytes) .. " bytes" }
 ```
 
@@ -835,10 +829,16 @@ packed 8 bytes
 解包：
 
 ```lua
+bytes = serialization.binary_pack {
+  fmt = "<I4 I4",
+  values = { 100, 200 }
+}
+
 result = serialization.binary_unpack {
   fmt = "<I4 I4",
   data = bytes
 }
+
 debug.print { message = result.values[1] .. ", " .. result.values[2] }
 ```
 
@@ -861,26 +861,32 @@ debug.print { message = tostring(size) }
 8
 ```
 
-### 错误示例
+**错误示例**
 
-> **错误 1：`fmt` 和 `values` 数量不匹配**
->
-> ```lua
-> serialization.binary_pack {
->   fmt = "<I4 I4",
->   values = { 100 }  -- 需要2个值
-> }
-> ```
+> 参数 `fmt` 和参数 `values` 数量不匹配
 
-> **错误 2：`data` 长度不足**
->
-> ```lua
-> serialization.binary_unpack {
->   fmt = "<I4",
->   data = "\x01"  -- 需要4字节
-> }
-> ```
+```lua
+serialization.binary_pack {
+  fmt = "<I4 I4",
+  values = { 100 }
+}
+```
 
-> **错误 3：`pos` 超出数据范围**
->
-> 指定的起始位置超出了二进制数据的长度。
+> 参数 `data` 长度不足
+
+```lua
+serialization.binary_unpack {
+  fmt = "<I4",
+  data = "\x01"  -- 需要4字节
+}
+```
+
+> 参数 `pos` 超出数据范围
+
+```lua
+serialization.binary_unpack {
+  fmt = "<I2",
+  data = "\1\2\3\4",
+  pos = 6 -- 最大为 3
+}
+```
