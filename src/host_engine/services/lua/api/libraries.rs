@@ -45,7 +45,7 @@ use measurement::{
   draw_target_size, draw_text_parameters, parse_color, parse_draw_target, parse_draw_text_params,
   positive_u16,
 };
-use string::{rich_text_params, text_parameter};
+use string::rich_text_params;
 use utf8::resolve_index;
 
 const MAX_HOST_COMMANDS_PER_CALLBACK: usize = 4096;

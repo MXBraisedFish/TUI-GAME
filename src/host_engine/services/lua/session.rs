@@ -2327,6 +2327,69 @@ mod tests {
   }
 
   #[test]
+  fn user_facing_text_parameters_convert_lua_values_to_strings() {
+    let source = valid_script(
+      r#"
+        function Init(ctx)
+          debug.assert{
+            value = measurement.get_text_width{ text = 12345 } == 5,
+          }
+          debug.print{ message = 100, title = false }
+          debug.info(true)
+        end
+
+        function Render()
+          draw.text{
+            x = 1,
+            y = 1,
+            text = 200,
+            overflow_marker = 9,
+          }
+        end
+      "#,
+    );
+    let mut session = LuaSession::load_with_api(
+      spec(&source, LuaSessionKind::Game),
+      LuaPolicy::default(),
+      LuaApiConfig {
+        debug_enabled: true,
+        ..LuaApiConfig::default()
+      },
+    )
+    .unwrap();
+
+    let commands = session.take_host_commands();
+    assert!(commands.iter().any(|command| matches!(
+      command,
+      LuaHostCommand::Print {
+        message,
+        title: Some(title),
+        time: false,
+        level: None,
+        type_head: false,
+      } if message == "100" && title == "false"
+    )));
+    assert!(commands.iter().any(|command| matches!(
+      command,
+      LuaHostCommand::Print {
+        message,
+        title: None,
+        time: true,
+        level: Some(level),
+        type_head: true,
+      } if message == "true" && level == "info"
+    )));
+
+    session.render().unwrap();
+    let draw_commands = session.take_draw_commands();
+    assert!(draw_commands.iter().any(|command| matches!(
+      command,
+      LuaDrawCommand::Text { params, .. }
+        if params.text == "200" && params.overflow_marker.as_deref() == Some("9")
+    )));
+  }
+
+  #[test]
   fn debug_print_constants_and_convenience_methods_use_the_standard_options() {
     let source = valid_script(
       r#"

@@ -161,6 +161,41 @@ pub fn string(value: Value, method: &str, name: &str) -> mlua::Result<String> {
   Ok(value.to_string())
 }
 
+/// Converts a free-form Lua value into user-facing text using the same stable
+/// representation exposed by `base.tostring`.
+///
+/// This is intentionally separate from [`string`]: identifiers, paths,
+/// constants, encodings and protocol strings must continue to require an
+/// actual UTF-8 Lua string.
+pub fn dynamic_text(value: Value, method: &str, name: &str) -> mlua::Result<String> {
+  let text = match value {
+    Value::Nil => "nil".to_string(),
+    Value::Boolean(value) => value.to_string(),
+    Value::Integer(value) => value.to_string(),
+    Value::Number(value) => value.to_string(),
+    Value::String(value) => value
+      .to_str()
+      .map_err(|_| {
+        invalid(
+          method,
+          name,
+          "value convertible to a valid UTF-8 string",
+          &Value::String(value.clone()),
+        )
+      })?
+      .to_string(),
+    Value::Table(value) => format!("table: {:p}", value.to_pointer()),
+    Value::Function(value) => format!("function: {:p}", value.to_pointer()),
+    Value::Thread(value) => format!("thread: {:p}", value.to_pointer()),
+    Value::UserData(value) => format!("userdata: {:p}", value.to_pointer()),
+    value => type_name(&value).to_string(),
+  };
+  if text.len() > MAX_API_STRING_BYTES {
+    return Err(message(method, format!("parameter '{name}' exceeds 1 MiB")));
+  }
+  Ok(text)
+}
+
 pub fn integer(value: Value, method: &str, name: &str) -> mlua::Result<i64> {
   match value {
     Value::Integer(value) => Ok(value),
@@ -233,6 +268,20 @@ pub fn optional_string(
     Ok(default.map(ToOwned::to_owned))
   } else {
     string(value, method, name).map(Some)
+  }
+}
+
+pub fn optional_dynamic_text(
+  table: &Table,
+  method: &str,
+  name: &str,
+  default: Option<&str>,
+) -> mlua::Result<Option<String>> {
+  let value = table.get::<Value>(name)?;
+  if matches!(value, Value::Nil) {
+    Ok(default.map(ToOwned::to_owned))
+  } else {
+    dynamic_text(value, method, name).map(Some)
   }
 }
 

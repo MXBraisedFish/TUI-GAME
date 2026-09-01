@@ -109,18 +109,7 @@ pub(super) fn base(lua: &Lua) -> mlua::Result<Table> {
   })?;
   let tostring = lua.create_function(|lua, args: MultiValue| {
     let value = args::one("base.tostring", "value", args)?;
-    let text = match value {
-      Value::Nil => "nil".to_string(),
-      Value::Boolean(value) => value.to_string(),
-      Value::Integer(value) => value.to_string(),
-      Value::Number(value) => value.to_string(),
-      Value::String(value) => value.to_str()?.to_string(),
-      Value::Table(value) => format!("table: {:p}", value.to_pointer()),
-      Value::Function(value) => format!("function: {:p}", value.to_pointer()),
-      Value::Thread(value) => format!("thread: {:p}", value.to_pointer()),
-      Value::UserData(value) => format!("userdata: {:p}", value.to_pointer()),
-      value => args::type_name(&value).to_string(),
-    };
+    let text = args::dynamic_text(value, "base.tostring", "value")?;
     lua.create_string(text)
   })?;
   let type_fn = lua.create_function(|lua, args: MultiValue| {

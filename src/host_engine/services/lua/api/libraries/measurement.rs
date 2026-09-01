@@ -90,7 +90,7 @@ pub(super) fn parse_draw_text_params(
   context: &super::LuaApiContext,
   include_position: bool,
 ) -> mlua::Result<DrawTextParams> {
-  let text = text_parameter(table, method)?;
+  let text = args::dynamic_text(args::required(table, method, "text")?, method, "text")?;
   let mode = args::optional_string(table, method, "text_mode", Some("auto"))?.unwrap();
   let text_mode = match mode.as_str() {
     "auto" => TextMode::Auto,
@@ -153,7 +153,7 @@ pub(super) fn parse_draw_text_params(
     non_truncate_word_wrap: args::optional_bool(table, method, "word_wrap", true)?,
     max_width,
     max_height,
-    overflow_marker: args::optional_string(table, method, "overflow_marker", Some("..."))?,
+    overflow_marker: args::optional_dynamic_text(table, method, "overflow_marker", Some("..."))?,
     bold: args::optional_bool(table, method, "bold", false)?,
     italic: args::optional_bool(table, method, "italic", false)?,
     underline: args::optional_bool(table, method, "underline", false)?,

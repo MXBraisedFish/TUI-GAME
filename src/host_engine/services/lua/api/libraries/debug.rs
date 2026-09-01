@@ -39,12 +39,12 @@ pub(super) fn debug(lua: &Lua, state: SharedApiState) -> mlua::Result<Table> {
             values,
             &["message", "title", "level", "time", "type_head"],
           )?;
-          let message = args::string(
+          let message = args::dynamic_text(
             args::required(&table, method, "message")?,
             method,
             "message",
           )?;
-          let title = args::optional_string(&table, method, "title", None)?;
+          let title = args::optional_dynamic_text(&table, method, "title", None)?;
           let time = args::optional_bool(&table, method, "time", false)?;
           let type_head = args::optional_bool(&table, method, "type_head", false)?;
           let level = args::optional_string(&table, method, "level", None)?;
@@ -67,7 +67,8 @@ pub(super) fn debug(lua: &Lua, state: SharedApiState) -> mlua::Result<Table> {
             type_head,
           );
         } else {
-          let message = args::string(args::one(method, "message", values)?, method, "message")?;
+          let message =
+            args::dynamic_text(args::one(method, "message", values)?, method, "message")?;
           enqueue_debug_print(
             &mut state.borrow_mut(),
             message,
@@ -88,7 +89,7 @@ pub(super) fn debug(lua: &Lua, state: SharedApiState) -> mlua::Result<Table> {
       let value = args::required(&table, "debug.assert", "value")?;
       if matches!(value, Value::Nil | Value::Boolean(false)) {
         let message =
-          args::optional_string(&table, "debug.assert", "message", Some("assertion failed"))?
+          args::optional_dynamic_text(&table, "debug.assert", "message", Some("assertion failed"))?
             .unwrap();
         Err(mlua::Error::RuntimeError(message))
       } else {
