@@ -2,7 +2,7 @@
 
 ## 基本库说明
 
-`base` 提供 Lua 基础值操作，包含迭代器、类型转换等。
+`base` 提供 Lua 基础操作。
 
 ---
 
@@ -51,17 +51,17 @@ ipairs()
 | -------- | ---------- |
 | function | 迭代器函数 |
 
-**迭代器函数**，返回一个结果表。
+**迭代器函数**，返回一个对象表。
 
-| 字段    | 类型 | 说明 |
-| ------- | ---- | ---- |
-| `index` | any  | 索引 |
-| `value` | any  | 值   |
+| 字段    | 类型    | 说明 |
+| ------- | ------- | ---- |
+| `index` | integer | 索引 |
+| `value` | any     | 值   |
 
 ### 示例
 
 ```lua
-local t = {"a", "b", "c", [10] = "x"}
+t = {"a", "b", "c", [10] = "x"}
 
 for item in ipairs(t) do
 	debug.print {message = item.index .. " " .. item.value}
@@ -103,17 +103,17 @@ pairs()
 | -------- | ---------- |
 | function | 迭代器函数 |
 
-**迭代器函数**，返回一个结果表。
+**迭代器函数**，返回一个对象表。
 
-| 字段    | 类型 | 说明 |
-| ------- | ---- | ---- |
-| `index` | any  | 索引 |
-| `value` | any  | 值   |
+| 字段    | 类型             | 说明 |
+| ------- | ---------------- | ---- |
+| `index` | integer / string | 索引 |
+| `value` | any              | 值   |
 
 ### 示例
 
 ```lua
-local t = { "a", "b", x = 1 }
+t = { "a", "b", x = 1 }
 
 for item in pairs(t) do
 	debug.print {message = tostring(item.index) .. " " .. tostring(item.value)}
@@ -143,19 +143,19 @@ next{}
 
 ### 参数
 
-| 参数    | 类型  | 必填 | 默认值 | 说明                                              |
-| ------- | ----- | ---- | ------ | ------------------------------------------------- |
-| `table` | table | 是   | -      | 要查询的表                                        |
-| `index` | any   | 否   | `nil`  | 当前索引；省略或传入 `nil` 时从表的第一个元素开始 |
+| 参数    | 类型          | 必填 | 默认值 | 说明                                              |
+| ------- | ------------- | ---- | ------ | ------------------------------------------------- |
+| `table` | table         | 是   | -      | 要查询的表                                        |
+| `index` | integer / nil | 否   | `nil`  | 当前索引；省略或传入 `nil` 时从表的第一个元素开始 |
 
 ### 返回
 
-**找到下一个元素时**，返回一个结果表。
+**找到下一个元素时**，返回一个对象表。
 
-| 字段    | 类型 | 说明 |
-| ------- | ---- | ---- |
-| `index` | any  | 索引 |
-| `value` | any  | 值   |
+| 字段    | 类型             | 说明 |
+| ------- | ---------------- | ---- |
+| `index` | integer / string | 索引 |
+| `value` | any              | 值   |
 
 **没有后续元素时**，直接返回一个值。
 
@@ -166,8 +166,8 @@ next{}
 ### 示例
 
 ```lua
-local t = { "a", "b", x = 1 }
-local index = nil
+t = { "a", "b", x = 1 }
+index = nil
 
 while true do
 	item = next {table = t, index = index}
@@ -214,13 +214,13 @@ select{}
 
 ### 返回
 
-**`index` 参数为 `"#"` 时**，直接返回一个值。
+**参数 `index` 为 `"#"` 时**，直接返回一个值。
 
 | 类型    | 说明               |
 | ------- | ------------------ |
 | integer | 表中连续元素的数量 |
 
-**`index` 参数为 integer 时**，从指定索引开始，依次返回连续存在的元素值。
+**参数 `index` 为 integer 时**，从指定索引开始，依次返回连续存在的元素值。
 
 | 类型   | 说明                                                   |
 | ------ | ------------------------------------------------------ |
@@ -229,19 +229,19 @@ select{}
 ### 示例
 
 ```lua
-local t = { "a", "b", "c" , x = 1, [5] = "d" }
+t = { "a", "b", "c" , x = 1, [5] = "d" }
 
-count = select {index = "#", values = t}
+count = select { index = "#", values = t }
 debug.print {message = tostring(count)}
 
-value1, value2 = select {index = 2, values = t}
-debug.print {message = tostring(value1) .. " " .. tostring(value2)}
+value1, value2 = select { index = 2, values = t }
+debug.print { message = tostring(value1) .. " " .. tostring(value2) }
 
-value3 = select {index = -1, values = t}
-debug.print {message = tostring(value3)}
+value3 = select { index = -1, values = t }
+debug.print { message = tostring(value3) }
 
-value4 = select {index = 4, values = t}
-debug.print {message = tostring(value4)}
+value4 = select { index = 4, values = t}
+debug.print { message = tostring(value4) }
 ```
 
 输出：
@@ -252,6 +252,10 @@ b c
 c
 nil
 ```
+
+### 额外补充
+
+- 参数 `index` 为 integer 时，该 API 返回多参数而非表。
 
 ---
 
@@ -268,8 +272,8 @@ rawequal{}
 
 ### 参数
 
-| 参数    | 类型 | 必填 | 默认值 | 说明           |
-| ------- | ---- | ---- | ------ | -------------- |
+| 参数    | 类型 | 必填 | 默认值 | 说明     |
+| ------- | ---- | ---- | ------ | -------- |
 | `left`  | any  | 是   | -      | 左操作符 |
 | `right` | any  | 是   | -      | 右操作符 |
 
@@ -284,8 +288,8 @@ rawequal{}
 ### 示例
 
 ```lua
-local t1 = { "a" }
-local t2 = { "a" }
+t1 = { "a" }
+t2 = { "a" }
 
 b1 = rawequal { left = 1, right = 1 }
 debug.print { message = tostring(b1) }
@@ -339,7 +343,7 @@ rawlen()
 ### 示例
 
 ```lua
-local t = { "a", "b", "c", x = 1, [5] = "d" }
+t = { "a", "b", "c", x = 1, [5] = "d" }
 
 l1 = rawlen("Hello")
 debug.print { message = tostring(l1) }
@@ -452,7 +456,7 @@ tostring()
 ### 示例
 
 ```lua
-local t = { "a", "b", "c" }
+t = { "a", "b", "c" }
 
 debug.print { message = tostring(nil) }
 
@@ -502,7 +506,7 @@ type()
 ### 示例
 
 ```lua
-local t = { "a", "b", "c" }
+t = { "a", "b", "c" }
 
 debug.print { message = type(nil) }
 

@@ -2,7 +2,7 @@
 
 本文档说明 TUI GAME `string` 库中 `regex_*` 系列 API 使用的正则表达式语法。
 
-当前实现基于 Rust `regex 1.13.0`，使用 Unicode 字符串正则表达式。它不是 Lua Pattern，也不完全等同于 PCRE、JavaScript、Python 或其他回溯型正则引擎。
+当前实现基于 Rust `regex 1.13.1`，使用 Unicode 字符串正则表达式。它不是 Lua Pattern，也不完全等同于 PCRE、JavaScript、Python 或其他回溯型正则引擎。
 
 ---
 

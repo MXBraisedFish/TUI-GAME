@@ -2,7 +2,7 @@
 
 ## 基本库说明
 
-`draw` 提供画布绘制指令，可在 `Render` 回调中使用。
+`draw` 提供终端画布绘制指令。
 
 ---
 
@@ -218,18 +218,18 @@ draw.stroke_rect {
 
 ### 额外补充
 
-- 参数 `border_char` 表：
+- 参数 `border_char` 表结构：
 
 ```lua
 {
-	top          = " ", -- string / const-char
-	left_top     = " ", -- string / const-char
-	left         = " ", -- string / const-char
-	left_bottom  = " ", -- string / const-char
-	bottom       = " ", -- string / const-char
-	right_bottom = " ", -- string / const-char
-	right        = " ", -- string / const-char
-	right_top    = " "  -- string / const-char
+	top          = ..., -- string / const-char
+	left_top     = ..., -- string / const-char
+	left         = ..., -- string / const-char
+	left_bottom  = ..., -- string / const-char
+	bottom       = ..., -- string / const-char
+	right_bottom = ..., -- string / const-char
+	right        = ..., -- string / const-char
+	right_top    = ...  -- string / const-char
 }
 ```
 

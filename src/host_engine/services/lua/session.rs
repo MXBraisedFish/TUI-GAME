@@ -2545,6 +2545,161 @@ mod tests {
   }
 
   #[test]
+  fn string_api_matches_documented_tables_unicode_and_limits() {
+    let source = valid_script(
+      r#"
+        function Init(ctx)
+          local function fails(func)
+            return not debug.pcall{ func = func }.ok
+          end
+
+          debug.assert{ value = string.lower("ÄBC") == "äbc" }
+          debug.assert{ value = string.upper{ text = "äbc" } == "ÄBC" }
+          debug.assert{ value = string.reverse("你ab") == "ba你" }
+
+          local parts = string.split{ text = "a<>你<>", sep = "<>" }
+          debug.assert{
+            value = #parts == 3 and parts[1] == "a" and parts[2] == "你" and parts[3] == "",
+          }
+          debug.assert{ value = fails(function() string.split{ text = "abc", sep = "" } end) }
+          debug.assert{ value = fails(function() string.split{ text = "abc", char = "b" } end) }
+
+          debug.assert{ value = string.sub{ text = "甲乙丙", start = 2 } == "乙丙" }
+          debug.assert{ value = string.sub{ text = "甲乙丙", start = -2, finish = -1 } == "乙丙" }
+          debug.assert{ value = string.sub{ text = "甲乙丙", start = -99, finish = 99 } == "甲乙丙" }
+          debug.assert{ value = string.rep{ text = "A", times = 3, sep = ":" } == "A:A:A" }
+
+          local found = string.find{ text = "你ab你", pattern = "(a)(b)" }
+          debug.assert{
+            value = found.start == 2 and found.finish == 3
+              and found.captures.n == 2
+              and found.captures[1] == "a" and found.captures[2] == "b",
+          }
+          local plain = string.find{ text = "a.b", pattern = ".", plain = true }
+          debug.assert{
+            value = plain.start == 2 and plain.finish == 2
+              and plain.captures.n == 1 and plain.captures[1] == ".",
+          }
+          debug.assert{ value = string.find{ text = "abc", pattern = "a", init = 0 }.start == 1 }
+          debug.assert{ value = string.find{ text = "abc", pattern = "a", init = 99 } == nil }
+          local no_capture = string.find{ text = "abc", pattern = "b" }
+          debug.assert{
+            value = no_capture.captures.n == 1 and no_capture.captures[1] == "b",
+          }
+
+          local matched = string.match{ text = "x=42", pattern = "(%a+)=(%d+)" }
+          debug.assert{
+            value = matched.n == 2 and matched[1] == "x" and matched[2] == "42",
+          }
+          local whole = string.match{ text = "x=42", pattern = "%d+" }
+          debug.assert{ value = whole.n == 1 and whole[1] == "42" }
+          local position = string.match{ text = "abc", pattern = "()b" }
+          debug.assert{ value = position.n == 1 and position[1] == 2 }
+
+          local iterator = string.gmatch{ text = "a1 b2", pattern = "(%a)(%d)" }
+          local first = iterator()
+          local second = iterator()
+          debug.assert{
+            value = first.n == 2 and first[1] == "a" and first[2] == "1"
+              and second.n == 2 and second[1] == "b" and second[2] == "2"
+              and iterator() == nil,
+          }
+          local iterated = ""
+          for item in string.gmatch{ text = "a1 b2", pattern = "(%a)(%d)" } do
+            iterated = iterated .. item[1] .. item[2]
+          end
+          debug.assert{ value = iterated == "a1b2" }
+          local many = string.rep{ text = "x", times = 10001 }
+          local lazy_pattern = string.gmatch{ text = many, pattern = "." }
+          debug.assert{ value = lazy_pattern()[1] == "x" }
+
+          local replaced = string.gsub{ text = "ab", pattern = "(%a)", repl = "%1%1" }
+          debug.assert{ value = replaced.result == "aabb" and replaced.count == 2 }
+          local unchanged = string.gsub{ text = "ab", pattern = ".", repl = "x", limit = 0 }
+          debug.assert{ value = unchanged.result == "ab" and unchanged.count == 0 }
+          local table_replaced = string.gsub{
+            text = "ab", pattern = ".", repl = { a = "A" },
+          }
+          debug.assert{ value = table_replaced.result == "Ab" and table_replaced.count == 2 }
+          local function_replaced = string.gsub{
+            text = "a1", pattern = ".", repl = function(value)
+              if value == "a" then return 9 end
+              return false
+            end,
+          }
+          debug.assert{ value = function_replaced.result == "91" and function_replaced.count == 2 }
+          debug.assert{
+            value = fails(function()
+              string.gsub{ text = "ab", pattern = ".", repl = "x", limit = -2 }
+            end),
+          }
+          debug.assert{
+            value = fails(function()
+              string.gsub{ text = "a", pattern = ".", repl = function() return true end }
+            end),
+          }
+
+          local regex_found = string.regex_find{ text = "你ab你", pattern = "(a)(b)" }
+          debug.assert{
+            value = regex_found.start == 2 and regex_found.finish == 3
+              and regex_found.captures.n == 2
+              and regex_found.captures[1] == "a" and regex_found.captures[2] == "b",
+          }
+          local regex_match = string.regex_match{ text = "x=42", pattern = "([a-z]+)=([0-9]+)" }
+          debug.assert{ value = regex_match[1] == "x" and regex_match[2] == "42" }
+          local regex_iterated = ""
+          for item in string.regex_gmatch{ text = "a1 b2", pattern = "([a-z])([0-9])" } do
+            regex_iterated = regex_iterated .. item[1] .. item[2]
+          end
+          debug.assert{ value = regex_iterated == "a1b2" }
+          local lazy_regex = string.regex_gmatch{ text = many, pattern = "." }
+          debug.assert{ value = lazy_regex()[1] == "x" }
+          local regex_replaced = string.regex_gsub{
+            text = "a1 b2", pattern = "([a-z])([0-9])", repl = "$2$1", limit = -1,
+          }
+          debug.assert{ value = regex_replaced.result == "1a 2b" and regex_replaced.count == 2 }
+          debug.assert{ value = string.regex_test{ text = "abc", pattern = "^a" } }
+          debug.assert{ value = string.regex_escape("[a-z]") == "\\[a\\-z\\]" }
+          local regex_parts = string.regex_split{ text = "a, b;c", pattern = "[,;]\\s*" }
+          debug.assert{ value = #regex_parts == 3 and regex_parts[2] == "b" }
+
+          debug.assert{
+            value = string.rich_text_to_plain_text{
+              text = "f%<fg:red>A</fg>{value:tail}", rich_params = { tail = "B" },
+            } == "AB",
+          }
+          debug.assert{
+            value = string.rich_text_to_plain_text{ text = "f%{key:jump}" } == "[Space]",
+          }
+          debug.assert{
+            value = string.rich_text_to_plain_text{
+              text = "f%{key:jump}", key_params = false,
+            } == "{key:jump}",
+          }
+          debug.assert{
+            value = string.format{ format_string = "%s:%04d", values = { "v", 7 } } == "v:0007",
+          }
+          debug.assert{
+            value = string.format{
+              format_string = "%-4s|%+d|%#x|%.2f|%%",
+              values = { "a", 2, 255, 1.25 },
+            } == "a   |+2|0xff|1.25|%",
+          }
+        end
+      "#,
+    );
+    LuaSession::load_with_api(
+      spec(&source, LuaSessionKind::Game),
+      LuaPolicy::default(),
+      LuaApiConfig {
+        key_actions: HashMap::from([("jump".to_string(), vec![vec!["space".to_string()]])]),
+        ..LuaApiConfig::default()
+      },
+    )
+    .unwrap();
+  }
+
+  #[test]
   fn math_api_matches_documented_names_types_and_boundaries() {
     let source = valid_script(
       r#"

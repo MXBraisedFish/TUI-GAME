@@ -33,7 +33,7 @@
 
 **可用于**
 
-- `border_char` 参数
+- 参数 `border_char`
 
 ### 调用
 
@@ -83,7 +83,7 @@ draw.stroke_rect {
 
 **可用于**
 
-- `border_char` 参数
+- 参数 `border_char`
 
 ### 调用
 
@@ -133,7 +133,7 @@ draw.stroke_rect {
 
 **可用于**
 
-- `border_char` 参数
+- 参数 `border_char`
 
 ### 调用
 
@@ -183,7 +183,7 @@ draw.stroke_rect {
 
 **可用于**
 
-- `border_char` 参数
+- 参数 `border_char`
 
 ### 调用
 

@@ -165,6 +165,15 @@ impl LuaPattern {
     self.captures_with_steps(text, start, &mut steps)
   }
 
+  pub fn captures_incremental(
+    &self,
+    text: &str,
+    start: usize,
+    steps: &mut usize,
+  ) -> Result<Option<LuaCaptures>, String> {
+    self.captures_with_steps(text, start, steps)
+  }
+
   fn captures_with_steps(
     &self,
     text: &str,
@@ -206,6 +215,19 @@ impl LuaPattern {
   }
 
   pub fn captures_iter(&self, text: &str) -> Result<Vec<LuaCaptures>, String> {
+    let output = self.captures_iter_limited(text, 10_001)?;
+    if output.len() > 10_000 {
+      Err("result exceeds 10000 items".to_string())
+    } else {
+      Ok(output)
+    }
+  }
+
+  pub fn captures_iter_limited(
+    &self,
+    text: &str,
+    limit: usize,
+  ) -> Result<Vec<LuaCaptures>, String> {
     let char_bytes = text
       .char_indices()
       .map(|(index, _)| index)
@@ -213,7 +235,7 @@ impl LuaPattern {
     let mut byte_start = 0;
     let mut output = Vec::new();
     let mut steps = 0;
-    while byte_start <= text.len() {
+    while byte_start <= text.len() && output.len() < limit {
       let char_start = char_bytes.partition_point(|index| *index < byte_start);
       let Some(captures) = self.captures_with_steps(text, char_start, &mut steps)? else {
         break;
@@ -230,9 +252,6 @@ impl LuaPattern {
       };
       output.push(captures);
       byte_start = next;
-      if output.len() > 10_000 {
-        return Err("result exceeds 10000 items".to_string());
-      }
     }
     Ok(output)
   }
@@ -414,7 +433,7 @@ impl CharClass {
       Self::Punctuation => value.is_ascii_punctuation(),
       Self::Space => value.is_whitespace(),
       Self::Upper => value.is_uppercase(),
-      Self::Word => value.is_alphanumeric() || value == '_',
+      Self::Word => value.is_alphanumeric(),
       Self::Hex => value.is_ascii_hexdigit(),
       Self::Zero => value == '\0',
       Self::NotAlpha => !Self::Alpha.matches(value),
@@ -641,5 +660,37 @@ mod tests {
     let pattern = LuaPattern::compile("(a+).- %1").unwrap();
     let capture = pattern.captures("aaa x aaa", 0).unwrap().unwrap();
     assert_eq!(&"aaa x aaa"[capture.full], "aaa x aaa");
+  }
+
+  #[test]
+  fn classes_sets_anchors_and_position_captures_follow_lua_patterns() {
+    let word = LuaPattern::compile("^%w+$").unwrap();
+    assert!(word.captures("abc123", 0).unwrap().is_some());
+    assert!(word.captures("abc_123", 0).unwrap().is_none());
+
+    let set = LuaPattern::compile("^[^%s%d]+$").unwrap();
+    assert!(set.captures("alpha", 0).unwrap().is_some());
+    assert!(set.captures("alpha2", 0).unwrap().is_none());
+
+    let position = LuaPattern::compile("()b").unwrap();
+    let captures = position.captures("abc", 0).unwrap().unwrap();
+    assert!(matches!(captures.value(1), Some(LuaCapture::Position(2))));
+  }
+
+  #[test]
+  fn empty_matches_advance_by_unicode_character() {
+    let pattern = LuaPattern::compile("").unwrap();
+    let captures = pattern.captures_iter("你a").unwrap();
+    assert_eq!(captures.len(), 3);
+    assert_eq!(captures[0].full, 0..0);
+    assert_eq!(captures[1].full, 3..3);
+    assert_eq!(captures[2].full, 4..4);
+  }
+
+  #[test]
+  fn invalid_patterns_are_rejected() {
+    for pattern in ["%", "[", "(", "%b(", "%f%a", "[z-a]", "%1"] {
+      assert!(LuaPattern::compile(pattern).is_err(), "{pattern}");
+    }
   }
 }

@@ -46,7 +46,6 @@ use measurement::{
   positive_u16,
 };
 use string::rich_text_params;
-use utf8::resolve_index;
 
 const MAX_HOST_COMMANDS_PER_CALLBACK: usize = 4096;
 
@@ -61,7 +60,7 @@ pub fn install(lua: &Lua, environment: &Table, state: SharedApiState) -> mlua::R
   environment.set("math", math::math(lua)?)?;
   environment.set("utf8", utf8::utf8(lua)?)?;
   environment.set("table", table::table_lib(lua)?)?;
-  environment.set("string", string::string_lib(lua)?)?;
+  environment.set("string", string::string_lib(lua, state.clone())?)?;
   environment.set("color", color::color(lua)?)?;
   environment.set("char", chars::char_lib(lua)?)?;
   environment.set("align", align::align(lua, state.clone())?)?;
