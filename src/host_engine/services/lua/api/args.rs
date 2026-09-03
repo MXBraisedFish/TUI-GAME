@@ -227,18 +227,22 @@ pub fn boolean(value: Value, method: &str, name: &str) -> mlua::Result<bool> {
 
 pub fn values(table: &Table, method: &str) -> mlua::Result<Vec<Value>> {
   let value = required(table, method, "values")?;
+  array_values(value, method, "values")
+}
+
+pub fn array_values(value: Value, method: &str, name: &str) -> mlua::Result<Vec<Value>> {
   let Value::Table(values) = value else {
-    return Err(invalid(method, "values", "array table", &value));
+    return Err(invalid(method, name, "array table", &value));
   };
   let declared_length = values.raw_get::<Value>("n")?;
   let length = if matches!(declared_length, Value::Nil) {
     values.raw_len()
   } else {
-    usize::try_from(integer(declared_length, method, "values.n")?)
-      .map_err(|_| message(method, "values.n must be a non-negative integer"))?
+    usize::try_from(integer(declared_length, method, &format!("{name}.n"))?)
+      .map_err(|_| message(method, format!("{name}.n must be a non-negative integer")))?
   };
   if length > MAX_API_TABLE_ENTRIES {
-    return Err(message(method, "values exceeds 16384 entries"));
+    return Err(message(method, format!("{name} exceeds 16384 entries")));
   }
   (1..=length).map(|index| values.raw_get(index)).collect()
 }

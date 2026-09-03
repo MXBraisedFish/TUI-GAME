@@ -457,7 +457,7 @@ debug.pcall{}
 | 参数名   | 类型        | 必填 | 默认值 | 说明                   |
 | -------- | ----------- | ---- | ------ | ---------------------- |
 | `func`   | function    | 是   | -      | 要调用的函数           |
-| `values` | table / nil | 否   | `nil`  | 传给 `func` 的参数数组 |
+| `values` | table / nil | 否   | `nil`  | 传给 `func` 的参数数组表 |
 
 ### 返回
 
@@ -551,7 +551,7 @@ debug.xpcall{}
 | 参数名           | 类型           | 必填 | 默认值 | 说明                   |
 | ---------------- | -------------- | ---- | ------ | ---------------------- |
 | `func`           | function       | 是   | -      | 要调用的函数           |
-| `values`         | table / nil    | 否   | `nil`  | 传给 `func` 的参数数组 |
+| `values`         | table / nil    | 否   | `nil`  | 传给 `func` 的参数数组表 |
 | `error_callback` | function / nil | 否   | `nil`  | 错误处理函数           |
 
 ### 返回
@@ -625,6 +625,15 @@ stack traceback: [Error Message]
   [x] = ...,
   n = x
 } -- 共有 x+1 个元素，所有返回值连续排序，最后 n 为返回值个数
+```
+
+- 参数 `error_callback` 函数结构如下：
+
+```lua
+function(error)
+  -- 错误处理逻辑
+  return any
+end
 ```
 
 - 返回值 `error` 在接收多值时只保留一个值

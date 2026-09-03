@@ -11,7 +11,7 @@
 | 常量名       | 说明                 | 索引                      |
 | ------------ | -------------------- | ------------------------- |
 | `AUTO`       | 自动检查文本类型     | [AUTO](#AUTO)             |
-| `PLAIN_TEXT` | 强制按纯文本解析     | [PLAIN_TEXT](#PLAIN_TEXT) |
+| `PLAIN_TEXT` | 强制按普通文本解析     | [PLAIN_TEXT](#PLAIN_TEXT) |
 | `RICH_TEXT`  | 强制按富文本语法解析 | [RICH_TEXT](#RICH_TEXT)   |
 
 ### 方法
@@ -80,7 +80,7 @@ debug.print { message = tostring(len2) }
 
 ## `PLAIN_TEXT`
 
-强制按纯文本解析；头部声明 `f%`，富文本标签会被强制保留。
+强制按普通文本解析；头部声明 `f%`，富文本标签会被强制保留。
 
 **可用于**
 
@@ -339,7 +339,7 @@ string.sub{}
 | -------- | ------- | ---- | ---------- | ------------ |
 | `text`   | string  | 是   | -          | 目标字符串   |
 | `start`  | integer | 是   | -          | 起始字符位置 |
-| `finish` | integer | 否   | 字符串长度 | 结束字符位置 |
+| `finish` | integer | 否   | 目标字符串长度 | 结束字符位置 |
 
 ### 返回
 
@@ -428,7 +428,7 @@ string.find{}
 | `text`    | string  | 是   | -       | 目标字符串       |
 | `pattern` | string  | 是   | -       | 模式字符串       |
 | `init`    | integer | 否   | `1`     | 起始搜索位置     |
-| `plain`   | boolean | 否   | `false` | 是否按纯文本查找 |
+| `plain`   | boolean | 否   | `false` | 是否按普通文本查找 |
 
 ### 返回
 
@@ -1165,7 +1165,7 @@ string.format{}
 | 参数名          | 类型   | 必填 | 默认值 | 说明       |
 | --------------- | ------ | ---- | ------ | ---------- |
 | `format_string` | string | 是   | -      | 格式串     |
-| `values`        | table  | 否   | `nil`  | 参数值数组 |
+| `values`        | table  | 否   | `nil`  | 参数值数组表 |
 
 ### 返回
 

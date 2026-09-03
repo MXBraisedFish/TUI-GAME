@@ -16,12 +16,12 @@
 | `BOLD_LINE`       | 粗线边框字符表             | [BOLD_LINE](#BOLD_LINE)             |
 | `DOUBLE_LINE`     | 双线边框字符表             | [DOUBLE_LINE](#DOUBLE_LINE)         |
 | `ROUNDED_LINE`    | 圆角线边框字符表           | [ROUNDED_LINE](#ROUNDED_LINE)       |
-| `ASCII_NUMBER`    | `"0"`~`"9"` 字符数组       | [ASCII_NUMBER](#ASCII_NUMBER)       |
-| `ASCII_LOWERCASE` | `"a"`~`"z"` 字符数组       | [ASCII_LOWERCASE](#ASCII_LOWERCASE) |
-| `ASCII_UPPERCASE` | `"A"`~`"Z"` 字符数组       | [ASCII_UPPERCASE](#ASCII_UPPERCASE) |
-| `ASCII_LETTER`    | 大小写字母字符数组         | [ASCII_LETTER](#ASCII_LETTER)       |
-| `ASCII_CHARACTER` | ASCII 符号字符数组         | [ASCII_CHARACTER](#ASCII_CHARACTER) |
-| `ASCII`           | 数字+字母+符号全量字符数组 | [ASCII](#ASCII)                     |
+| `ASCII_NUMBER`    | `"0"`~`"9"` 字符数组表       | [ASCII_NUMBER](#ASCII_NUMBER)       |
+| `ASCII_LOWERCASE` | `"a"`~`"z"` 字符数组表       | [ASCII_LOWERCASE](#ASCII_LOWERCASE) |
+| `ASCII_UPPERCASE` | `"A"`~`"Z"` 字符数组表       | [ASCII_UPPERCASE](#ASCII_UPPERCASE) |
+| `ASCII_LETTER`    | 大小写字母字符数组表         | [ASCII_LETTER](#ASCII_LETTER)       |
+| `ASCII_CHARACTER` | ASCII 符号字符数组表         | [ASCII_CHARACTER](#ASCII_CHARACTER) |
+| `ASCII`           | 数字+字母+符号全量字符数组表 | [ASCII](#ASCII)                     |
 
 ---
 
@@ -229,7 +229,7 @@ draw.stroke_rect {
 
 ## `ASCII_NUMBER`
 
-数字字符数组。
+数字字符数组表。
 
 **可用于**
 
@@ -279,7 +279,7 @@ end
 
 ## `ASCII_LOWERCASE`
 
-小写字母字符数组。
+小写字母字符数组表。
 
 **可用于**
 
@@ -324,7 +324,7 @@ end
 
 ## `ASCII_UPPERCASE`
 
-大写字母字符数组。
+大写字母字符数组表。
 
 **可用于**
 
@@ -369,7 +369,7 @@ end
 
 ## `ASCII_LETTER`
 
-全部大小写字母字符数组。
+全部大小写字母字符数组表。
 
 **可用于**
 
@@ -418,7 +418,7 @@ end
 
 ## `ASCII_CHARACTER`
 
-ASCII 符号字符数组。
+ASCII 符号字符数组表。
 
 **可用于**
 
@@ -487,7 +487,7 @@ draw.stroke_rect {
 
 ## `ASCII`
 
-全量可打印 ASCII 字符数组。
+全量可打印 ASCII 字符数组表。
 
 **可用于**
 

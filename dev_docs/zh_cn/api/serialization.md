@@ -14,8 +14,8 @@
 | ----------------- | ------------------------------ | ----------------------------------- |
 | `json_encode`     | 将 Lua 值编码为 JSON 字符串    | [json_encode](#json_encode)         |
 | `json_decode`     | 将 JSON 字符串解码为 Lua 值    | [json_decode](#json_decode)         |
-| `csv_encode`      | 将二维数组编码为 CSV 字符串    | [csv_encode](#csv_encode)           |
-| `csv_decode`      | 将 CSV 字符串解码为二维数组    | [csv_decode](#csv_decode)           |
+| `csv_encode`      | 将二维数组表编码为 CSV 字符串    | [csv_encode](#csv_encode)           |
+| `csv_decode`      | 将 CSV 字符串解码为二维数组表    | [csv_decode](#csv_decode)           |
 | `yaml_encode`     | 将 Lua 值编码为 YAML 字符串    | [yaml_encode](#yaml_encode)         |
 | `yaml_decode`     | 将 YAML 字符串解码为 Lua 值    | [yaml_decode](#yaml_decode)         |
 | `toml_encode`     | 将 Lua 值编码为 TOML 字符串    | [toml_encode](#toml_encode)         |
@@ -124,7 +124,7 @@ TUI, v1
 
 ## `csv_encode`
 
-将二维数组编码为 CSV 字符串。
+将二维数组表编码为 CSV 字符串。
 
 ### 调用
 
@@ -137,7 +137,7 @@ serialization.csv_encode()
 
 | 参数名 | 类型  | 必填 | 默认值 | 说明     |
 | ------ | ----- | ---- | ------ | -------- |
-| `rows` | table | 是   | -      | 二维数组 |
+| `rows` | table | 是   | -      | 二维数组表 |
 
 ### 返回
 
@@ -175,7 +175,7 @@ Bob,87
 
 ## `csv_decode`
 
-将 CSV 字符串解码为二维数组。
+将 CSV 字符串解码为二维数组表。
 
 ### 调用
 
@@ -196,7 +196,7 @@ serialization.csv_decode()
 
 | 类型  | 说明     |
 | ----- | -------- |
-| table | 二维数组 |
+| table | 二维数组表 |
 
 ### 示例
 
@@ -609,7 +609,7 @@ serialization.binary_pack{}
 | 参数名   | 类型   | 必填 | 默认值 | 说明       |
 | -------- | ------ | ---- | ------ | ---------- |
 | `fmt`    | string | 是   | -      | 打包格式串 |
-| `values` | table  | 是   | -      | 数据数组   |
+| `values` | table  | 是   | -      | 数据数组表   |
 
 ### 返回
 

@@ -2700,6 +2700,200 @@ mod tests {
   }
 
   #[test]
+  fn table_api_matches_documented_operations_and_pretty_output() {
+    let source = valid_script(
+      r#"
+        function Init(ctx)
+          local function fails(func)
+            return not debug.pcall{ func = func }.ok
+          end
+
+          local joined = table.concat{
+            table = { 1, "二", 3 }, sep = "|", start = 1, finish = 3,
+          }
+          debug.assert{ value = joined == "1|二|3" }
+          debug.assert{
+            value = fails(function()
+              table.concat{ table = { 1, 2 }, separator = "," }
+            end),
+          }
+
+          local inserted = { "a", "c" }
+          table.insert{ table = inserted, position = 2, value = "b" }
+          table.insert{ table = inserted, value = "d" }
+          debug.assert{
+            value = inserted[1] == "a" and inserted[2] == "b"
+              and inserted[3] == "c" and inserted[4] == "d",
+          }
+          local removed = table.remove{ table = inserted, position = 2 }
+          debug.assert{
+            value = removed == "b" and #inserted == 3 and inserted[2] == "c",
+          }
+
+          local moved = { 1, 2, 3, 4 }
+          local moved_result = table.move{
+            source = moved, start = 1, finish = 3, target_index = 2,
+          }
+          debug.assert{
+            value = moved_result == moved and moved[1] == 1 and moved[2] == 1
+              and moved[3] == 2 and moved[4] == 3,
+          }
+          local target = {}
+          debug.assert{
+            value = table.move{
+              source = moved, start = 2, finish = 3, target_index = 1, target = target,
+            } == target and target[1] == 1 and target[2] == 2,
+          }
+          debug.assert{
+            value = fails(function()
+              table.move{
+                source = {}, start = 0, finish = 1, target_index = 9223372036854775807,
+              }
+            end),
+          }
+
+          local packed = table.pack{ values = { [1] = "a", [3] = "c", n = 3 } }
+          debug.assert{
+            value = packed.n == 3 and packed[1] == "a"
+              and packed[2] == nil and packed[3] == "c",
+          }
+          local directly_packed = table.pack{ "x", nil, "z", n = 3 }
+          debug.assert{
+            value = directly_packed.n == 3 and directly_packed[1] == "x"
+              and directly_packed[2] == nil and directly_packed[3] == "z",
+          }
+          local first, second, third = table.unpack{
+            table = packed, start = 1, finish = packed.n,
+          }
+          debug.assert{ value = first == "a" and second == nil and third == "c" }
+
+          local sortable = { 3, 1, 2 }
+          table.sort{ table = sortable }
+          debug.assert{ value = sortable[1] == 1 and sortable[2] == 2 and sortable[3] == 3 }
+          table.sort{
+            table = sortable,
+            comparator = function(left, right) return left > right end,
+          }
+          debug.assert{ value = sortable[1] == 3 and sortable[2] == 2 and sortable[3] == 1 }
+
+          local child = { value = 7 }
+          local original = { child = child, alias = child, callback = function() end }
+          local copied = table.deepcopy(original)
+          debug.assert{
+            value = copied ~= original and copied.child ~= child
+              and copied.child == copied.alias and copied.child.value == 7
+              and copied.callback == original.callback,
+          }
+          copied.child.value = 9
+          debug.assert{ value = original.child.value == 7 }
+
+          local visual = table.pretty({ 1, 3, "a", n = 3 })
+          debug.assert{ value = visual == "{[1] = 1, [2] = 3, [3] = \"a\", n = 3}" }
+          local nested = table.pretty{
+            table = { text = "a\nb", enabled = true, callback = function() end },
+          }
+          debug.assert{
+            value = string.find{ text = nested, pattern = "callback", plain = true } ~= nil
+              and string.find{ text = nested, pattern = "<function:", plain = true } ~= nil
+              and string.find{ text = nested, pattern = "\\n", plain = true } ~= nil,
+          }
+        end
+      "#,
+    );
+    LuaSession::load(spec(&source, LuaSessionKind::Game), LuaPolicy::default()).unwrap();
+  }
+
+  #[test]
+  fn utf8_api_uses_scalar_indices_lazy_iterators_and_table_results() {
+    let source = valid_script(
+      r#"
+        function Init(ctx)
+          local function fails(func)
+            return not debug.pcall{ func = func }.ok
+          end
+
+          debug.assert{ value = utf8.len("A你B") == 3 }
+          debug.assert{ value = utf8.byte_len{ text = "A你B" } == 5 }
+          debug.assert{ value = utf8.is_ascii("ABC") and not utf8.is_ascii("A你") }
+
+          debug.assert{ value = utf8.codepoint_to_char{ 65, 20320 } == "A你" }
+          debug.assert{
+            value = utf8.codepoint_to_char{ values = { 65, 66 } } == "AB",
+          }
+          debug.assert{ value = utf8.ascii_to_char{ 65, 66, 67 } == "ABC" }
+          debug.assert{
+            value = fails(function() utf8.ascii_to_char{ 128 } end)
+              and fails(function() utf8.codepoint_to_char{ 55296 } end),
+          }
+
+          local codepoints = utf8.char_to_codepoint{ text = "A你B" }
+          debug.assert{
+            value = codepoints.n == 3 and codepoints[1] == 65
+              and codepoints[2] == 20320 and codepoints[3] == 66,
+          }
+          local ascii = utf8.char_to_ascii{ text = "A你B", start = 1, finish = 3 }
+          debug.assert{
+            value = ascii.n == 3 and ascii[1] == 65
+              and ascii[2] == nil and ascii[3] == 66,
+          }
+          local one_ascii = utf8.char_to_ascii{ text = "ABC", start = 2 }
+          debug.assert{ value = one_ascii.n == 1 and one_ascii[1] == 66 }
+          debug.assert{
+            value = utf8.char_to_ascii{ text = "" }.n == 0
+              and utf8.char_to_codepoint{ text = "" }.n == 0,
+          }
+          local reversed_range = utf8.char_to_codepoint{
+            text = "ABC", start = 3, finish = 1,
+          }
+          debug.assert{ value = reversed_range.n == 0 }
+
+          debug.assert{
+            value = utf8.char_position{ text = "A你B", index = 2 } == 2
+              and utf8.char_position{ text = "A你B", start = 2, index = 2 } == 5
+              and utf8.char_position{ text = "A你B", index = 9 } == nil,
+          }
+          debug.assert{
+            value = fails(function()
+              utf8.char_position{ text = "ABC", index = 0 }
+            end),
+          }
+
+          local iterator = utf8.codepoints("A你B")
+          local first = iterator()
+          local second = iterator()
+          local third = iterator()
+          debug.assert{
+            value = first.byte_position == 1 and first.codepoint == 65
+              and second.byte_position == 2 and second.codepoint == 20320
+              and third.byte_position == 5 and third.codepoint == 66
+              and iterator() == nil,
+          }
+          local total = 0
+          for item in utf8.codepoints(string.rep{ text = "x", times = 20000 }) do
+            total = total + 1
+            if total == 2 then break end
+          end
+          debug.assert{ value = total == 2 }
+
+          local from_start = utf8.next{ text = "A你B" }
+          local after_first = utf8.next{ text = "A你B", pos = 1 }
+          local after_second = utf8.next{ text = "A你B", pos = 2 }
+          debug.assert{
+            value = from_start.position == 1 and from_start.codepoint == 65
+              and after_first.position == 2 and after_first.codepoint == 20320
+              and after_second.position == 5 and after_second.codepoint == 66
+              and utf8.next{ text = "A你B", pos = 5 } == nil,
+          }
+          debug.assert{
+            value = fails(function() utf8.next{ text = "ABC", pos = 0 } end),
+          }
+        end
+      "#,
+    );
+    LuaSession::load(spec(&source, LuaSessionKind::Game), LuaPolicy::default()).unwrap();
+  }
+
+  #[test]
   fn math_api_matches_documented_names_types_and_boundaries() {
     let source = valid_script(
       r#"
