@@ -194,11 +194,7 @@ pub(super) fn utf8_codes(lua: &Lua, values: MultiValue, ascii_only: bool) -> mlu
   let text = args::string(args::required(&table, method, "text")?, method, "text")?;
   let chars = text.chars().collect::<Vec<_>>();
   let start = args::optional_integer(&table, method, "start", Some(1))?.unwrap();
-  let default_finish = if ascii_only {
-    start
-  } else {
-    chars.len() as i64
-  };
+  let default_finish = chars.len() as i64;
   let finish = args::optional_integer(&table, method, "finish", Some(default_finish))?.unwrap();
   let output = lua.create_table()?;
   let Some(start) = resolve_index(start, chars.len(), false) else {

@@ -2837,7 +2837,9 @@ mod tests {
               and ascii[2] == nil and ascii[3] == 66,
           }
           local one_ascii = utf8.char_to_ascii{ text = "ABC", start = 2 }
-          debug.assert{ value = one_ascii.n == 1 and one_ascii[1] == 66 }
+          debug.assert{
+            value = one_ascii.n == 2 and one_ascii[1] == 66 and one_ascii[2] == 67,
+          }
           debug.assert{
             value = utf8.char_to_ascii{ text = "" }.n == 0
               and utf8.char_to_codepoint{ text = "" }.n == 0,

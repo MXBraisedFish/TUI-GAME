@@ -1544,7 +1544,7 @@ debug.print { message = tostring(b1) .. ", " .. tostring(b2) }
 false, true
 ```
 
-### 额外说明
+### 额外补充
 
 - 该 API 等价于两个无符号数使用操作符 `<`。
 - 负数会直接以二进制码进行比较，而非取绝对值。

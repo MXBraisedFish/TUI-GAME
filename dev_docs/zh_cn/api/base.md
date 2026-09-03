@@ -170,14 +170,14 @@ t = { "a", "b", x = 1 }
 index = nil
 
 while true do
-	item = next {table = t, index = index}
+	item = next { table = t, index = index }
 
 	-- 没有后续元素时结束遍历
 	if item == nil then
 		break
 	end
 
-	debug.print {message = tostring(item.index) .. " " .. tostring(item.value)}
+	debug.print { message = tostring(item.index) .. " " .. tostring(item.value) }
 
 	-- 使用当前索引继续查找下一个元素
 	index = item.index
